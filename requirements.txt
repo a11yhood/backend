@@ -135,7 +135,7 @@ pyyaml==6.0.3
     # via uvicorn
 realtime==2.27.0
     # via supabase
-requests==2.32.5
+requests==2.33.0
     # via
     #   a11yhood-backend (pyproject.toml)
     #   pyiceberg
