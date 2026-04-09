@@ -221,13 +221,13 @@ class BulkDeleteRequest(BaseModel):
     type: Optional[str | list[str]] = None
     types: Optional[str | list[str]] = None
     tags: Optional[str | list[str]] = None
-    tags_mode: Optional[str] = "or"
+    tags_mode: Optional[str] = None
     min_rating: Optional[float] = None
     updated_since: Optional[str] = None
     max_age: Optional[int] = None
     search: Optional[str] = None
     created_by: Optional[str] = None
-    include_banned: Optional[bool] = False
+    include_banned: Optional[bool] = None
     product_ids: Optional[str | list[str]] = None
 
 
@@ -911,39 +911,24 @@ async def count_products(
         include_banned=include_banned,
     )
 
-    if filters["min_rating"] is None:
-        total = None
-        try:
-            count_query = _apply_product_filters(db.table("products").select("id", count="exact"), db, filters)
-            if count_query is None:
-                return {"count": 0}
-            count_resp = count_query.execute()
-            if getattr(count_resp, "count", None) is not None:
-                total = count_resp.count
-            else:
-                total = len(count_resp.data or [])
-        except TypeError:
-            count_query = _apply_product_filters(db.table("products").select("id"), db, filters)
-            if count_query is None:
-                return {"count": 0}
-            count_resp = count_query.execute()
+    total = None
+    try:
+        count_query = _apply_product_filters(db.table("products").select("id", count="exact"), db, filters)
+        if count_query is None:
+            return {"count": 0}
+        count_resp = count_query.execute()
+        if getattr(count_resp, "count", None) is not None:
+            total = count_resp.count
+        else:
             total = len(count_resp.data or [])
+    except TypeError:
+        count_query = _apply_product_filters(db.table("products").select("id"), db, filters)
+        if count_query is None:
+            return {"count": 0}
+        count_resp = count_query.execute()
+        total = len(count_resp.data or [])
 
-        return {"count": total}
-
-    rating_query = _apply_product_filters(
-        db.table("products").select("id,source_rating,computed_rating"),
-        db,
-        _without_min_rating(filters),
-    )
-    if rating_query is None:
-        return {"count": 0}
-
-    response = rating_query.execute()
-    products = response.data or []
-    ratings_map = build_display_rating_map(db, products)
-    products = [p for p in products if rating_meets_threshold(p, ratings_map, filters["min_rating"])]
-    return {"count": len(products)}
+    return {"count": total}
 
 
 @router.get("/exists")
@@ -1602,7 +1587,11 @@ async def bulk_delete_products(
         type=_normalize_list(type) + _normalize_list(payload.type if payload else None),
         types=_normalize_list(types) + _normalize_list(payload.types if payload else None),
         tags=_normalize_list(tags) + _normalize_list(payload.tags if payload else None),
-        tags_mode=(payload.tags_mode if payload and payload.tags_mode is not None else tags_mode),
+        tags_mode=(
+            payload.tags_mode
+            if payload and "tags_mode" in payload.model_fields_set
+            else tags_mode
+        ),
         min_rating=payload.min_rating if payload and payload.min_rating is not None else min_rating,
         updated_since=payload.updated_since if payload and payload.updated_since is not None else updated_since,
         max_age=payload.max_age if payload and payload.max_age is not None else max_age,
@@ -1622,7 +1611,6 @@ async def bulk_delete_products(
         filters["search"],
         filters["created_by"],
         filters["updated_since"] is not None,
-        filters["max_age"] is not None,
         filters["min_rating"] is not None,
     ])
 

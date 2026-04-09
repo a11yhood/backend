@@ -447,6 +447,7 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
             "source": "Github",
             "type": "Software",
             "source_rating": 4.2,
+            "computed_rating": 4.2,  # Set computed_rating for test (no trigger in SQLite)
             "url": "https://github.com/example/rating-count-high",
             "created_by": test_user["id"],
         },
@@ -457,6 +458,7 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
             "source": "Github",
             "type": "Software",
             "source_rating": 3.0,
+            "computed_rating": 3.0,  # Set computed_rating for test (no trigger in SQLite)
             "url": "https://github.com/example/rating-count-low",
             "created_by": test_user["id"],
         },
@@ -475,6 +477,8 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
         {"product_id": low_id, "user_id": test_user["id"], "rating": 3},
         {"product_id": user_high_id, "user_id": test_user["id"], "rating": 4},
     ]).execute()
+    # Manually update computed_rating since SQLite doesn't have the trigger
+    clean_database.table("products").update({"computed_rating": 4.0}).eq("id", user_high_id).execute()
 
     resp = client.get("/api/products/count?search=RatingCount&min_rating=4")
     assert resp.status_code == 200
