@@ -273,3 +273,151 @@ def test_filter_discussions_by_parent_id(client: TestClient, auth_headers, test_
     for reply in replies:
         assert reply["parent_id"] == parent_id
         assert "username" in reply
+
+
+def test_delete_discussion_with_invalid_id_returns_422(client: TestClient, auth_headers, test_user):
+    """Invalid UUID path params should be rejected at API validation layer."""
+    response = client.delete(
+        "/api/discussions/not-a-uuid",
+        headers=auth_headers(test_user),
+    )
+    assert response.status_code == 422
+
+
+def test_get_single_discussion_success(client: TestClient, auth_headers, test_user, test_product):
+    """A created discussion should be retrievable by id."""
+    create = client.post(
+        "/api/discussions",
+        headers=auth_headers(test_user),
+        json={
+            "product_id": test_product["id"],
+            "content": "Single fetch test",
+        },
+    )
+    assert create.status_code == 201
+    discussion_id = create.json()["id"]
+
+    get_resp = client.get(f"/api/discussions/{discussion_id}")
+    assert get_resp.status_code == 200
+    discussion = get_resp.json()
+    assert discussion["id"] == discussion_id
+    assert discussion["content"] == "Single fetch test"
+
+
+def test_get_single_discussion_not_found(client: TestClient):
+    """Fetching a non-existent discussion should return 404."""
+    response = client.get("/api/discussions/00000000-0000-0000-0000-000000000000")
+    assert response.status_code == 404
+
+
+def test_update_discussion_success(auth_client, test_product):
+    """Owner can edit discussion content."""
+    create = auth_client.post(
+        "/api/discussions",
+        json={
+            "product_id": test_product["id"],
+            "content": "Original content",
+        },
+    )
+    assert create.status_code in (200, 201), create.text
+    discussion_id = create.json()["id"]
+
+    update = auth_client.put(
+        f"/api/discussions/{discussion_id}",
+        json={"content": "Edited content"},
+    )
+    assert update.status_code == 200, update.text
+    updated = update.json()
+    assert updated["id"] == discussion_id
+    assert updated["content"] == "Edited content"
+
+
+def test_update_discussion_forbidden_for_non_owner(auth_client, auth_client_2, test_product):
+    """Non-owner cannot edit someone else's discussion."""
+    create = auth_client.post(
+        "/api/discussions",
+        json={
+            "product_id": test_product["id"],
+            "content": "Owner content",
+        },
+    )
+    assert create.status_code in (200, 201), create.text
+    discussion_id = create.json()["id"]
+
+    update = auth_client_2.put(
+        f"/api/discussions/{discussion_id}",
+        json={"content": "Unauthorized edit"},
+    )
+    assert update.status_code == 403, update.text
+
+
+def test_update_discussion_not_found(auth_client):
+    """Editing a non-existent discussion should return 404."""
+    response = auth_client.put(
+        "/api/discussions/00000000-0000-0000-0000-000000000000",
+        json={"content": "No record"},
+    )
+    assert response.status_code == 404
+
+
+def test_delete_discussion_soft_delete_success(auth_client, test_product):
+    """Deleting a discussion should soft-delete content and keep record."""
+    create = auth_client.post(
+        "/api/discussions",
+        json={
+            "product_id": test_product["id"],
+            "content": "Delete me",
+        },
+    )
+    assert create.status_code in (200, 201), create.text
+    discussion_id = create.json()["id"]
+
+    delete_resp = auth_client.delete(f"/api/discussions/{discussion_id}")
+    assert delete_resp.status_code == 200, delete_resp.text
+    deleted = delete_resp.json()
+    assert deleted["id"] == discussion_id
+    assert deleted["content"] == "[deleted]"
+
+    get_resp = auth_client.get(f"/api/discussions/{discussion_id}")
+    assert get_resp.status_code == 200, get_resp.text
+    persisted = get_resp.json()
+    assert persisted["content"] == "[deleted]"
+
+
+def test_delete_discussion_forbidden_for_non_owner(auth_client, auth_client_2, test_product):
+    """Non-owner cannot delete someone else's discussion."""
+    create = auth_client.post(
+        "/api/discussions",
+        json={
+            "product_id": test_product["id"],
+            "content": "Only owner can delete",
+        },
+    )
+    assert create.status_code in (200, 201), create.text
+    discussion_id = create.json()["id"]
+
+    delete_resp = auth_client_2.delete(f"/api/discussions/{discussion_id}")
+    assert delete_resp.status_code == 403, delete_resp.text
+
+
+def test_delete_discussion_not_found(auth_client):
+    """Deleting a non-existent discussion should return 404."""
+    response = auth_client.delete("/api/discussions/00000000-0000-0000-0000-000000000000")
+    assert response.status_code == 404
+
+
+def test_delete_discussion_allowed_for_admin(auth_client, admin_client, test_product):
+    """Admin can delete discussions created by another user."""
+    create = auth_client.post(
+        "/api/discussions",
+        json={
+            "product_id": test_product["id"],
+            "content": "Admin can delete this",
+        },
+    )
+    assert create.status_code in (200, 201), create.text
+    discussion_id = create.json()["id"]
+
+    delete_resp = admin_client.delete(f"/api/discussions/{discussion_id}")
+    assert delete_resp.status_code == 200, delete_resp.text
+    assert delete_resp.json()["content"] == "[deleted]"
