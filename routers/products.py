@@ -9,7 +9,7 @@ import uuid
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
-from typing import Optional, Iterable, Callable, Any
+from typing import Optional, Iterable, Any
 from datetime import datetime, UTC, timedelta
 import httpx
 
