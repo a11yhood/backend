@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from typing import Optional
 from supabase import Client
 from datetime import datetime, timezone
+from uuid import UUID
 
 from models.discussions import DiscussionCreate, DiscussionUpdate, DiscussionResponse, DiscussionBlockRequest
 from services.database import get_db
@@ -50,11 +51,11 @@ async def get_discussions(
 
 @router.get("/{discussion_id}", response_model=DiscussionResponse)
 async def get_discussion(
-    discussion_id: str,
+    discussion_id: UUID,
     db = Depends(get_db),
 ):
     """Get a single discussion by ID"""
-    response = db.table("discussions").select("*").eq("id", discussion_id).execute()
+    response = db.table("discussions").select("*").eq("id", str(discussion_id)).execute()
     
     if not response.data:
         raise HTTPException(status_code=404, detail="Discussion not found")
@@ -98,13 +99,13 @@ async def create_discussion(
 
 @router.put("/{discussion_id}", response_model=DiscussionResponse)
 async def update_discussion(
-    discussion_id: str,
+    discussion_id: UUID,
     discussion: DiscussionUpdate,
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Update a discussion (owner only)"""
-    existing = db.table("discussions").select("*").eq("id", discussion_id).execute()
+    existing = db.table("discussions").select("*").eq("id", str(discussion_id)).execute()
     
     if not existing.data:
         raise HTTPException(status_code=404, detail="Discussion not found")
@@ -119,21 +120,21 @@ async def update_discussion(
     if "content" in update_data:
         update_data["content"] = sanitize_html(update_data["content"])
     
-    response = db.table("discussions").update(update_data).eq("id", discussion_id).execute()
+    response = db.table("discussions").update(update_data).eq("id", str(discussion_id)).execute()
     
     return response.data[0]
 
 
 @router.delete("/{discussion_id}", response_model=DiscussionResponse)
 async def delete_discussion(
-    discussion_id: str,
+    discussion_id: UUID,
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
     """Soft-delete a discussion (owner or admin only).
     The record remains so replies stay intact; content is replaced with "[deleted]".
     """
-    existing = db.table("discussions").select("*").eq("id", discussion_id).execute()
+    existing = db.table("discussions").select("*").eq("id", str(discussion_id)).execute()
     
     if not existing.data:
         raise HTTPException(status_code=404, detail="Discussion not found")
@@ -144,7 +145,7 @@ async def delete_discussion(
     response = db.table("discussions").update({
         "content": "[deleted]",
         "updated_at": datetime.now(timezone.utc),
-    }).eq("id", discussion_id).execute()
+    }).eq("id", str(discussion_id)).execute()
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to delete discussion")
     return response.data[0]
@@ -152,7 +153,7 @@ async def delete_discussion(
 
 @router.post("/{discussion_id}/block", response_model=DiscussionResponse)
 async def block_discussion(
-    discussion_id: str,
+    discussion_id: UUID,
     payload: DiscussionBlockRequest,
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
@@ -161,7 +162,7 @@ async def block_discussion(
     if current_user.get("role") not in ("admin", "moderator"):
         raise HTTPException(status_code=403, detail="Not authorized to block discussions")
 
-    existing = db.table("discussions").select("*").eq("id", discussion_id).execute()
+    existing = db.table("discussions").select("*").eq("id", str(discussion_id)).execute()
     if not existing.data:
         raise HTTPException(status_code=404, detail="Discussion not found")
 
@@ -173,13 +174,13 @@ async def block_discussion(
         "blocked_reason": payload.reason,
         "blocked_at": now,
         "updated_at": now,
-    }).eq("id", discussion_id).execute()
+    }).eq("id", str(discussion_id)).execute()
 
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to block discussion")
 
     # Cascade block to all descendant replies
-    to_visit = [discussion_id]
+    to_visit = [str(discussion_id)]
     visited = set()
     while to_visit:
         # Fetch direct children of any node in to_visit
@@ -204,7 +205,7 @@ async def block_discussion(
 
 @router.post("/{discussion_id}/unblock", response_model=DiscussionResponse)
 async def unblock_discussion(
-    discussion_id: str,
+    discussion_id: UUID,
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
@@ -212,7 +213,7 @@ async def unblock_discussion(
     if current_user.get("role") not in ("admin", "moderator"):
         raise HTTPException(status_code=403, detail="Not authorized to unblock discussions")
 
-    existing = db.table("discussions").select("*").eq("id", discussion_id).execute()
+    existing = db.table("discussions").select("*").eq("id", str(discussion_id)).execute()
     if not existing.data:
         raise HTTPException(status_code=404, detail="Discussion not found")
 
@@ -222,13 +223,13 @@ async def unblock_discussion(
         "blocked_reason": None,
         "blocked_at": None,
         "updated_at": datetime.now(timezone.utc),
-    }).eq("id", discussion_id).execute()
+    }).eq("id", str(discussion_id)).execute()
 
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to unblock discussion")
 
     # Cascade unblock to all descendant replies
-    to_visit = [discussion_id]
+    to_visit = [str(discussion_id)]
     while to_visit:
         children_resp = db.table("discussions").select("id").in_("parent_id", to_visit).execute()
         child_ids = [row["id"] for row in (children_resp.data or []) if row.get("id")]
