@@ -361,7 +361,7 @@ def test_update_discussion_not_found(auth_client):
 
 
 def test_delete_discussion_soft_delete_success(auth_client, test_product):
-    """Deleting a discussion should soft-delete content and keep record."""
+    """Deleting a leaf discussion hides it (404 on GET, absent from list)."""
     create = auth_client.post(
         "/api/discussions",
         json={
@@ -374,14 +374,38 @@ def test_delete_discussion_soft_delete_success(auth_client, test_product):
 
     delete_resp = auth_client.delete(f"/api/discussions/{discussion_id}")
     assert delete_resp.status_code == 200, delete_resp.text
-    deleted = delete_resp.json()
-    assert deleted["id"] == discussion_id
-    assert deleted["content"] == "[deleted]"
+    assert delete_resp.json()["content"] == "[deleted]"
 
+    # Leaf deleted post is no longer visible
     get_resp = auth_client.get(f"/api/discussions/{discussion_id}")
-    assert get_resp.status_code == 200, get_resp.text
-    persisted = get_resp.json()
-    assert persisted["content"] == "[deleted]"
+    assert get_resp.status_code == 404, get_resp.text
+
+    # Also absent from list
+    list_resp = auth_client.get(f"/api/discussions?product_id={test_product['id']}")
+    ids = [d["id"] for d in list_resp.json()]
+    assert discussion_id not in ids
+
+
+def test_delete_discussion_with_replies_stays_visible(auth_client, auth_client_2, test_product):
+    """Deleting a discussion that has replies keeps it visible as [deleted]."""
+    parent = auth_client.post(
+        "/api/discussions",
+        json={"product_id": test_product["id"], "content": "Parent post"},
+    )
+    assert parent.status_code == 201
+    parent_id = parent.json()["id"]
+
+    reply = auth_client_2.post(
+        "/api/discussions",
+        json={"product_id": test_product["id"], "content": "A reply", "parent_id": parent_id},
+    )
+    assert reply.status_code == 201
+
+    auth_client.delete(f"/api/discussions/{parent_id}")
+
+    get_resp = auth_client.get(f"/api/discussions/{parent_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["content"] == "[deleted]"
 
 
 def test_delete_discussion_forbidden_for_non_owner(auth_client, auth_client_2, test_product):

@@ -42,10 +42,23 @@ async def get_discussions(
     query = query.range(offset, offset + limit - 1).order("created_at", desc=True)
     
     db_resp = query.execute()
+    discussions = db_resp.data or []
+
+    # Filter out deleted leaf posts: keep deleted discussions only if they have replies
+    if discussions:
+        all_ids = [d["id"] for d in discussions]
+        # Find which IDs appear as a parent_id (i.e. have at least one reply)
+        has_replies_resp = db.table("discussions").select("parent_id").in_("parent_id", all_ids).execute()
+        ids_with_replies = {row["parent_id"] for row in (has_replies_resp.data or []) if row.get("parent_id")}
+        discussions = [
+            d for d in discussions
+            if d.get("content") != "[deleted]" or d["id"] in ids_with_replies
+        ]
+
     # Cache for 1 minute to reduce load
     if response is not None:
         response.headers["Cache-Control"] = "public, max-age=60"
-    return db_resp.data
+    return discussions
 
 
 @router.get("/{discussion_id}", response_model=DiscussionResponse)
@@ -58,8 +71,14 @@ async def get_discussion(
     
     if not response.data:
         raise HTTPException(status_code=404, detail="Discussion not found")
-    
-    return response.data[0]
+
+    discussion = response.data[0]
+    if discussion.get("content") == "[deleted]":
+        replies_resp = db.table("discussions").select("id").eq("parent_id", str(discussion_id)).execute()
+        if not replies_resp.data:
+            raise HTTPException(status_code=404, detail="Discussion not found")
+
+    return discussion
 
 
 @router.post("", response_model=DiscussionResponse, status_code=201)
@@ -113,7 +132,7 @@ async def update_discussion(
         raise HTTPException(status_code=403, detail="Not authorized to update this discussion")
     
     update_data = discussion.model_dump(exclude_unset=True)
-    update_data["updated_at"] = datetime.now(timezone.utc)
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
     # Sanitize content if being updated
     if "content" in update_data:
@@ -146,7 +165,7 @@ async def delete_discussion(
     
     response = db.table("discussions").update({
         "content": "[deleted]",
-        "updated_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", str(discussion_id)).execute()
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to delete discussion")
@@ -168,8 +187,7 @@ async def block_discussion(
     if not existing.data:
         raise HTTPException(status_code=404, detail="Discussion not found")
 
-    now = datetime.now(timezone.utc)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).isoformat()
     response = db.table("discussions").update({
         "blocked": True,
         "blocked_by": current_user["id"],
@@ -224,7 +242,7 @@ async def unblock_discussion(
         "blocked_by": None,
         "blocked_reason": None,
         "blocked_at": None,
-        "updated_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", str(discussion_id)).execute()
 
     if not response.data:
@@ -242,7 +260,7 @@ async def unblock_discussion(
             "blocked_by": None,
             "blocked_reason": None,
             "blocked_at": None,
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }).in_("id", child_ids).execute()
         to_visit = child_ids
 
