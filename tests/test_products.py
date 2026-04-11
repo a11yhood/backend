@@ -444,6 +444,7 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
             "source": "Github",
             "type": "Software",
             "source_rating": 4.2,
+            "computed_rating": 4.2,  # Set computed_rating for test (no trigger in SQLite)
             "url": "https://github.com/example/rating-count-high",
             "created_by": test_user["id"],
         },
@@ -454,6 +455,7 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
             "source": "Github",
             "type": "Software",
             "source_rating": 3.0,
+            "computed_rating": 3.0,  # Set computed_rating for test (no trigger in SQLite)
             "url": "https://github.com/example/rating-count-low",
             "created_by": test_user["id"],
         },
@@ -472,6 +474,11 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
         {"product_id": low_id, "user_id": test_user["id"], "rating": 3},
         {"product_id": user_high_id, "user_id": test_user["id"], "rating": 4},
     ]).execute()
+
+    # Manually update computed_rating since SQLite doesn't have the trigger
+    clean_database.table("products").update({"computed_rating": 4.2}).eq("id", high_id).execute()
+    clean_database.table("products").update({"computed_rating": 3.0}).eq("id", low_id).execute()
+    clean_database.table("products").update({"computed_rating": 4.0}).eq("id", user_high_id).execute()
 
     resp = client.get("/api/products/count?search=RatingCount&min_rating=4")
     assert resp.status_code == 200
@@ -610,6 +617,18 @@ def test_bulk_delete_requires_params(admin_client):
     assert "Must provide either" in resp.json()["detail"]
 
 
+def test_bulk_delete_rejects_sources_alias(admin_client):
+    resp = admin_client.post("/api/products/bulk-delete?sources=Thingiverse")
+    assert resp.status_code == 400
+    assert "'sources' is not supported" in resp.json()["detail"]
+
+
+def test_bulk_delete_rejects_types_alias(admin_client):
+    resp = admin_client.post("/api/products/bulk-delete?types=Hardware")
+    assert resp.status_code == 400
+    assert "'types' is not supported" in resp.json()["detail"]
+
+
 def test_bulk_delete_by_source_query_param(admin_client, clean_database):
     # Insert products under a unique source to isolate the deletion scope
     source_name = "BulkSource"
@@ -669,6 +688,50 @@ def test_bulk_delete_by_product_ids_dedupes(admin_client, clean_database):
     remaining = clean_database.table("products").select("id").in_("id", ids).execute()
     remaining_ids = {row["id"] for row in (remaining.data or [])}
     assert remaining_ids == {ids[2]}  # Only the untouched ID should remain
+
+
+def test_bulk_delete_uses_search_filters(admin_client, clean_database):
+    source_name = "SearchSource"
+    matching_ids = [str(uuid.uuid4()) for _ in range(2)]
+    keep_id = str(uuid.uuid4())
+
+    clean_database.table("products").insert([
+        {"id": matching_ids[0], "name": "Alpha Screen Reader", "source": source_name, "type": "Software", "url": f"https://example.com/{matching_ids[0]}"},
+        {"id": matching_ids[1], "name": "Alpha Magnifier", "source": source_name, "type": "Software", "url": f"https://example.com/{matching_ids[1]}"},
+        {"id": keep_id, "name": "Beta Keyboard", "source": source_name, "type": "Hardware", "url": f"https://example.com/{keep_id}"},
+    ]).execute()
+
+    resp = admin_client.post("/api/products/bulk-delete?source=SearchSource&search=Alpha&type=Software")
+
+    assert resp.status_code == 200
+    assert resp.json()["deleted_count"] == 2
+
+    remaining = clean_database.table("products").select("id").in_("id", matching_ids + [keep_id]).execute()
+    remaining_ids = {row["id"] for row in (remaining.data or [])}
+    assert remaining_ids == {keep_id}
+
+
+def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_database):
+    source_name = "JsonSearchSource"
+    delete_id = str(uuid.uuid4())
+    keep_id = str(uuid.uuid4())
+
+    clean_database.table("products").insert([
+        {"id": delete_id, "name": "Body Filter Match", "source": source_name, "type": "Software", "computed_rating": 4.5, "url": f"https://example.com/{delete_id}"},
+        {"id": keep_id, "name": "Body Filter Keep", "source": source_name, "type": "Software", "computed_rating": 2.0, "url": f"https://example.com/{keep_id}"},
+    ]).execute()
+
+    resp = admin_client.post(
+        "/api/products/bulk-delete",
+        json={"source": source_name, "search": "Body Filter", "min_rating": 4.0},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["deleted_count"] == 1
+
+    remaining = clean_database.table("products").select("id").in_("id", [delete_id, keep_id]).execute()
+    remaining_ids = {row["id"] for row in (remaining.data or [])}
+    assert remaining_ids == {keep_id}
 
 
 # ============================================================================

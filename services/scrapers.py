@@ -20,12 +20,11 @@ class ScraperOAuth:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 'https://www.ravelry.com/oauth2/token',
+                auth=(client_id, client_secret),
                 data={
                     'grant_type': 'authorization_code',
                     'code': code,
                     'redirect_uri': redirect_uri,
-                    'client_id': client_id,
-                    'client_secret': client_secret,
                 }
             )
             response.raise_for_status()
@@ -54,11 +53,10 @@ class ScraperOAuth:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 'https://www.ravelry.com/oauth2/token',
+                auth=(client_id, client_secret),
                 data={
                     'grant_type': 'refresh_token',
                     'refresh_token': refresh_token,
-                    'client_id': client_id,
-                    'client_secret': client_secret,
                 }
             )
             response.raise_for_status()

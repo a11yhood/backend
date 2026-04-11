@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Body
 from typing import Optional
 from supabase import Client
+import httpx
 import logging
 from datetime import datetime, UTC
 
@@ -424,7 +425,9 @@ async def oauth_callback(
 ):
     """
     Handle OAuth callback for scraper platforms
-    Exchanges code for access token and stores it
+    Exchanges code for access token and stores it.
+    The redirect_uri used here must match what is stored in oauth_configs,
+    which must be the URI registered with the OAuth provider.
     """
     if not current_user.get("role") == "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -436,38 +439,54 @@ async def oauth_callback(
         raise HTTPException(status_code=404, detail=f"OAuth config not found for {platform}")
     
     config = config_response.data[0]
-    
+
     try:
         if platform == "ravelry":
             token_data = await ScraperOAuth.get_ravelry_token(
                 client_id=config["client_id"],
                 client_secret=config["client_secret"],
                 code=code,
-                redirect_uri=config["redirect_uri"]
+                redirect_uri=config["redirect_uri"],
             )
         elif platform == "thingiverse":
             token_data = await ScraperOAuth.get_thingiverse_token(
                 client_id=config["client_id"],
                 client_secret=config["client_secret"],
                 code=code,
-                redirect_uri=config["redirect_uri"]
+                redirect_uri=config["redirect_uri"],
             )
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported platform: {platform}")
-        
+
+        if not token_data.get("access_token"):
+            logger.error("OAuth token exchange returned no access_token for %s", platform)
+            raise HTTPException(status_code=502, detail=f"OAuth token exchange returned no access token for {platform}")
+
         # Store tokens securely (TODO: encrypt tokens)
         update_data = {
             "access_token": token_data.get("access_token"),
             "refresh_token": token_data.get("refresh_token"),
             "token_expires_at": token_data.get("expires_at"),
         }
-        
+
         db.table("oauth_configs").update(update_data).eq("id", config["id"]).execute()
-        
+
         return {"message": f"OAuth token saved for {platform}"}
-        
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"OAuth failed: {str(e)}")
+
+    except HTTPException:
+        raise
+    except httpx.HTTPStatusError as exc:
+        response_text = exc.response.text if exc.response is not None else str(exc)
+        logger.error(
+            "OAuth token exchange failed for %s with status %s: %s",
+            platform,
+            exc.response.status_code if exc.response is not None else "unknown",
+            response_text,
+        )
+        raise HTTPException(status_code=400, detail=f"OAuth token exchange failed for {platform}: {response_text}")
+    except Exception as exc:
+        logger.error("Failed to persist OAuth token for %s", platform, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to save OAuth token for {platform}: {str(exc)}")
 
 
 @router.post("/oauth/{platform}/save-token")
@@ -490,14 +509,22 @@ async def save_oauth_token(
         config_response = db.table("oauth_configs").select("*").eq("platform", platform).execute()
         logger.debug(f"Config response: {config_response.data}")
         
-        update_data = {
-            "access_token": token_data.get("access_token"),
-            "refresh_token": token_data.get("refresh_token"),
-        }
+        # Build update data with all provided fields
+        update_data = {}
+        if "client_id" in token_data:
+            update_data["client_id"] = token_data["client_id"]
+        if "client_secret" in token_data:
+            update_data["client_secret"] = token_data["client_secret"]
+        if "redirect_uri" in token_data:
+            update_data["redirect_uri"] = token_data["redirect_uri"]
+        if "access_token" in token_data:
+            update_data["access_token"] = token_data["access_token"]
+        if "refresh_token" in token_data:
+            update_data["refresh_token"] = token_data["refresh_token"]
         
         if config_response.data:
-            # Update existing config
-            logger.info(f"Updating existing config for {platform}")
+            # Update existing config with all provided fields
+            logger.info(f"Updating existing config for {platform} with fields: {list(update_data.keys())}")
             db.table("oauth_configs").update(update_data).eq("platform", platform).execute()
         else:
             # Create new config with minimal data
@@ -507,7 +534,8 @@ async def save_oauth_token(
                 "client_id": token_data.get("client_id", ""),
                 "client_secret": token_data.get("client_secret", ""),
                 "redirect_uri": token_data.get("redirect_uri", ""),
-                **update_data
+                "access_token": token_data.get("access_token"),
+                "refresh_token": token_data.get("refresh_token"),
             }
             logger.debug(f"Inserting config data: {config_data}")
             db.table("oauth_configs").insert(config_data).execute()
@@ -707,15 +735,25 @@ async def disconnect_oauth(
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db),
 ):
-    """Delete OAuth token for a platform (admin only)"""
+    """Clear OAuth tokens for a platform (admin only) - preserves config for reconnect"""
     if not current_user.get("role") == "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    # Delete the entire oauth_configs entry for this platform
-    response = db.table("oauth_configs").delete().eq("platform", platform).execute()
+    # Check if config exists
+    existing = db.table("oauth_configs").select("*").eq("platform", platform).execute()
     
-    if response.count == 0:
+    if not existing.data:
         raise HTTPException(status_code=404, detail=f"No OAuth config found for {platform}")
+    
+    # Clear tokens but preserve config fields (client_id, client_secret, redirect_uri)
+    # This allows reconnecting without re-entering credentials
+    update_data = {
+        "access_token": None,
+        "refresh_token": None,
+        "token_expires_at": None,
+    }
+    
+    db.table("oauth_configs").update(update_data).eq("platform", platform).execute()
     
     return None
 

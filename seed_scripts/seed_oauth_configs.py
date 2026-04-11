@@ -40,7 +40,6 @@ def _first_env(names: list[str], default: str | None = None) -> str | None:
             return value
     return default
 
-
 OAUTH_CONFIGS = [
     {
         "platform": "ravelry",
@@ -50,12 +49,27 @@ OAUTH_CONFIGS = [
             "RAVELRY_REDIRECT_URI",
             "http://localhost:8000/api/scrapers/oauth/ravelry/callback",
         ),
-        "access_token": _first_env(
-            ["RAVELRY_ACCESS_TOKEN", "RAVELRY_OAUTH_ACCESS_TOKEN", "RAVELRY_TOKEN"]
-        ),
-        "refresh_token": _first_env(
-            ["RAVELRY_REFRESH_TOKEN", "RAVELRY_OAUTH_REFRESH_TOKEN"]
-        ),
+        "access_token": _first_env([
+            "RAVELRY_ACCESS_TOKEN",
+            "RAVELRY_OAUTH_ACCESS_TOKEN",
+            "RAVELRY_OAUTH_TOKEN",
+            "RAVELRY_TOKEN",
+            "RAVELRY_ACCESS",
+            "ACCESS_TOKEN_RAVELRY",
+            "RAVELRY_TOKEN_VALUE",
+            "RAVELRY_AUTH_TOKEN",
+            "ACCESS_TOKEN",
+        ]),
+        "refresh_token": _first_env([
+            "RAVELRY_REFRESH_TOKEN",
+            "RAVELRY_OAUTH_REFRESH_TOKEN",
+            "RAVELRY_TOKEN_REFRESH",
+            "RAVELRY_REFRESH",
+            "REFRESH_TOKEN_RAVELRY",
+            "RAVELRY_TOKEN_REFRESH_VALUE",
+            "RAVELRY_AUTH_REFRESH_TOKEN",
+            "REFRESH_TOKEN",
+        ]),
     },
     {
         "platform": "thingiverse",

@@ -9,7 +9,7 @@ import uuid
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
-from typing import Optional, Iterable, Callable
+from typing import Optional, Iterable, Any
 from datetime import datetime, UTC, timedelta
 import httpx
 
@@ -25,10 +25,16 @@ from services.sources import extract_domain, find_source_for_domain
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
-def _normalize_list(values: Optional[Iterable[str]]) -> list[str]:
+def _normalize_list(values: Optional[Iterable[str] | str]) -> list[str]:
     """Flatten query params supporting comma-separated and repeated values."""
     normalized: list[str] = []
-    for v in values or []:
+    if values is None:
+        return normalized
+    if isinstance(values, str):
+        raw_values = [values]
+    else:
+        raw_values = values
+    for v in raw_values:
         if v is None:
             continue
         if not isinstance(v, str):
@@ -210,8 +216,141 @@ async def _enrich_manual_product_metadata(db, source_name: str, source_url: str,
 
 
 class BulkDeleteRequest(BaseModel):
-    source: Optional[str] = None
-    product_ids: Optional[list[str]] = None
+    source: Optional[str | list[str]] = None
+    sources: Optional[str | list[str]] = None
+    type: Optional[str | list[str]] = None
+    types: Optional[str | list[str]] = None
+    tags: Optional[str | list[str]] = None
+    tags_mode: Optional[str] = None
+    min_rating: Optional[float] = None
+    updated_since: Optional[str] = None
+    max_age: Optional[int] = None
+    search: Optional[str] = None
+    created_by: Optional[str] = None
+    include_banned: Optional[bool] = None
+    product_ids: Optional[str | list[str]] = None
+
+
+def _prepare_product_filters(
+    db,
+    current_user: Optional[dict],
+    *,
+    source: Optional[Iterable[str] | str] = None,
+    sources: Optional[Iterable[str] | str] = None,
+    type: Optional[Iterable[str] | str] = None,
+    types: Optional[Iterable[str] | str] = None,
+    tags: Optional[Iterable[str] | str] = None,
+    tags_mode: str = "or",
+    min_rating: Optional[float] = None,
+    updated_since: Optional[str] = None,
+    max_age: Optional[int] = None,
+    search: Optional[str] = None,
+    created_by: Optional[str] = None,
+    include_banned: bool = False,
+) -> dict[str, Any]:
+    if max_age is not None:
+        updated_since = (datetime.now(UTC) - timedelta(days=max_age)).isoformat()
+
+    tag_mode = (tags_mode or "or").lower()
+    if tag_mode not in {"or", "and"}:
+        raise HTTPException(status_code=400, detail="tags_mode must be 'or' or 'and'")
+
+    if _normalize_list(sources):
+        raise HTTPException(
+            status_code=400,
+            detail="Use repeated 'source' parameters; 'sources' is not supported",
+        )
+    if _normalize_list(types):
+        raise HTTPException(
+            status_code=400,
+            detail="Use repeated 'type' parameters; 'types' is not supported",
+        )
+
+    source_values = set(_normalize_list(source))
+    source_values = set(_canonicalize_sources(db, list(source_values)))
+    type_values = set(_normalize_list(type))
+    tag_values = _normalize_list(tags)
+
+    if include_banned:
+        if not current_user or current_user.get("role") not in {"admin", "moderator"}:
+            raise HTTPException(status_code=403, detail="Moderator or admin role required to view banned products")
+
+    return {
+        "source_values": source_values,
+        "type_values": type_values,
+        "tag_values": tag_values,
+        "tag_mode": tag_mode,
+        "min_rating": min_rating,
+        "updated_since": updated_since,
+        "search": search,
+        "created_by": created_by,
+        "include_banned": include_banned,
+    }
+
+
+def _apply_product_filters(query, db, filters: dict[str, Any]):
+    source_values = filters["source_values"]
+    type_values = filters["type_values"]
+    tag_values = filters["tag_values"]
+
+    if source_values:
+        query = query.in_("source", list(source_values))
+
+    if type_values:
+        query = query.in_("type", list(type_values))
+
+    if tag_values:
+        product_ids_with_tags = get_product_ids_for_tags(db, tag_values, filters["tag_mode"])
+        if not product_ids_with_tags:
+            return None
+        query = query.in_("id", list(product_ids_with_tags))
+
+    if filters["search"]:
+        query = query.ilike("name", f"%{filters['search']}%")
+
+    if filters["created_by"]:
+        query = query.eq("created_by", filters["created_by"])
+
+    if not filters["include_banned"]:
+        query = query.eq("banned", False)
+
+    if filters["updated_since"] is not None:
+        query = query.gte("source_last_updated", filters["updated_since"])
+
+    if filters["min_rating"] is not None:
+        query = query.gte("computed_rating", filters["min_rating"])
+
+    return query
+
+
+def _fetch_filtered_product_ids(db, filters: dict[str, Any]) -> list[str]:
+    query = _apply_product_filters(db.table("products").select("id"), db, filters)
+    if query is None:
+        return []
+
+    if getattr(db, "backend", None) != "supabase":
+        resp = query.execute()
+        return [row["id"] for row in (resp.data or []) if row.get("id")]
+
+    ids: list[str] = []
+    page_size = 500
+    offset = 0
+    while True:
+        resp = query.range(offset, offset + page_size - 1).execute()
+        rows = resp.data or []
+        if not rows:
+            break
+        ids.extend([row["id"] for row in rows if row.get("id")])
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return ids
+
+
+def _without_min_rating(filters: dict[str, Any]) -> dict[str, Any]:
+    base_filters = dict(filters)
+    base_filters["min_rating"] = None
+    return base_filters
 
 
 @router.get("/sources")
@@ -627,54 +766,26 @@ async def get_products(
     Returns denormalized response with editor_ids and tags attached to each product.
     Query supports filtering by source platform, type, text search, and creator.
     """
-    # Convert max_age to updated_since
-    if max_age is not None:
-        updated_since = (datetime.now(UTC) - timedelta(days=max_age)).isoformat()
-    
-    tag_mode = (tags_mode or "or").lower()
-    if tag_mode not in {"or", "and"}:
-        raise HTTPException(status_code=400, detail="tags_mode must be 'or' or 'and'")
+    filters = _prepare_product_filters(
+        db,
+        current_user,
+        source=source,
+        sources=sources,
+        type=type,
+        types=types,
+        tags=tags,
+        tags_mode=tags_mode,
+        min_rating=min_rating,
+        updated_since=updated_since,
+        max_age=max_age,
+        search=search,
+        created_by=created_by,
+        include_banned=include_banned,
+    )
 
-    query = db.table("products").select("*")
-
-    source_values = set(_normalize_list(source) + _normalize_list(sources))
-    source_values = set(_canonicalize_sources(db, list(source_values)))
-    type_values = set(_normalize_list(type) + _normalize_list(types))
-    tag_values = _normalize_list(tags)
-
-    if source_values:
-        query = query.in_("source", list(source_values))
-    
-    if type_values:
-        query = query.in_("type", list(type_values))
-
-    if tag_values:
-        product_ids_with_tags = get_product_ids_for_tags(db, tag_values, tag_mode)
-        if not product_ids_with_tags:
-            return []
-        query = query.in_("id", list(product_ids_with_tags))
-    
-    if search:
-        # Use ILIKE for search - trigram index should make this efficient
-        query = query.ilike("name", f"%{search}%")
-    
-    if created_by:
-        query = query.eq("created_by", created_by)
-    
-    if include_banned:
-        if not current_user or current_user.get("role") not in {"admin", "moderator"}:
-            raise HTTPException(status_code=403, detail="Moderator or admin role required to view banned products")
-    else:
-        # Filter banned products in SQL rather than Python for better performance
-        query = query.eq("banned", False)
-    
-    # Filter by source update date (show products updated at source since this date)
-    if updated_since is not None:
-        query = query.gte("source_last_updated", updated_since)
-
-    # Filter by minimum rating using computed_rating column
-    if min_rating is not None:
-        query = query.gte("computed_rating", min_rating)
+    query = _apply_product_filters(db.table("products").select("*"), db, filters)
+    if query is None:
+        return []
 
     # Apply ordering based on sort_by parameter
     # Now all sorting happens in SQL thanks to computed_rating column
@@ -791,96 +902,41 @@ async def count_products(
     Returns {count: int} to help frontend paginate through all matching products.
     Applies same filters as /api/products but returns only the count.
     """
-    # Convert max_age to updated_since
-    if max_age is not None:
-        updated_since = (datetime.now(UTC) - timedelta(days=max_age)).isoformat()
-    
-    tag_mode = (tags_mode or "or").lower()
-    if tag_mode not in {"or", "and"}:
-        raise HTTPException(status_code=400, detail="tags_mode must be 'or' or 'and'")
+    filters = _prepare_product_filters(
+        db,
+        current_user,
+        source=source,
+        sources=sources,
+        type=type,
+        types=types,
+        tags=tags,
+        tags_mode=tags_mode,
+        min_rating=min_rating,
+        updated_since=updated_since,
+        max_age=max_age,
+        search=search,
+        created_by=created_by,
+        include_banned=include_banned,
+    )
 
-    base_query = db.table("products")
-
-    source_values = set(_normalize_list(source) + _normalize_list(sources))
-    source_values = set(_canonicalize_sources(db, list(source_values)))
-    type_values = set(_normalize_list(type) + _normalize_list(types))
-    tag_values = _normalize_list(tags)
-
-    # Precompute tag filter once for reuse
-    product_ids_with_tags: Optional[set[str]] = None
-    if tag_values:
-        product_ids_with_tags = get_product_ids_for_tags(db, tag_values, tag_mode)
-        if not product_ids_with_tags:
+    total = None
+    try:
+        count_query = _apply_product_filters(db.table("products").select("id", count="exact"), db, filters)
+        if count_query is None:
             return {"count": 0}
+        count_resp = count_query.execute()
+        if getattr(count_resp, "count", None) is not None:
+            total = count_resp.count
+        else:
+            total = len(count_resp.data or [])
+    except TypeError:
+        count_query = _apply_product_filters(db.table("products").select("id"), db, filters)
+        if count_query is None:
+            return {"count": 0}
+        count_resp = count_query.execute()
+        total = len(count_resp.data or [])
 
-    # Build main query used when min_rating is provided (needs rows for rating calc)
-    query = base_query.select("id,banned,source_rating")
-    if source_values:
-        query = query.in_("source", list(source_values))
-    if type_values:
-        query = query.in_("type", list(type_values))
-    if product_ids_with_tags is not None:
-        query = query.in_("id", list(product_ids_with_tags))
-    if search:
-        query = query.ilike("name", f"%{search}%")
-    if created_by:
-        query = query.eq("created_by", created_by)
-
-    if include_banned:
-        if not current_user or current_user.get("role") not in {"admin", "moderator"}:
-            raise HTTPException(status_code=403, detail="Moderator or admin role required to view banned products")
-    else:
-        # Filter banned products in SQL for better performance
-        query = query.eq("banned", False)
-    
-    # Filter by source update date (show products updated at source since this date)
-    if updated_since is not None:
-        query = query.gte("source_last_updated", updated_since)
-
-    # For min_rating is None, request an exact count to avoid the 1000-row PostgREST cap.
-    if min_rating is None:
-        total = None
-        try:
-            # Request exact count from PostgREST. Do NOT use distinct=True with count="exact"
-            # as PostgREST doesn't combine them properly.
-            count_query = base_query.select("id", count="exact")
-            if source_values:
-                count_query = count_query.in_("source", list(source_values))
-            if type_values:
-                count_query = count_query.in_("type", list(type_values))
-            if product_ids_with_tags is not None:
-                count_query = count_query.in_("id", list(product_ids_with_tags))
-            if search:
-                count_query = count_query.ilike("name", f"%{search}%")
-            if created_by:
-                count_query = count_query.eq("created_by", created_by)
-            if not include_banned:
-                count_query = count_query.eq("banned", False)
-            if updated_since is not None:
-                count_query = count_query.gte("source_last_updated", updated_since)
-
-            count_resp = count_query.execute()
-            if getattr(count_resp, "count", None) is not None:
-                total = count_resp.count
-            else:
-                total = len(count_resp.data or [])
-        except TypeError:
-            # SQLite adapter does not support count parameter; fall back to length of fetched rows.
-            response = query.execute()
-            products = response.data or []
-            # banned already filtered in SQL via query.eq("banned", False) above
-            total = len(products)
-
-        return {"count": total}
-
-    response = query.execute()
-    products = response.data or []
-    # banned already filtered in SQL via query.eq("banned", False) above
-
-    ratings_map = build_display_rating_map(db, products)
-    products = [p for p in products if rating_meets_threshold(p, ratings_map, min_rating)]
-    
-    return {"count": len(products)}
+    return {"count": total}
 
 
 @router.get("/exists")
@@ -1475,7 +1531,18 @@ async def delete_product(
 
 @router.post("/bulk-delete", status_code=200)
 async def bulk_delete_products(
-    source: Optional[str] = Query(None, description="Delete all products from this source"),
+    source: Optional[list[str]] = Query(None, alias="source", description="Comma-separated or repeated source values"),
+    sources: Optional[list[str]] = Query(None, description="Comma-separated or repeated source values"),
+    type: Optional[list[str]] = Query(None, alias="type", description="Comma-separated or repeated type values"),
+    types: Optional[list[str]] = Query(None, description="Comma-separated or repeated type values"),
+    tags: Optional[list[str]] = Query(None, alias="tags", description="Filter products that have any of these tag names"),
+    tags_mode: str = Query("or", pattern="^(?i)(or|and)$", description="Tag filter mode: or (default) or and"),
+    min_rating: Optional[float] = Query(None, ge=0, le=5, description="Minimum display rating (user or source)"),
+    updated_since: Optional[str] = Query(None, description="Filter products updated at source since this date (ISO format)"),
+    max_age: Optional[int] = Query(None, description="Filter products updated in the last N days"),
+    search: Optional[str] = None,
+    created_by: Optional[str] = None,
+    include_banned: bool = Query(False, description="Include banned products (admin/mod only)"),
     product_ids: Optional[list[str]] = Query(None, description="Specific product IDs to delete"),
     payload: Optional[BulkDeleteRequest] = Body(None, description="Optional JSON body mirroring query params"),
     current_user: dict = Depends(get_current_user),
@@ -1483,9 +1550,8 @@ async def bulk_delete_products(
 ):
     """Bulk delete products (admin only).
     
-    Can delete by:
-    - source: Delete all products from a specific source (e.g., 'Thingiverse')
-    - product_ids: Delete specific products by ID
+    Deletes the server-side search result set for the supplied filters.
+    Supports the same core filters as GET /api/products plus legacy product_ids.
     
     Returns count of deleted products.
     
@@ -1502,43 +1568,55 @@ async def bulk_delete_products(
         )
     
     # Accept values from query params or JSON body for flexibility with callers
-    payload_source = payload.source if payload else None
-    payload_product_ids = payload.product_ids if payload else None
+    normalized_product_ids = _normalize_list(product_ids) + _normalize_list(payload.product_ids if payload else None)
+    filters = _prepare_product_filters(
+        db,
+        current_user,
+        source=_normalize_list(source) + _normalize_list(payload.source if payload else None),
+        sources=_normalize_list(sources) + _normalize_list(payload.sources if payload else None),
+        type=_normalize_list(type) + _normalize_list(payload.type if payload else None),
+        types=_normalize_list(types) + _normalize_list(payload.types if payload else None),
+        tags=_normalize_list(tags) + _normalize_list(payload.tags if payload else None),
+        tags_mode=(
+            payload.tags_mode
+            if payload and "tags_mode" in payload.model_fields_set
+            else tags_mode
+        ),
+        min_rating=payload.min_rating if payload and payload.min_rating is not None else min_rating,
+        updated_since=payload.updated_since if payload and payload.updated_since is not None else updated_since,
+        max_age=payload.max_age if payload and payload.max_age is not None else max_age,
+        search=payload.search if payload and payload.search is not None else search,
+        created_by=payload.created_by if payload and payload.created_by is not None else created_by,
+        include_banned=(
+            payload.include_banned
+            if payload and "include_banned" in payload.model_fields_set
+            else include_banned
+        ),
+    )
 
-    source_value = source or payload_source
-    normalized_product_ids = _normalize_list(product_ids) or _normalize_list(payload_product_ids)
+    has_search_filters = any([
+        filters["source_values"],
+        filters["type_values"],
+        filters["tag_values"],
+        filters["search"],
+        filters["created_by"],
+        filters["updated_since"] is not None,
+        filters["min_rating"] is not None,
+    ])
 
-    if not source_value and not normalized_product_ids:
+    if not has_search_filters and not normalized_product_ids:
         raise HTTPException(
             status_code=400,
-            detail="Must provide either 'source' or 'product_ids' parameter (query or JSON body)"
+            detail="Must provide either search filters or 'product_ids' parameter (query or JSON body)"
         )
     
     try:
-        # Canonicalize provided source to match supported_sources capitalization
-        canonical_source = _canonicalize_source_value_db(db, source_value) if source_value else None
-
-        def _fetch_ids() -> list[str]:
-            # Paginate to avoid 206 partial responses and limits
-            ids: list[str] = []
-            page_size = 500
-            offset = 0
-            while True:
-                if canonical_source:
-                    q = db.supabase.table("products").select("id").eq("source", canonical_source)
-                else:
-                    q = db.supabase.table("products").select("id").in_("id", normalized_product_ids)
-                resp = q.range(offset, offset + page_size - 1).execute()
-                rows = resp.data or []
-                if not rows:
-                    break
-                ids.extend([row["id"] for row in rows if row.get("id")])
-                if len(rows) < page_size:
-                    break
-                offset += page_size
-            return ids
-
-        ids_to_delete = list(dict.fromkeys(_fetch_ids()))
+        ids_to_delete: list[str] = []
+        if has_search_filters:
+            ids_to_delete.extend(_fetch_filtered_product_ids(db, filters))
+        if normalized_product_ids:
+            ids_to_delete.extend(normalized_product_ids)
+        ids_to_delete = list(dict.fromkeys(ids_to_delete))
 
         if not ids_to_delete:
             return {"deleted_count": 0, "message": "No products found matching criteria"}
@@ -1575,7 +1653,7 @@ async def bulk_delete_products(
         return {
             "deleted_count": len(ids_to_delete),
             "message": f"Successfully deleted {len(ids_to_delete)} product(s)",
-            "source": canonical_source if canonical_source else None
+            "source": next(iter(filters["source_values"])) if len(filters["source_values"]) == 1 else None
         }
     except Exception as e:
         logger = logging.getLogger(__name__)

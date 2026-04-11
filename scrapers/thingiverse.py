@@ -3,6 +3,7 @@ Thingiverse scraper for accessibility and assistive devices
 Uses Thingiverse API with OAuth authentication
 """
 import httpx
+import math
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
 from .base_scraper import BaseScraper
@@ -375,18 +376,13 @@ class ThingiverseScraper(BaseScraper):
         except (TypeError, ValueError):
             makes = 0
 
-        # Map makes -> 1-5 star rating (5*: >=1000, 4*: >=100, 3*: >=50, 2*: >=10, 1*: >=1)
-        rating = None
-        if makes >= 1000:
-            rating = 5.0
-        elif makes >= 100:
-            rating = 4.0
-        elif makes >= 50:
-            rating = 3.0
-        elif makes >= 10:
-            rating = 2.0
-        elif makes >= 1:
-            rating = 1.0
+        # Convert makes to a continuous 1–5 rating using a log10 scale.
+        # Formula: clamp(1 + log10(makes), 1.0, 5.0)
+        # Anchor points: 1→1.0, 10→2.0, 100→3.0, 1000→4.0, 10000→5.0.
+        if makes > 0:
+            rating = round(min(max(1.0 + math.log10(makes), 1.0), 5.0), 2)
+        else:
+            rating = None
         rating_count = makes if makes > 0 else None
         
         # Determine type based on thing properties (default to 3D Printed)
