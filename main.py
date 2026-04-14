@@ -214,7 +214,7 @@ if not any(isinstance(m, type) and issubclass(m, type) and
     logger.info(f"CORS origins at startup: {cors_origins}")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins + ["https://localhost:5173", "https://127.0.0.1:5173"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allow_headers=["*"],

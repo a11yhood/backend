@@ -9,8 +9,8 @@ Read this first when operating on the repo. It summarizes conventions, helper ut
 - Default to snake_case
 
 ## Environment Modes (read before running anything)
-- **Dev/Test (Supabase test instance + seeds):** `pixi run dev-seed` loads `.env.test`, connects to the `a11yhood-test` Supabase project, and seeds data via `seed_scripts/seed_all.py`. Safe for local work and scrapers; no real OAuth (uses dev tokens).
-- **Production (live Supabase):** `pixi run prod` loads `.env`, connects to the production Supabase backend, no seeding. Use for local QA against real data.
+- **Dev/Test (Supabase test instance + seeds):** `./start-dev.sh --seed` loads `.env.test`, connects to the `a11yhood-test` Supabase project, and seeds data via `seed_scripts/seed_all.py`. Safe for local work and scrapers; no real OAuth (uses dev tokens).
+- **Production (live Supabase):** `./start-prod.sh` loads `.env`, connects to the production Supabase backend, no seeding. Use for local QA against real data.
 - **Deploy (external server):** Runs the same production settings on the external host; use Supabase service role keys and real OAuth. Do not seed here.
 
 ## Git Workflow
@@ -75,7 +75,7 @@ naive_timestamp = datetime.now(UTC).replace(tzinfo=None)
 - Add negative-path tests when changing contracts (invalid token, wrong role, bad payload) to keep security behavior stable.
 
 ## Helper Functions & Patterns
-- **Server tasks**: use `pixi run dev-seed` (Supabase test project + seeds) or `pixi run prod` (production Supabase). On the external host, use the deploy flow with production env vars. Prefer these over manual uvicorn/npm commands unless debugging.
+- **Server start scripts**: use `./start-dev.sh --seed` (Supabase test project + seeds) or `./start-prod.sh` (production Supabase). On the external host, use the deploy flow with production env vars. Prefer these over manual uvicorn/npm commands unless debugging.
 - **Database access**: backend code should go through `database_adapter.py` / services (not direct SDK calls) so test and production Supabase flows stay consistent.
 - **Scrapers**: backend handles scraper services/routes; 
 
@@ -104,12 +104,10 @@ naive_timestamp = datetime.now(UTC).replace(tzinfo=None)
 - [CODE_STANDARDS.md](CODE_STANDARDS.md) — style guidance.
 
 ## Quick Commands
-- Full stack start (test env): `pixi run dev`
-- Full stack start + seed (test env): `pixi run dev-seed`
-- Full stack stop (test env): `pixi run dev-stop`
-- Production start: `pixi run prod`
-- Production stop: `pixi run prod-stop`
-- Backend tests: `pixi run test`
+- Full stack start: `./start-dev.sh`
+- Full stack stop: `./stop-dev.sh`
+- Backend tests (prefer script): `./run-tests.sh backend`
+- Frontend tests (require backend running, e.g., `./start-dev.sh`): `./run-tests.sh frontend`
 
 ## Terminal Usage Best Practices
 **IMPORTANT: Reuse terminal sessions to avoid spawning excessive zsh processes.**
@@ -135,7 +133,7 @@ cd /path/to/project && command1 && command2 && command3
 For long-running processes (servers):
 - Use `isBackground=true` parameter
 - Check process status before starting another instance
-- Use `pixi run dev` and `pixi run dev-stop` instead of manual server commands
+- Use `./start-dev.sh` and `./stop-dev.sh` scripts instead of manual server commands
 
 ## Anti-Patterns to Avoid
 - **Using mocks in tests**: Tests should use real API calls to the backend, not mocked responses.

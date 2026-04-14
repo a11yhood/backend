@@ -345,7 +345,7 @@ CORS_EXTRA_ORIGINS=https://your-frontend-domain.com
 
 Then restart:
 ```bash
-pixi run prod-stop && pixi run prod
+./scripts/stop-prod.sh && ./scripts/start-prod.sh
 ```
 
 ## Updating Deployment
@@ -358,7 +358,7 @@ pixi run prod-stop && pixi run prod
 # 3. On server:
 docker pull ghcr.io/a11yhood/a11yhood-backend:latest
 docker tag ghcr.io/a11yhood/a11yhood-backend:latest a11yhood-backend:latest
-pixi run prod-stop && pixi run prod
+./scripts/stop-prod.sh && ./scripts/start-prod.sh
 ```
 
 ### Configuration Changes
@@ -368,7 +368,7 @@ pixi run prod-stop && pixi run prod
 nano .env
 
 # Restart to pick up changes
-pixi run prod-stop && pixi run prod
+./scripts/stop-prod.sh && ./scripts/start-prod.sh
 ```
 
 ### Dependencies

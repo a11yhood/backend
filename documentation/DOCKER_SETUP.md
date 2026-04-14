@@ -25,7 +25,7 @@ The development server:
 Stop the development server:
 
 ```bash
-pixi run dev-stop
+./scripts/stop-dev.sh
 ```
 
 Reset the development database:
@@ -51,7 +51,7 @@ The production server:
 Stop the production server:
 
 ```bash
-pixi run prod-stop
+./scripts/stop-prod.sh
 ```
 
 Skip the build if you already have the image:

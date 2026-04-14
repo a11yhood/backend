@@ -52,9 +52,12 @@ frontend.log
 *.key
 *.crt
 
-# Scripts (shell wrappers for Docker, not needed in image)
+# Scripts (use Docker commands instead)
 start-dev.sh
 start-prod.sh
+stop-dev.sh
+stop-prod.sh
+run-tests.sh
 
 # Dependencies lock (handled by uv)
 # Keep uv.lock as it's needed for reproducible builds

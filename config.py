@@ -54,12 +54,7 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: Optional[str] = None
     
 
-    def model_post_init(self, ctx):
-        # Only derive TEST_MODE from ENVIRONMENT when it was not explicitly set
-        if "TEST_MODE" not in self.__pydantic_fields_set__:
-            self.TEST_MODE = self.ENVIRONMENT == "development"
-    
-    
+
 @lru_cache()
 def get_settings(env_file: str = ".env") -> Settings:
     """Get cached settings instance.

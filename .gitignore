@@ -65,13 +65,10 @@ dist/
 build/
 *.egg-info/
 *.tar
-supabase/
+
 
 # Misc
 .devcontainer/
 
 # Local helper scripts (not tracked)
 deploy-prod-image.sh
-# pixi environments
-.pixi/*
-!.pixi/config.toml

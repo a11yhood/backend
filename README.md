@@ -91,30 +91,29 @@ a11yhood-backend/
 
 ### Starting the Server
 
-#### Option 1: Using Pixi Tasks (Recommended)
+#### Option 1: Using Scripts (Recommended)
 
 ```bash
-# Start development server against test Supabase (.env.test)
-# The API will be available at http://localhost:8002/api
+# Start development server
+# The API will be available at `https://localhost:8000/api`
 
-pixi run dev
+./scripts/start-dev.sh
 
 # Start with database reset
-pixi run dev-reset
-
-# Start with seed data
-pixi run dev-seed
+./scripts/start-dev.sh --reset-db
 
 # Start production server
-# The API will be available at http://localhost:8001/api
+# The API will be available at `https://localhost:8001/api`
 
-pixi run prod
+./scripts/start-prod.sh
+
+# Start production server using the compiled docker image on github
+# The API will be available for external use
+
+./scripts/start-prod.sh --no-build
 
 # Stop the server
-pixi run dev-stop
-
-# Stop production server
-pixi run prod-stop
+./scripts/stop-dev.sh
 ```
 
 #### Option 2: Manual Python Setup
@@ -212,20 +211,23 @@ For a complete index of all documentation, see [documentation/README.md](documen
 
 ## Testing
 
-Run the test suite using pixi:
+Run the test suite using the provided script:
 
 ```bash
 # Run all tests
-pixi run test
+./scripts/run-tests.sh
 
-# Run with additional pytest flags
-pixi run test -- -v
+# Run with verbose output
+./scripts/run-tests.sh -v
 
 # Run specific test
-pixi run test -- -k test_name
+./scripts/run-tests.sh -k test_name
 
 # Run with coverage report
-pixi run test -- --cov
+./scripts/run-tests.sh --cov
+
+# Show help
+./scripts/run-tests.sh --help
 ```
 
 Key test commands are documented in [documentation/QUICK_TEST_GUIDE.md](documentation/QUICK_TEST_GUIDE.md).
@@ -270,10 +272,10 @@ Scrapers run on a schedule and can be manually triggered. See [documentation/AGE
 
 ### Setting Up Development Environment
 
-For most development tasks, pixi handles setup automatically. If you need to install dependencies manually:
+For most development tasks, the provided scripts handle setup automatically. If you need to install dependencies manually:
 
 ```bash
-# Create virtual environment (if not using pixi)
+# Create virtual environment (if not using scripts)
 python3 -m venv .venv
 source .venv/bin/activate
 
@@ -290,7 +292,7 @@ git config core.hooksPath .git/hooks
 The development server automatically reloads on code changes:
 
 ```bash
-pixi run dev
+./scripts/start-dev.sh
 ```
 
 ### Database Management
@@ -301,10 +303,6 @@ python seed_scripts/seed_all.py
 
 # Apply migrations
 ./scripts/apply-migrations.sh --env-file .env.test
-
-# Optional: local Postgres for SQL migration validation 
-./scripts/start-local-postgres.sh
-SUPABASE_DB_URL=postgresql://postgres:postgres@localhost:5433/a11yhood ./scripts/apply-migrations.sh
 ```
 
 ### Making Changes

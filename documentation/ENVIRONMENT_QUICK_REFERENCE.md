@@ -6,16 +6,16 @@ This guide helps you quickly switch between test and production environments.
 
 | Command | Environment | Database | OAuth | Purpose |
 |---------|------------|----------|-------|---------|
-| `pixi run dev` | Test | Supabase (test) | Mock | Development & testing |
-| `pixi run prod` | Production | Supabase (production) | Real | Production validation (local) |
-| `pixi run test` | Test | Supabase (test) | Mock | Run automated tests |
+| `./start-dev.sh` | Test | Supabase (test) | Mock | Development & testing |
+| `./start-prod.sh` | Production | Supabase (production) | Real | Production validation (local) |
+| `./run-tests.sh` | Test | Supabase (test) | Mock | Run automated tests |
 
 ## Test Environment (Development)
 
 **Use when**: Developing features, running tests, making database changes
 
-**Start**: `pixi run dev`  
-**Stop**: `pixi run dev-stop`
+**Start**: `./start-dev.sh`  
+**Stop**: `./stop-dev.sh`
 
 **Configuration**:
 - Backend: `.env.test`
@@ -35,8 +35,8 @@ This guide helps you quickly switch between test and production environments.
 
 **Use when**: Testing against real Supabase, validating before cloud deployment
 
-**Start**: `pixi run prod`  
-**Stop**: `pixi run prod-stop`
+**Start**: `./start-prod.sh`  
+**Stop**: `./stop-prod.sh`
 
 **Configuration**:
 - Backend: `.env`
@@ -70,7 +70,7 @@ This guide helps you quickly switch between test and production environments.
 - [ ] Generate new SECRET_KEY for production
 - [ ] Set up GitHub OAuth app (production)
 - [ ] Apply `supabase-schema.sql` to Supabase database
-- [ ] Run `pixi run prod` to test
+- [ ] Run `./start-prod.sh` to test
 
 See [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) for detailed instructions.
 
@@ -79,24 +79,24 @@ See [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) for detailed instructions.
 ### Reset Test Database
 
 ```bash
-pixi run dev-reset
+./start-dev.sh --reset-db
 ```
 
 ### Run Tests
 
 ```bash
 # tests (don't need servers running)
-pixi run test
+./run-tests.sh 
 ```
 
 ### Switch from Test to Production
 
 ```bash
 # Stop test environment
-pixi run dev-stop
+./stop-dev.sh
 
 # Start production environment
-pixi run prod
+./start-prod.sh
 ```
 
 ### View Logs
@@ -111,12 +111,11 @@ tail -f backend.log
 
 ```bash
 # Check if backend is running
-curl http://localhost:8002/health
+curl http://localhost:8000/health
 
 
 # See what's listening on ports
-lsof -i :8002    # Dev backend
-lsof -i :8001    # Prod backend
+lsof -i :8000    # Backend
 
 ```
 
@@ -183,11 +182,11 @@ kill $(lsof -t -i:8000)  # Backend
 ls -la .env*
 
 # Check if port is already in use
-lsof -i :8002
+lsof -i :8000
 
 # Kill existing backend and try again
 pkill -f uvicorn
-pixi run dev  # or pixi run prod
+./start-dev.sh  # or ./start-prod.sh
 ```
 
 ### "OAuth not working"
@@ -239,10 +238,10 @@ uv run pytest tests/test_products.py -v
 ./start-prod.sh
 
 # Stop any environment
-pixi run dev-stop   # or pixi run prod-stop
+./stop-dev.sh   # or ./stop-prod.sh
 
 # Run all backend tests
-pixi run test
+./run-tests.sh backend
 
 # Run specific test file
 cd backend && uv run pytest tests/test_products.py
@@ -285,7 +284,7 @@ ps aux | grep -E "uvicorn|vite"
 
 1. **If you're developing**: Use test environment (`./start-dev.sh`)
 2. **If you're ready to deploy**: Follow [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md)
-3. **If you're testing**: Run `pixi run test`
+3. **If you're testing**: Run `./run-tests.sh  `
 4. **If something breaks**: Check logs (`tail -f *.log`) and try `./start-dev.sh --reset-db`
 
 ## Related Documentation
