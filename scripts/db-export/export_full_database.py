@@ -432,7 +432,7 @@ def _export_public_mode(db) -> tuple[list[str], list[str]]:
 
 
 def _mode_defaults(mode: str) -> tuple[str, str]:
-    if mode == "public" 
+    if mode == "public":
         return ".env", "supabase/public-products.sql"
     if mode == "private":
         return ".env", "supabase/full-database.sql"
