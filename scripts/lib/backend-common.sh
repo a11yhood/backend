@@ -285,6 +285,13 @@ run_prod_container() {
   if [ "$use_https" = "true" ]; then
     scheme="https"
   fi
+
+  local health_cmd
+  if [ "$use_https" = "true" ]; then
+    health_cmd="python -c 'import urllib.request, ssl; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; urllib.request.urlopen(\"https://localhost:8000/health\", context=ctx, timeout=2)'"
+  else
+    health_cmd="python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\", timeout=2)'"
+  fi
   
   log_action "Starting production container..."
   echo "   Server will be available at: ${scheme}://localhost:${port}"
@@ -305,7 +312,7 @@ run_prod_container() {
     --env-file "$env_file" \
     -p "${port}:8000" \
     --restart unless-stopped \
-    --health-cmd="python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\", timeout=2)'" \
+    --health-cmd="$health_cmd" \
     --health-interval=30s \
     --health-timeout=3s \
     --health-retries=3 \

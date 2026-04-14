@@ -81,6 +81,7 @@ ORDER_COLUMNS: dict[str, list[str]] = {
     "discussions": ["id"],
     "blog_posts": ["id"],
     "collections": ["id"],
+    "collection_products": ["collection_id", "product_id"],
     "user_activities": ["id"],
     "tags": ["id"],
     "product_tags": ["id"],

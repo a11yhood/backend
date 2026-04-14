@@ -41,13 +41,15 @@ python scripts/db-export/export_full_database.py --mode public --output supabase
 ---
 
 ### 2. `export_full_database.py --mode private`
-Full database dump using Supabase CLI (includes everything).
+Full database dump including all tables and all data.
 
-**Includes:** All tables, all columns, all data
+**Includes:** All tables, all columns, all data — including:
+- `users` (emails, profiles)
+- `oauth_configs` (authentication configs)
+- `scraping_logs` (internal scraper logs)
+- All product, rating, and collection data
 
-**Excludes:** Only specified sensitive tables (*schema kept, no data*):
-- `oauth_configs` (schema only - test values excluded)
-- `scraping_logs` (schema only - internal logs excluded)
+**Excludes:** Nothing — this is a complete backup intended for authorized team use only.
 
 **Usage:**
 ```bash
