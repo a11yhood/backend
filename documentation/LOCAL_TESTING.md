@@ -5,13 +5,49 @@ Run commands from the repo root unless noted otherwise.
 
 ## Prerequisites
 
+- **Node.js 18+**: Frontend development
 - **Python 3.9+**: Backend development
 - **uv**: Python package manager (`pip install uv`)
+- **Pixi**: Environment and task runner for backend (`pixi run dev`)
+- **npm**: Node package manager
 - **Supabase test project**: Credentials for the `a11yhood-test` database in the `make4all-test` org
+
+### Install Pixi (macOS)
+
+Visit https://pixi.prefix.dev for more information.
+
+Choose one option:
+
+```bash
+# Homebrew
+brew install pixi
+```
+
+```bash
+# Official installer
+curl -fsSL https://pixi.sh/install.sh | bash
+```
+
+Verify installation:
+
+```bash
+pixi --version
+```
 
 ## Quick Start
 
-### Configure test environment
+### Start Backend with Pixi (recommended)
+
+```bash
+# Run backend in Docker with test Supabase credentials (.env.test)
+pixi run dev
+```
+
+The `dev` task starts the Docker development server via `scripts/start-dev.sh`, loads `.env.test`, connects to the test Supabase project, and exposes the API on port `8002` by default.
+
+The container runs in the background, so `Ctrl+C` will not stop it. Stop the server with `pixi run dev-stop` (or `docker stop a11yhood-backend-dev`).
+
+### Configure Supabase test environment
 
 Copy the example file and fill in your test Supabase credentials:
 

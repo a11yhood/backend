@@ -22,7 +22,7 @@ cp .env.test.example .env.test  # if missing
 
 Start Dev/Test
 ```bash
-./start-dev.sh --seed
+pixi run dev-seed
 ```
 
 What happens
@@ -33,13 +33,13 @@ What happens
 
 Running tests
 ```bash
-./run-tests.sh
+pixi run test
 ```
 Tests always set `ENV_FILE=.env.test` and run against the Supabase test project.
 
 Stop
 ```bash
-./stop-dev.sh
+pixi run dev-stop
 ```
 
 ## Production (Local with Supabase)
@@ -52,7 +52,7 @@ Fill `.env` with Supabase and OAuth secrets. See [DEPLOYMENT_PLAN.md](documentat
 
 Start Production
 ```bash
-./start-prod.sh
+pixi run prod
 ```
 Uses `ENV_FILE=.env`, connects to Supabase, and does not seed.
 
@@ -64,7 +64,7 @@ curl http://localhost:8000/api/sources/supported
 
 Stop
 ```bash
-./stop-prod.sh
+pixi run prod-stop
 ```
 
 ## Deploy (External Host with Supabase)
@@ -77,21 +77,21 @@ Stop
 
 Dev/Test → Production
 ```bash
-./stop-dev.sh
-./start-prod.sh
+pixi run dev-stop
+pixi run prod
 ```
 
 Production → Dev/Test
 ```bash
-./stop-prod.sh
-./start-dev.sh --seed
+pixi run prod-stop
+pixi run dev-seed
 ```
 
 ## Safety Checks
 
 - Confirm the active env: `echo $ENV_FILE` (`.env.test` for Dev/Test, `.env` for Production/Deploy).
 - Confirm test mode intent: `.env.test` should use `TEST_MODE=true`.
-- If seeding fails in Dev/Test, rerun `./start-dev.sh --seed` after ensuring `.env.test` exists.
+- If seeding fails in Dev/Test, rerun `pixi run dev-seed` after ensuring `.env.test` exists.
 
 ## Related Documentation
 

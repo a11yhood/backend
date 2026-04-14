@@ -28,7 +28,7 @@ Start with fresh test data:
 Stop development backend:
 
 ```bash
-./scripts/stop-dev.sh
+pixi run dev-stop
 ```
 
 ## Production Mode (Local Validation)
@@ -42,7 +42,7 @@ Start production backend using `.env`:
 Stop production backend:
 
 ```bash
-./scripts/stop-prod.sh
+pixi run prod-stop
 ```
 
 ## Build Images Manually (Optional)

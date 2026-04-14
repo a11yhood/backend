@@ -156,7 +156,7 @@ Stage 1 is complete when:
 
 ### Before Each Deployment
 
-1. Run test suite: `./run-tests.sh`
+1. Run test suite: `pixi run test`
 2. Test in local production: `./start-prod.sh`
 3. Verify all features work
 4. Check Supabase logs for errors

@@ -768,7 +768,7 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
 
 def test_product_exists_endpoint_returns_false_for_new_url(client):
     """Test that /exists endpoint returns false for non-existent product"""
-    response = client.get("/api/products/exists?url=https://example.com/never-submitted")
+    response = client.get("/api/products/exists?source_url=https://example.com/never-submitted")
     assert response.status_code == 200
     data = response.json()
     assert data["exists"] is False
@@ -777,7 +777,7 @@ def test_product_exists_endpoint_returns_false_for_new_url(client):
 
 def test_product_exists_endpoint_returns_product(client, test_product):
     """Test that /exists endpoint returns existing product"""
-    response = client.get(f"/api/products/exists?url={test_product['url']}")
+    response = client.get(f"/api/products/exists?source_url={test_product['url']}")
     assert response.status_code == 200
     data = response.json()
     assert data["exists"] is True
@@ -787,7 +787,7 @@ def test_product_exists_endpoint_returns_product(client, test_product):
 
 def test_product_exists_includes_necessary_fields(client, test_product):
     """Test that /exists endpoint returns all fields needed for UI decision"""
-    response = client.get(f"/api/products/exists?url={test_product['url']}")
+    response = client.get(f"/api/products/exists?source_url={test_product['url']}")
     assert response.status_code == 200
     data = response.json()
     
@@ -796,7 +796,7 @@ def test_product_exists_includes_necessary_fields(client, test_product):
     assert "id" in product
     assert "name" in product
     assert "description" in product
-    assert "source" in product or "source_url" in product
+    assert "source_url" in product
 
 
 def test_create_product_by_new_user_adds_ownership(auth_client, test_user):

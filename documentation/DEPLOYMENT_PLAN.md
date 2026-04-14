@@ -99,13 +99,13 @@ VITE_ENV=production
 ./start-prod.sh
 ```
 
-#### `stop-prod.sh` - Stop Local Production Environment
+#### `prod-stop` - Stop Local Production Environment
 
 **Purpose**: Cleanly shutdown production servers
 
 **Usage**:
 ```bash
-./stop-prod.sh
+pixi run prod-stop
 ```
 
 ### Migration Steps
@@ -275,13 +275,13 @@ The application supports running in both test (Supabase test project) and produc
 **Test Environment** (development, CI/CD):
 ```bash
 ./start-dev.sh   # Uses .env.test, Supabase test project, seeded data
-./run-tests.sh   # Runs all tests against Supabase test project
+pixi run test   # Runs all tests against Supabase test project
 ```
 
 **Production Environment** (local with production DB):
 ```bash
-./start-prod.sh  # Uses .env, Supabase, real OAuth
-./stop-prod.sh   # Clean shutdown
+pixi run prod     # Uses .env, Supabase, real OAuth
+pixi run prod-stop  # Clean shutdown
 ```
 
 **Key Differences**:
@@ -407,7 +407,7 @@ If issues arise in production:
 
 ```bash
 # Stop production servers
-./stop-prod.sh
+pixi run prod-stop
 
 # Restart test environment
 ./start-dev.sh
