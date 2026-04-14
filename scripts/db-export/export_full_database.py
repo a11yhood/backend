@@ -235,8 +235,8 @@ def _export_table_data(db, table_name: str) -> list[str]:
         return lines
 
     except Exception as e:
-        logger.debug(f"Error exporting {table_name}: {e}")
-        return []
+        logger.warning(f"Failed to export {table_name}: {e}")
+        return [f"\n-- Failed to export {table_name}: {e}"]
 
 
 def _export_table_data_public(db, table_name: str) -> list[str]:
