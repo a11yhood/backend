@@ -45,7 +45,7 @@ pixi run dev
 
 The `dev` task starts the Docker development server via `scripts/start-dev.sh`, loads `.env.test`, connects to the test Supabase project, and exposes the API on port `8002` by default.
 
-Stop the server with `Ctrl+C`.
+The container runs in the background, so `Ctrl+C` will not stop it. Stop the server with `pixi run dev-stop` (or `docker stop a11yhood-backend-dev`).
 
 ### Configure Supabase test environment
 

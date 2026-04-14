@@ -81,7 +81,7 @@ Examples:
   ./start-dev.sh --reset-db --seed  # Reset and seed
 
 Environment:
-  .env.test   - Development environment config (auto-detected, not required)
+  .env.test   - Development environment config (required if using this script)
 
 See documentation/PIXI_TASKS.md for pixi commands that wrap this script.
 EOF

@@ -26,7 +26,7 @@ cmd = "./scripts/start-dev.sh --seed --port 8002"
 
 [tasks.dev-reset]
 description = "Start dev backend in Docker and reset Supabase test data"
-cmd = "./scripts/start-dev.sh --reset-db --port 8002"
+cmd = "./scripts/start-dev.sh --reset-db --seed --port 8002"
 
 [tasks.dev-stop]
 description = "Stop dev backend Docker container"
