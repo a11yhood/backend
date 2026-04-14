@@ -86,6 +86,38 @@ PUBLIC_PRODUCT_URL_COLUMNS = [
     "updated_at",
 ]
 
+TEST_TABLE_COLUMNS: dict[str, list[str]] = {
+    "products": [
+        "id",
+        "slug",
+        "name",
+        "type",
+        "source",
+        "url",
+        "external_id",
+        "external_data",
+        "description",
+        "image",
+        "image_alt",
+        "source_rating",
+        "source_rating_count",
+        "source_last_updated",
+        "scraped_at",
+        "created_by",
+        "banned",
+        "banned_at",
+        "banned_by",
+        "banned_reason",
+        "last_edited_at",
+        "last_edited_by",
+        "editor_ids",
+        "matched_search_terms",
+        "created_at",
+        "updated_at",
+        "computed_rating",
+    ],
+}
+
 # Supabase REST currently returns at most 1000 rows per request.
 API_PAGE_SIZE = 1000
 # Optional cap for sampling; None means export full tables.
@@ -208,12 +240,18 @@ def _fetch_all_rows(db, table_name: str, columns: str = "*") -> list[dict[str, A
     return rows
 
 
-def _export_table_data(db, table_name: str) -> list[str]:
+def _table_columns_for_mode(table_name: str, export_mode: str) -> str:
+    if export_mode == "test" and table_name in TEST_TABLE_COLUMNS:
+        return ",".join(TEST_TABLE_COLUMNS[table_name])
+    return "*"
+
+
+def _export_table_data(db, table_name: str, export_mode: str = "private") -> list[str]:
     """Export table as TRUNCATE + INSERT statements."""
     lines = []
 
     try:
-        data = _fetch_all_rows(db, table_name)
+        data = _fetch_all_rows(db, table_name, _table_columns_for_mode(table_name, export_mode))
 
         lines.append(f"\n-- {table_name} ({len(data)} rows)")
 
@@ -529,7 +567,7 @@ def main():
             for table_name in TABLES_TO_EXPORT:
                 try:
                     logger.info(f"  - {table_name}")
-                    table_sql = _export_table_data(db, table_name)
+                    table_sql = _export_table_data(db, table_name, export_mode=args.mode)
                     if table_sql:
                         sql_lines.extend(table_sql)
                         exported_tables.append(table_name)
@@ -544,7 +582,7 @@ def main():
             for table_name in TABLES_TO_EXPORT:
                 try:
                     logger.info(f"  - {table_name}")
-                    table_sql = _export_table_data(db, table_name)
+                    table_sql = _export_table_data(db, table_name, export_mode=args.mode)
                     if table_sql:
                         sql_lines.extend(table_sql)
                         exported_tables.append(table_name)

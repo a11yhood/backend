@@ -73,8 +73,12 @@ description = "Validate public and private exports: schema, privacy rules, and l
 cmd = "python scripts/db-export/validate_exports_schema.py"
 
 [tasks.verify-export-restore]
-description = "Verify exports can be restored into local Postgres"
+description = "Verify default exports, or pass a SQL filename to verify a specific export"
 cmd = "bash scripts/db-export/verify_restore_local.sh"
+
+[tasks.create-seed-sql]
+description = "Export test data to supabase/seed.sql and verify it restores cleanly"
+cmd = "python scripts/db-export/export_full_database.py --mode test --output supabase/seed.sql --include-seed-output && bash scripts/db-export/verify_restore_local.sh supabase/seed.sql"
 
 [tasks.lint-python]
 description = "Lint Python code with ruff"

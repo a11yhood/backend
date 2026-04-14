@@ -338,7 +338,7 @@ def test_product_exists_endpoint_for_new_url(client):
     - Endpoint returns exists=false
     """
     response = client.get(
-        "/api/products/exists?url=https://github.com/user/never-submitted-product"
+        "/api/products/exists?source_url=https://github.com/user/never-submitted-product"
     )
     
     assert response.status_code == 200
@@ -359,22 +359,23 @@ def test_product_exists_endpoint_for_existing_product(
     test_url = "https://github.com/test/existing-product"
     clean_database.table("products").insert({
         "id": str(uuid.uuid4()),
+        "slug": f"existing-accessible-product-{uuid.uuid4().hex[:8]}",
         "name": "Existing Accessible Product",
         "source": "github",
-        "category": "Software",
+        "type": "Software",
         "url": test_url,
         "description": "Product that exists",
         "created_by": test_user["id"],
     }).execute()
     
     # Check if it exists
-    response = client.get(f"/api/products/exists?url={test_url}")
+    response = client.get(f"/api/products/exists?source_url={test_url}")
     
     assert response.status_code == 200
     data = response.json()
     assert data["exists"] is True
     assert data["product"]["name"] == "Existing Accessible Product"
-    assert data["product"]["url"] == test_url
+    assert data["product"]["source_url"] == test_url
 
 
 def test_product_submission_new_product_workflow(
@@ -392,7 +393,7 @@ def test_product_submission_new_product_workflow(
     test_url = f"https://github.com/user/new-product-{uuid.uuid4()}"
     
     # Step 1: Check if product exists (it doesn't)
-    response = auth_client.get(f"/api/products/exists?url={test_url}")
+    response = auth_client.get(f"/api/products/exists?source_url={test_url}")
     assert response.status_code == 200
     assert response.json()["exists"] is False
     
@@ -429,16 +430,17 @@ def test_product_submission_existing_product_workflow(
     # Create existing product owned by test_user_2
     clean_database.table("products").insert({
         "id": existing_product_id,
+        "slug": f"existing-accessible-tool-{uuid.uuid4().hex[:8]}",
         "name": "Existing Accessible Tool",
         "source": "github",
-        "category": "Software",
+        "type": "Software",
         "url": test_url,
         "description": "Already in database",
         "created_by": test_user_2["id"],
     }).execute()
     
     # Step 1: User checks URL (exists)
-    response = client.get(f"/api/products/exists?url={test_url}")
+    response = client.get(f"/api/products/exists?source_url={test_url}")
     assert response.status_code == 200
     data = response.json()
     assert data["exists"] is True

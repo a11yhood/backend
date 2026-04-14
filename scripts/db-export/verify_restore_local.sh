@@ -4,6 +4,7 @@ set -euo pipefail
 DB_CONTAINER="a11yhood-export-verify-pg"
 PUBLIC_DB_NAME="a11yhood_restore_public"
 PRIVATE_DB_NAME="a11yhood_restore_private"
+SINGLE_DB_NAME="a11yhood_restore_single"
 
 SCHEMA_FILE="supabase-schema.sql"
 PUBLIC_EXPORT="supabase/public-products.sql"
@@ -19,47 +20,61 @@ run_psql() {
   docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$db_name" "$@"
 }
 
-trap cleanup EXIT
+usage() {
+  cat <<'EOF'
+Usage:
+  bash scripts/db-export/verify_restore_local.sh
+  bash scripts/db-export/verify_restore_local.sh <export-file>
 
-if [[ ! -f "$SCHEMA_FILE" ]]; then
-  echo "Missing schema file: $SCHEMA_FILE"
-  exit 1
-fi
+Without arguments:
+  Verifies the default public and private exports.
 
-if [[ ! -f "$PUBLIC_EXPORT" ]]; then
-  echo "Missing export file: $PUBLIC_EXPORT"
-  exit 1
-fi
+With one export file:
+  Verifies that single export by restoring it into a throwaway local Postgres database.
+  Supported inputs include public, private, test, and seed SQL exports.
+EOF
+}
 
-if [[ ! -f "$PRIVATE_EXPORT" ]]; then
-  echo "Missing export file: $PRIVATE_EXPORT"
-  exit 1
-fi
-
-echo "Starting local Postgres container..."
-cleanup
-docker run --name "$DB_CONTAINER" \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=postgres \
-  -d postgres:16 >/dev/null
-
-for _ in {1..30}; do
-  if docker exec "$DB_CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
-    break
+require_file() {
+  local file_path="$1"
+  if [[ ! -f "$file_path" ]]; then
+    echo "Missing file: $file_path"
+    exit 1
   fi
-  sleep 1
-done
+}
 
-echo "Creating verification databases..."
-docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres <<SQL >/dev/null
-DROP DATABASE IF EXISTS ${PUBLIC_DB_NAME};
-DROP DATABASE IF EXISTS ${PRIVATE_DB_NAME};
-CREATE DATABASE ${PUBLIC_DB_NAME};
-CREATE DATABASE ${PRIVATE_DB_NAME};
+start_container() {
+  echo "Starting local Postgres container..."
+  cleanup
+  docker run --name "$DB_CONTAINER" \
+    -e POSTGRES_PASSWORD=postgres \
+    -e POSTGRES_DB=postgres \
+    -d postgres:16 >/dev/null
+
+  for _ in {1..30}; do
+    if docker exec "$DB_CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Timed out waiting for Postgres container to become ready"
+  exit 1
+}
+
+create_database() {
+  local db_name="$1"
+  echo "Creating verification database: ${db_name}"
+  docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres <<SQL >/dev/null
+DROP DATABASE IF EXISTS ${db_name};
+CREATE DATABASE ${db_name};
 SQL
+}
 
-echo "Loading baseline Supabase compatibility objects..."
-for db_name in "$PUBLIC_DB_NAME" "$PRIVATE_DB_NAME"; do
+load_baseline_objects() {
+  local db_name="$1"
+
+  echo "Loading baseline Supabase compatibility objects into ${db_name}..."
   run_psql "$db_name" <<'SQL' >/dev/null
 DO $$
 BEGIN
@@ -111,16 +126,94 @@ CREATE TABLE IF NOT EXISTS storage.objects (
   updated_at timestamptz DEFAULT now()
 );
 SQL
+}
 
+apply_schema() {
+  local db_name="$1"
   echo "Applying schema to ${db_name}..."
   docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$db_name" < "$SCHEMA_FILE" >/dev/null
-done
+}
 
-echo "Applying public export..."
-docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PUBLIC_DB_NAME" < "$PUBLIC_EXPORT" >/dev/null
+apply_export() {
+  local db_name="$1"
+  local export_file="$2"
+  echo "Applying export ${export_file} to ${db_name}..."
+  docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$db_name" < "$export_file" >/dev/null
+}
 
-echo "Checking public restore integrity..."
-run_psql "$PUBLIC_DB_NAME" <<'SQL'
+detect_export_kind() {
+  local export_file="$1"
+  local header
+  header=$(head -20 "$export_file")
+
+  case "$header" in
+    *"TEST DATABASE EXPORT"*)
+      echo "test"
+      ;;
+    *"Public products dataset"*)
+      echo "public"
+      ;;
+    *"PRIVATE FULL DATABASE EXPORT"*)
+      echo "private"
+      ;;
+    *)
+      case "$export_file" in
+        *public-products.sql)
+          echo "public"
+          ;;
+        *full-database.sql)
+          echo "private"
+          ;;
+        *seed-test.sql|*seed.sql)
+          echo "test"
+          ;;
+        *)
+          echo "unknown"
+          ;;
+      esac
+      ;;
+  esac
+}
+
+extract_valid_sources() {
+  local export_file="$1"
+  local scraping_log_lines
+
+  scraping_log_lines=$(grep "INSERT INTO scraping_logs" "$export_file" || true)
+  if [[ -z "$scraping_log_lines" ]]; then
+    return 0
+  fi
+
+  printf '%s\n' "$scraping_log_lines" \
+    | cut -d"'" -f6 \
+    | sort -u \
+    | sed "s/^/'/;s/$/'/" \
+    | paste -sd, -
+}
+
+update_scraping_logs_constraint() {
+  local db_name="$1"
+  local export_file="$2"
+  local valid_sources
+
+  valid_sources=$(extract_valid_sources "$export_file")
+  if [[ -z "$valid_sources" ]]; then
+    return 0
+  fi
+
+  echo "Updating scraping_logs source constraint with live values: $valid_sources"
+  run_psql "$db_name" <<SQL >/dev/null
+ALTER TABLE scraping_logs DROP CONSTRAINT IF EXISTS scraping_logs_source_check;
+ALTER TABLE scraping_logs ADD CONSTRAINT scraping_logs_source_check
+  CHECK (source IN ($valid_sources));
+SQL
+}
+
+verify_public_restore() {
+  local db_name="$1"
+
+  echo "Checking public restore integrity..."
+  run_psql "$db_name" <<'SQL'
 DO $$
 DECLARE
   leaked_rows integer;
@@ -180,24 +273,13 @@ SELECT
   (SELECT COUNT(*) FROM product_urls) AS product_urls,
   (SELECT COUNT(*) FROM product_tags) AS product_tags;
 SQL
+}
 
-echo "Extracting valid scraping_logs sources from export..."
-VALID_SOURCES=$(grep "INSERT INTO scraping_logs" "$PRIVATE_EXPORT" | cut -d"'" -f6 | sort -u | sed "s/^/'/;s/$/'/" | paste -sd, -)
+verify_private_restore() {
+  local db_name="$1"
 
-if [[ -n "$VALID_SOURCES" ]]; then
-  echo "Updating scraping_logs source constraint with live values: $VALID_SOURCES"
-  run_psql "$PRIVATE_DB_NAME" <<SQL >/dev/null
-ALTER TABLE scraping_logs DROP CONSTRAINT IF EXISTS scraping_logs_source_check;
-ALTER TABLE scraping_logs ADD CONSTRAINT scraping_logs_source_check 
-  CHECK (source IN ($VALID_SOURCES));
-SQL
-fi
-
-echo "Applying private export..."
-docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d "$PRIVATE_DB_NAME" < "$PRIVATE_EXPORT" >/dev/null
-
-echo "Checking private restore integrity..."
-run_psql "$PRIVATE_DB_NAME" <<'SQL'
+  echo "Checking private restore integrity..."
+  run_psql "$db_name" <<'SQL'
 DO $$
 BEGIN
   IF EXISTS (
@@ -372,5 +454,67 @@ SELECT
   (SELECT COUNT(*) FROM user_requests) AS user_requests,
   (SELECT COUNT(*) FROM scraping_logs) AS scraping_logs;
 SQL
+}
 
-echo "Restore verification completed successfully."
+trap cleanup EXIT
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+require_file "$SCHEMA_FILE"
+start_container
+
+if [[ $# -eq 0 ]]; then
+  require_file "$PUBLIC_EXPORT"
+  require_file "$PRIVATE_EXPORT"
+
+  create_database "$PUBLIC_DB_NAME"
+  create_database "$PRIVATE_DB_NAME"
+
+  load_baseline_objects "$PUBLIC_DB_NAME"
+  apply_schema "$PUBLIC_DB_NAME"
+  load_baseline_objects "$PRIVATE_DB_NAME"
+  apply_schema "$PRIVATE_DB_NAME"
+
+  apply_export "$PUBLIC_DB_NAME" "$PUBLIC_EXPORT"
+  verify_public_restore "$PUBLIC_DB_NAME"
+
+  update_scraping_logs_constraint "$PRIVATE_DB_NAME" "$PRIVATE_EXPORT"
+  apply_export "$PRIVATE_DB_NAME" "$PRIVATE_EXPORT"
+  verify_private_restore "$PRIVATE_DB_NAME"
+
+  echo "Restore verification completed successfully."
+  exit 0
+fi
+
+if [[ $# -ne 1 ]]; then
+  usage
+  exit 1
+fi
+
+SINGLE_EXPORT="$1"
+require_file "$SINGLE_EXPORT"
+
+EXPORT_KIND=$(detect_export_kind "$SINGLE_EXPORT")
+if [[ "$EXPORT_KIND" == "unknown" ]]; then
+  echo "Could not determine export type for: $SINGLE_EXPORT"
+  echo "Expected a public, private, test, or seed SQL export file."
+  exit 1
+fi
+
+create_database "$SINGLE_DB_NAME"
+load_baseline_objects "$SINGLE_DB_NAME"
+apply_schema "$SINGLE_DB_NAME"
+
+if [[ "$EXPORT_KIND" == "public" ]]; then
+  apply_export "$SINGLE_DB_NAME" "$SINGLE_EXPORT"
+  verify_public_restore "$SINGLE_DB_NAME"
+else
+  update_scraping_logs_constraint "$SINGLE_DB_NAME" "$SINGLE_EXPORT"
+  apply_export "$SINGLE_DB_NAME" "$SINGLE_EXPORT"
+  verify_private_restore "$SINGLE_DB_NAME"
+fi
+
+echo "Restore verification completed successfully for ${SINGLE_EXPORT} (${EXPORT_KIND})."
