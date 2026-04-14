@@ -301,6 +301,10 @@ python seed_scripts/seed_all.py
 
 # Apply migrations
 ./scripts/apply-migrations.sh --env-file .env.test
+
+# Optional: local Postgres for SQL migration validation 
+./scripts/start-local-postgres.sh
+SUPABASE_DB_URL=postgresql://postgres:postgres@localhost:5433/a11yhood ./scripts/apply-migrations.sh
 ```
 
 ### Making Changes

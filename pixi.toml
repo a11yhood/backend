@@ -56,6 +56,26 @@ cmd = "./scripts/seed.sh"
 description = "List available seed scripts"
 cmd = "./scripts/seed.sh --list"
 
+[tasks.export-public]
+description = "Export public products dataset (no user data)"
+cmd = "python scripts/db-export/export_full_database.py --mode public --env-file .env --output supabase/public-products.sql"
+
+[tasks.export-private]
+description = "Export full private database dump (⚠️ sensitive)"
+cmd = "python scripts/db-export/export_full_database.py --mode private --output supabase/full-database.sql"
+
+[tasks.export-test]
+description = "Export test database with seed data"
+cmd = "python scripts/db-export/export_full_database.py --mode test --output supabase/seed-test.sql --include-seed-output"
+
+[tasks.validate-exports]
+description = "Validate public and private exports: schema, privacy rules, and live source row counts"
+cmd = "python scripts/db-export/validate_exports_schema.py"
+
+[tasks.verify-export-restore]
+description = "Verify exports can be restored into local Postgres"
+cmd = "bash scripts/db-export/verify_restore_local.sh"
+
 [tasks.serve]
 description = "serve the a11yhood application from supabase"
 cmd = "python -m uvicorn main:app --host 127.0.0.1 --port 8000 --workers 4"

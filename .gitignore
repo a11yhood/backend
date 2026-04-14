@@ -65,7 +65,7 @@ dist/
 build/
 *.egg-info/
 *.tar
-
+supabase/
 
 # Misc
 .devcontainer/
