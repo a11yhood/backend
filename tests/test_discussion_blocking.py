@@ -10,10 +10,13 @@ pytestmark = pytest.mark.integration
 
 def test_block_unblock_flow(auth_client, admin_client, test_product):
     # Create discussion as regular user
-    create = auth_client.post("/api/discussions", json={
-        "content": "Test blockable post",
-        "product_id": test_product["id"],
-    })
+    create = auth_client.post(
+        "/api/discussions",
+        json={
+            "content": "Test blockable post",
+            "product_id": test_product["id"],
+        },
+    )
     assert create.status_code in (200, 201), create.text
     discussion = create.json()
     did = discussion["id"]
@@ -37,10 +40,13 @@ def test_block_unblock_flow(auth_client, admin_client, test_product):
 
 def test_user_cannot_block(auth_client, test_product):
     # Create discussion
-    create = auth_client.post("/api/discussions", json={
-        "content": "User cannot block",
-        "product_id": test_product["id"],
-    })
+    create = auth_client.post(
+        "/api/discussions",
+        json={
+            "content": "User cannot block",
+            "product_id": test_product["id"],
+        },
+    )
     assert create.status_code in (200, 201), create.text
     did = create.json()["id"]
 
@@ -51,10 +57,13 @@ def test_user_cannot_block(auth_client, test_product):
 
 def test_user_cannot_unblock(auth_client, admin_client, test_product):
     # Create discussion and block as admin
-    create = auth_client.post("/api/discussions", json={
-        "content": "Block then ensure user cannot unblock",
-        "product_id": test_product["id"],
-    })
+    create = auth_client.post(
+        "/api/discussions",
+        json={
+            "content": "Block then ensure user cannot unblock",
+            "product_id": test_product["id"],
+        },
+    )
     assert create.status_code in (200, 201), create.text
     did = create.json()["id"]
     block = admin_client.post(f"/api/discussions/{did}/block", json={"reason": "Spam"})

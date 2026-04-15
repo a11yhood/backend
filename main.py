@@ -3,27 +3,41 @@
 Sets up FastAPI app with CORS middleware and routes for the accessible product community.
 All endpoints are organized by domain in routers/ and use database_adapter for dual DB support.
 """
-from fastapi import FastAPI, Request, Depends, Query
+
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from config import settings, load_settings_from_env
-from routers import activities, blog_posts, collections, dev, discussions, product_urls, products, ratings, requests, scrapers, sources, users
-from services.database import get_db
-from services.auth import get_current_user
-from services.scheduled_scrapers import get_scheduled_scraper_service
+from slowapi.util import get_remote_address
 
+from config import load_settings_from_env, settings
+from routers import (
+    activities,
+    blog_posts,
+    collections,
+    dev,
+    discussions,
+    product_urls,
+    products,
+    ratings,
+    requests,
+    scrapers,
+    sources,
+    users,
+)
+from services.auth import get_current_user
+from services.database import get_db
+from services.scheduled_scrapers import get_scheduled_scraper_service
 
 app = FastAPI(
     title="a11yhood API",
     version="1.0.0",
-    description="API for a11yhood - Accessible Product Community"
+    description="API for a11yhood - Accessible Product Community",
 )
 
-import os
 import logging
+import os
 
 # Setup rate limiter
 limiter = Limiter(key_func=get_remote_address)
@@ -40,11 +54,7 @@ def has_production_indicators(current_settings) -> bool:
     uses a dedicated Supabase test project. Production should be identified by explicit
     environment settings, a non-local production URL, or the default production env file.
     """
-    env_name = (
-        current_settings.ENVIRONMENT
-        or os.getenv("ENVIRONMENT")
-        or ""
-    ).strip().lower()
+    env_name = (current_settings.ENVIRONMENT or os.getenv("ENVIRONMENT") or "").strip().lower()
     if env_name == "production":
         return True
 
@@ -62,7 +72,7 @@ def has_production_indicators(current_settings) -> bool:
 @app.on_event("startup")
 async def validate_security_configuration():
     """Validate critical security settings on startup.
-    
+
     Prevents common misconfigurations that could compromise security.
     Raises RuntimeError for critical issues that must be fixed before running.
     """
@@ -71,13 +81,13 @@ async def validate_security_configuration():
     # weakening production behavior.
     # Use a fresh settings instance so env patches in tests are respected.
     local_settings = load_settings_from_env()
-    
+
     # Log CORS configuration status
     cors_origins = get_cors_origins()
     logger.info(f"CORS origins configured: {cors_origins}")
-    
+
     is_production = has_production_indicators(local_settings)
-    
+
     # CRITICAL: Prevent TEST_MODE in production
     if local_settings.TEST_MODE and is_production:
         raise RuntimeError(
@@ -93,7 +103,7 @@ async def validate_security_configuration():
             f"  - SUPABASE_URL: {local_settings.SUPABASE_URL}\n"
             f"  - PRODUCTION_URL: {local_settings.PRODUCTION_URL}\n"
         )
-    
+
     # CRITICAL: Validate SECRET_KEY in production
     if is_production:
         if local_settings.SECRET_KEY == "dev-secret-key-change-in-production":
@@ -108,10 +118,10 @@ async def validate_security_configuration():
                 "  2. Set SECRET_KEY in your .env file\n"
                 "  3. Restart the application\n"
             )
-        
+
         if len(local_settings.SECRET_KEY) < 32:
             raise RuntimeError(
-            f"🚨 CRITICAL SECURITY ERROR: SECRET_KEY too short ({len(local_settings.SECRET_KEY)} chars)!\n"
+                f"🚨 CRITICAL SECURITY ERROR: SECRET_KEY too short ({len(local_settings.SECRET_KEY)} chars)!\n"
                 "\n"
                 "Production requires a SECRET_KEY of at least 32 characters.\n"
                 "\n"
@@ -121,7 +131,7 @@ async def validate_security_configuration():
                 "  2. Set SECRET_KEY in your .env file\n"
                 "  3. Restart the application\n"
             )
-    
+
     # Warnings for development mode
     if local_settings.TEST_MODE:
         logger.warning(
@@ -130,13 +140,13 @@ async def validate_security_configuration():
             "   - Mock user accounts will be available\n"
             "   - NEVER enable TEST_MODE in production!\n"
         )
-    
+
     if local_settings.SECRET_KEY == "dev-secret-key-change-in-production" and not is_production:
         logger.warning(
             "⚠️  Using default SECRET_KEY in development\n"
             "   This is OK for local testing but generate a unique key for staging/production.\n"
         )
-    
+
     # Log security configuration status
     logger.info(
         f"Security configuration validated:\n"
@@ -145,7 +155,7 @@ async def validate_security_configuration():
         f"  - SECRET_KEY length: {len(local_settings.SECRET_KEY)} chars\n"
         f"  - CORS origins: {len(get_cors_origins())} configured\n"
     )
-    
+
     # Initialize scheduled scrapers (if not in test mode)
     # Dev mode: disable all scheduled scrapers; production runs nightly jobs
     if local_settings.TEST_MODE:
@@ -177,35 +187,39 @@ async def shutdown_scheduled_scrapers():
     except Exception as e:
         logger.error(f"Error stopping scheduled scrapers: {e}")
 
+
 def get_cors_origins():
     """Build strict CORS allowlist from environment.
-    
+
     Security: Never use wildcard origins with credentials.
     Dev uses Vite proxy, so only HTTPS localhost needs direct CORS access.
     Production must explicitly set FRONTEND_URL and PRODUCTION_URL.
     """
     origins = set()
-    
+
     # Add configured frontend URLs
     if settings.FRONTEND_URL:
         origins.add(settings.FRONTEND_URL)
     if settings.PRODUCTION_URL:
         origins.add(settings.PRODUCTION_URL)
-    
+
     # Dev mode: Allow HTTPS localhost (Vite dev server uses proxy for API calls)
     # HTTP variants not needed - Vite proxy handles the HTTPS->HTTP translation
     if settings.TEST_MODE:
-        origins.update({
-            "https://localhost:5173",
-            "https://127.0.0.1:5173",
-        })
-    
+        origins.update(
+            {
+                "https://localhost:5173",
+                "https://127.0.0.1:5173",
+            }
+        )
+
     # Support additional origins via env var (comma-separated)
     extra = os.getenv("CORS_EXTRA_ORIGINS", "")
     if extra:
         origins.update(o.strip() for o in extra.split(",") if o.strip())
-    
+
     return list(origins)
+
 
 # ============================================================================
 # Security Middleware
@@ -213,9 +227,10 @@ def get_cors_origins():
 
 # CORS middleware - must be added before app startup
 # Guard against multiple additions (e.g., in tests that reload modules)
-if not any(isinstance(m, type) and issubclass(m, type) and 
-           getattr(m, '__name__', None) == 'CORSMiddleware' 
-           for m in [type(middleware) for middleware in getattr(app, 'user_middleware', [])]):
+if not any(
+    isinstance(m, type) and issubclass(m, type) and getattr(m, "__name__", None) == "CORSMiddleware"
+    for m in [type(middleware) for middleware in getattr(app, "user_middleware", [])]
+):
     cors_origins = get_cors_origins()
     logger.info(f"CORS origins at startup: {cors_origins}")
     app.add_middleware(
@@ -226,21 +241,22 @@ if not any(isinstance(m, type) and issubclass(m, type) and
         allow_headers=["*"],
     )
 
+
 # Security headers middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     """Add security headers to all responses."""
     response = await call_next(request)
-    
+
     # Prevent MIME type sniffing
     response.headers["X-Content-Type-Options"] = "nosniff"
-    
+
     # Prevent clickjacking
     response.headers["X-Frame-Options"] = "DENY"
-    
+
     # Enable XSS protection
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    
+
     # Content Security Policy
     # In dev mode, relax CSP to allow Swagger/ReDoc UI and other dev tools
     if settings.TEST_MODE:
@@ -264,22 +280,19 @@ async def add_security_headers(request: Request, call_next):
             "connect-src 'self' https://cdn.jsdelivr.net; "
             "frame-ancestors 'none'"
         )
-    
+
     # HSTS (only in production with HTTPS)
     if not settings.TEST_MODE:
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
-        )
-    
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
     # Referrer policy
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    
+
     # Permissions policy
-    response.headers["Permissions-Policy"] = (
-        "geolocation=(), microphone=(), camera=()"
-    )
-    
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+
     return response
+
 
 # Trusted hosts (prevent host header injection)
 allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "testserver"]
@@ -294,28 +307,23 @@ if settings.FRONTEND_URL:
     if host and host not in allowed_hosts:
         allowed_hosts.append(host)
 
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=allowed_hosts
-)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 # Global exception handler
 from services.error_handler import handle_exception
+
 app.add_exception_handler(Exception, handle_exception)
 
 # ============================================================================
 # Root Endpoints
 # ============================================================================
 
+
 @app.get("/")
 @limiter.limit("60/minute")  # Prevent abuse
 async def root(request: Request):
     """API root endpoint."""
-    return {
-        "message": "a11yhood API",
-        "version": "1.0.0",
-        "status": "running"
-    }
+    return {"message": "a11yhood API", "version": "1.0.0", "status": "running"}
 
 
 @app.get("/health")
@@ -323,14 +331,14 @@ async def health_check():
     """Health check endpoint (no rate limit for monitoring)."""
     # Load fresh settings to report current mode
     current_settings = load_settings_from_env()
-    
+
     is_production = has_production_indicators(current_settings)
-    
+
     return {
         "status": "healthy",
         "mode": "production" if is_production else "development",
         "test_mode": current_settings.TEST_MODE,
-        "database": "supabase"
+        "database": "supabase",
     }
 
 
@@ -362,16 +370,14 @@ async def get_scheduled_scrapers():
         scheduler_service = get_scheduled_scraper_service()
         jobs = await scheduler_service.get_jobs()
         return {
-            "status": "enabled" if scheduler_service.scheduler and scheduler_service.scheduler.running else "disabled",
-            "jobs": jobs
+            "status": "enabled"
+            if scheduler_service.scheduler and scheduler_service.scheduler.running
+            else "disabled",
+            "jobs": jobs,
         }
     except Exception as e:
         logger.error(f"Error getting scheduled scrapers status: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-            "jobs": []
-        }
+        return {"status": "error", "error": str(e), "jobs": []}
 
 
 # Include routers
@@ -392,4 +398,5 @@ if settings.TEST_MODE:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

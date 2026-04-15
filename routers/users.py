@@ -4,17 +4,18 @@ Handles user profile CRUD, role management, and ownership tracking.
 Security: Role changes restricted to admins; users can only edit their own profiles.
 Privacy: Public username lookup excludes email and preferences.
 """
-from fastapi import APIRouter, Depends, HTTPException, Response
-from typing import Optional
-from pydantic import BaseModel
-from services.database import get_db
-from services.auth import get_current_user, get_current_user_optional, ensure_admin, DEV_USER_IDS
-from services.security_logger import log_role_change
-from config import settings
+
+import logging
 import os
 import uuid
-import logging
 
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
+
+from config import settings
+from services.auth import ensure_admin, get_current_user, get_current_user_optional
+from services.database import get_db
+from services.security_logger import log_role_change
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -43,54 +44,55 @@ def _get_user_by_identifier(db, identifier: str) -> dict:
 
 class UserAccountCreate(BaseModel):
     """Request model for creating/updating user account"""
+
     username: str
-    avatar_url: Optional[str] = None
-    email: Optional[str] = None
+    avatar_url: str | None = None
+    email: str | None = None
 
 
 class PublicUserAccountResponse(BaseModel):
     """Public-facing user response; includes id but omits sensitive fields."""
+
     id: str
     username: str
-    username_display: Optional[str] = None
-    avatar_url: Optional[str] = None
-    email: Optional[str] = None
+    username_display: str | None = None
+    avatar_url: str | None = None
+    email: str | None = None
     role: str
-    display_name: Optional[str] = None
-    bio: Optional[str] = None
-    location: Optional[str] = None
-    website: Optional[str] = None
-    preferences: Optional[dict] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    joined_at: Optional[str] = None
-    last_active: Optional[str] = None
+    display_name: str | None = None
+    bio: str | None = None
+    location: str | None = None
+    website: str | None = None
+    preferences: dict | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    joined_at: str | None = None
+    last_active: str | None = None
 
 
 class UserAccountResponse(PublicUserAccountResponse):
     """Internal/admin response that still includes the UUID."""
+
     id: str
 
 
 @router.get("/me", response_model=UserAccountResponse, response_model_by_alias=False)
 async def get_current_user_profile(
-    response: Response,
-    current_user: dict = Depends(get_current_user),
-    db = Depends(get_db)
+    response: Response, current_user: dict = Depends(get_current_user), db=Depends(get_db)
 ):
     """Get current authenticated user's full profile.
-    
+
     Security: Requires authentication. Returns full user data including email and preferences.
     """
     # Add caching headers (30 seconds for user profile to reduce DB load)
     response.headers["Cache-Control"] = "private, max-age=30"
-    
+
     user_id = current_user.get("id")
-    response = db.table("users").select("*").eq("id", user_id).execute()
-    if not response.data:
+    db_result = db.table("users").select("*").eq("id", user_id).execute()
+    if not db_result.data:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    user = response.data[0]
+
+    user = db_result.data[0]
     role = user.get("role", "user")
     username_display = user.get("username", "")
     return UserAccountResponse(
@@ -108,17 +110,15 @@ async def get_current_user_profile(
         created_at=user.get("created_at"),
         updated_at=user.get("updated_at"),
         joined_at=user.get("joined_at"),
-        last_active=user.get("last_active")
+        last_active=user.get("last_active"),
     )
 
 
-@router.get("/{identifier}", response_model=PublicUserAccountResponse, response_model_by_alias=False)
-async def get_user_account(
-    identifier: str,
-    db = Depends(get_db)
-):
-    """Get user account by username.
-    """
+@router.get(
+    "/{identifier}", response_model=PublicUserAccountResponse, response_model_by_alias=False
+)
+async def get_user_account(identifier: str, db=Depends(get_db)):
+    """Get user account by username."""
     user = _get_user_by_identifier(db, identifier)
     role = user.get("role", "user")
     username_display = user.get("username", "")
@@ -137,17 +137,18 @@ async def get_user_account(
         created_at=user.get("created_at"),
         updated_at=user.get("updated_at"),
         joined_at=user.get("joined_at"),
-        last_active=user.get("last_active")
+        last_active=user.get("last_active"),
     )
 
 
-@router.get("/by-username/{username}", response_model=PublicUserAccountResponse, response_model_by_alias=False)
-async def get_user_by_username(
-    username: str,
-    db = Depends(get_db)
-):
+@router.get(
+    "/by-username/{username}",
+    response_model=PublicUserAccountResponse,
+    response_model_by_alias=False,
+)
+async def get_user_by_username(username: str, db=Depends(get_db)):
     """Public endpoint: get user account by username.
-    
+
     Privacy: Returns public fields only (email and preferences excluded).
     """
     user = _get_user_by_identifier(db, username)
@@ -168,43 +169,7 @@ async def get_user_by_username(
         created_at=user.get("created_at"),
         updated_at=user.get("updated_at"),
         joined_at=user.get("joined_at"),
-        last_active=user.get("last_active")
-    )
-
-
-@router.get("/me", response_model=UserAccountResponse, response_model_by_alias=False)
-async def get_current_user_profile(
-    current_user: dict = Depends(get_current_user),
-    db = Depends(get_db)
-):
-    """Get current authenticated user's full profile.
-    
-    Security: Requires authentication. Returns full user data including email and preferences.
-    """
-    user_id = current_user.get("id")
-    response = db.table("users").select("*").eq("id", user_id).execute()
-    if not response.data:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    user = response.data[0]
-    role = user.get("role", "user")
-    username_display = user.get("username", "")
-    return UserAccountResponse(
-        id=user["id"],
-        username=username_display,
-        username_display=username_display,
-        avatar_url=user.get("avatar_url"),
-        email=user.get("email"),
-        role=role,
-        display_name=user.get("display_name"),
-        bio=user.get("bio"),
-        location=user.get("location"),
-        website=user.get("website"),
-        preferences=user.get("preferences"),
-        created_at=user.get("created_at"),
-        updated_at=user.get("updated_at"),
-        joined_at=user.get("joined_at"),
-        last_active=user.get("last_active")
+        last_active=user.get("last_active"),
     )
 
 
@@ -213,11 +178,10 @@ async def get_current_user_profile(
 async def create_or_update_user_account(
     identifier: str,
     account_data: UserAccountCreate,
-    db = Depends(get_db),
-    current_user: dict = Depends(get_current_user_optional)
+    db=Depends(get_db),
+    current_user: dict = Depends(get_current_user_optional),
 ):
-    """Create or update user account by username.
-    """
+    """Create or update user account by username."""
     # Check if user exists by username first, then by id
     existing_resp = db.table("users").select("*").eq("username", identifier).limit(1).execute()
     existing_user = existing_resp.data[0] if existing_resp.data else None
@@ -242,7 +206,9 @@ async def create_or_update_user_account(
         if current_user.get("id") != existing_user.get("id"):
             raise HTTPException(status_code=403, detail="Not authorized to update this user")
 
-    print(f"[users] is_update={is_update}, test_mode={test_mode}, existing_count={1 if existing_user else 0}")
+    print(
+        f"[users] is_update={is_update}, test_mode={test_mode}, existing_count={1 if existing_user else 0}"
+    )
 
     # Resolve the backing user_id
     user_id = (current_user or {}).get("id") or (existing_user.get("id") if existing_user else None)
@@ -264,20 +230,32 @@ async def create_or_update_user_account(
             db.table("users").update(user_data).eq("id", existing_user["id"]).execute()
             response = db.table("users").select("*").eq("id", existing_user["id"]).execute()
             updated_user = response.data[0] if response.data else existing_user
-            print(f"[users] updated user id={updated_user.get('id')} role={updated_user.get('role')}")
+            print(
+                f"[users] updated user id={updated_user.get('id')} role={updated_user.get('role')}"
+            )
         else:
             # If username exists (race) try update; otherwise insert new
             by_username = existing_resp
             if by_username.data:
-                db.table("users").update({**user_data, "id": user_id}).eq("username", account_data.username).execute()
-                response = db.table("users").select("*").eq("username", account_data.username).limit(1).execute()
+                db.table("users").update({**user_data, "id": user_id}).eq(
+                    "username", account_data.username
+                ).execute()
+                response = (
+                    db.table("users")
+                    .select("*")
+                    .eq("username", account_data.username)
+                    .limit(1)
+                    .execute()
+                )
                 updated_user = response.data[0] if response.data else by_username.data[0]
                 print(f"[users] reassigned existing username to id={user_id}")
             else:
                 payload = {**user_data, "id": user_id, "role": "user"}
                 response = db.table("users").insert(payload).execute()
                 updated_user = response.data[0] if response.data else payload
-                print(f"[users] inserted user id={updated_user.get('id')} role={updated_user.get('role')}")
+                print(
+                    f"[users] inserted user id={updated_user.get('id')} role={updated_user.get('role')}"
+                )
     except Exception as e:
         logger = logging.getLogger(__name__)
         logger.error(f"[users] ERROR creating/updating user: {e}")
@@ -300,7 +278,7 @@ async def create_or_update_user_account(
         created_at=updated_user.get("created_at"),
         updated_at=updated_user.get("updated_at"),
         joined_at=updated_user.get("joined_at"),
-        last_active=updated_user.get("last_active")
+        last_active=updated_user.get("last_active"),
     )
 
 
@@ -312,11 +290,11 @@ class RoleUpdate(BaseModel):
 async def update_user_role(
     username: str,
     role_update: RoleUpdate,
-    db = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    db=Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """Update a user's role by username.
-    
+
     Uses admin_update_user_role database function to properly handle
     role changes with admin verification at the database level.
     """
@@ -335,23 +313,24 @@ async def update_user_role(
     # This function verifies admin status and updates the role
     try:
         logger = logging.getLogger(__name__)
-        logger.info(f"Calling admin_update_user_role with admin_user_id={current_user['id']}, target_user_id={user_id}, new_role={new_role}")
-        
-        response = db.rpc('admin_update_user_role', {
-            'admin_user_id': current_user["id"],
-            'target_user_id': user_id,
-            'new_role': new_role
-        }).execute()
-        
+        logger.info(
+            f"Calling admin_update_user_role with admin_user_id={current_user['id']}, target_user_id={user_id}, new_role={new_role}"
+        )
+
+        response = db.rpc(
+            "admin_update_user_role",
+            {"admin_user_id": current_user["id"], "target_user_id": user_id, "new_role": new_role},
+        ).execute()
+
         logger.info(f"RPC response: {response}")
         updated_user = response.data if getattr(response, "data", None) else target_user
-        
+
     except Exception as e:
         # The function returns the updated user as JSONB
-    
+
         logger = logging.getLogger(__name__)
         logger.error(f"RPC error: {type(e).__name__}: {str(e)}")
-        
+
         # Handle database errors (user not found, permission denied, etc.)
         error_msg = str(e)
         if "Only admins can change roles" in error_msg:
@@ -362,15 +341,12 @@ async def update_user_role(
             raise HTTPException(status_code=400, detail="Invalid role")
         else:
             raise HTTPException(status_code=500, detail=f"Failed to update role: {error_msg}")
-    
+
     # Log security event for role change
     log_role_change(
-        admin_id=current_user["id"],
-        target_user_id=user_id,
-        old_role=old_role,
-        new_role=new_role
+        admin_id=current_user["id"], target_user_id=user_id, old_role=old_role, new_role=new_role
     )
-    
+
     return {
         "id": updated_user.get("id"),
         "username": updated_user.get("username", ""),
@@ -378,22 +354,26 @@ async def update_user_role(
         "email": updated_user.get("email"),
         "role": updated_user.get("role", "user"),
         "display_name": updated_user.get("display_name"),
-        "created_at": updated_user.get("created_at")
+        "created_at": updated_user.get("created_at"),
     }
 
-class ProfileUpdate(BaseModel):
-    display_name: Optional[str] = None
-    bio: Optional[str] = None
-    location: Optional[str] = None
-    website: Optional[str] = None
-    preferences: Optional[dict] = None
 
-@router.patch("/{username}/profile", response_model=UserAccountResponse, response_model_by_alias=False)
+class ProfileUpdate(BaseModel):
+    display_name: str | None = None
+    bio: str | None = None
+    location: str | None = None
+    website: str | None = None
+    preferences: dict | None = None
+
+
+@router.patch(
+    "/{username}/profile", response_model=UserAccountResponse, response_model_by_alias=False
+)
 async def update_user_profile(
     username: str,
     updates: ProfileUpdate,
-    db = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    db=Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """Update a user's profile fields. Currently supports display_name."""
     target_user = _get_user_by_identifier(db, username)
@@ -432,7 +412,7 @@ async def update_user_profile(
             created_at=user.get("created_at"),
             updated_at=user.get("updated_at"),
             joined_at=user.get("joined_at"),
-            last_active=user.get("last_active")
+            last_active=user.get("last_active"),
         )
 
     response = db.table("users").update(update_data).eq("id", target_user["id"]).execute()
@@ -452,28 +432,22 @@ async def update_user_profile(
         created_at=updated_user.get("created_at"),
         updated_at=updated_user.get("updated_at"),
         joined_at=updated_user.get("joined_at"),
-        last_active=updated_user.get("last_active")
+        last_active=updated_user.get("last_active"),
     )
 
 
 @router.get("/")
-async def get_all_users(
-    db = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
+async def get_all_users(db=Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Get all users (admin only)"""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    
+
     response = db.table("users").select("*").execute()
     return response.data
 
 
 @router.get("/{username}/collections")
-async def get_user_collections(
-    username: str,
-    db = Depends(get_db)
-):
+async def get_user_collections(username: str, db=Depends(get_db)):
     """Get user's product collections (not implemented yet)"""
     # TODO: Implement collections when the feature is ready
     return []
@@ -481,25 +455,26 @@ async def get_user_collections(
 
 @router.get("/{username}/requests")
 async def get_user_requests(
-    username: str,
-    db = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    username: str, db=Depends(get_db), current_user: dict = Depends(get_current_user)
 ):
     """Get user's requests (must be the user or admin)"""
     target_user = _get_user_by_identifier(db, username)
     # Check authorization
     if current_user["id"] != target_user.get("id") and current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to view these requests")
-    
-    response = db.table("user_requests").select("*").eq("user_id", target_user.get("id")).order("created_at", desc=True).execute()
+
+    response = (
+        db.table("user_requests")
+        .select("*")
+        .eq("user_id", target_user.get("id"))
+        .order("created_at", desc=True)
+        .execute()
+    )
     return response.data
 
 
 @router.get("/{username}/stats")
-async def get_user_stats(
-    username: str,
-    db = Depends(get_db)
-):
+async def get_user_stats(username: str, db=Depends(get_db)):
     """Get user statistics"""
     target_user = _get_user_by_identifier(db, username)
     user_id = target_user.get("id")
@@ -522,9 +497,7 @@ async def get_user_stats(
 
 @router.get("/{username}/owned-products")
 async def get_owned_products(
-    username: str,
-    db = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    username: str, db=Depends(get_db), current_user: dict = Depends(get_current_user)
 ):
     """Get products owned by a user"""
     target_user = _get_user_by_identifier(db, username)
@@ -532,16 +505,18 @@ async def get_owned_products(
     # Check authorization - must be the user or admin
     if current_user["id"] != user_id and current_user.get("role") not in ["admin", "moderator"]:
         raise HTTPException(status_code=403, detail="Not authorized to view these products")
-    
+
     # Get all product IDs owned by this user
-    ownership_response = db.table("product_editors").select("product_id").eq("user_id", user_id).execute()
-    
+    ownership_response = (
+        db.table("product_editors").select("product_id").eq("user_id", user_id).execute()
+    )
+
     if not ownership_response.data:
         return {"products": []}
-    
+
     product_ids = [row["product_id"] for row in ownership_response.data]
-    
+
     # Get the actual products
     products_response = db.table("products").select("*").in_("id", product_ids).execute()
-    
+
     return {"products": products_response.data or []}

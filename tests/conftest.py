@@ -1,23 +1,25 @@
-import os
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 os.environ.setdefault("ENV_FILE", ".env.test")
 try:
     from dotenv import load_dotenv
+
     load_dotenv(os.environ["ENV_FILE"])
 except Exception as exc:
     # Optional .env loading for tests; ignore if unavailable but log for diagnostics.
     logger.debug("Failed to load test ENV_FILE %r: %s", os.environ.get("ENV_FILE"), exc)
 
+
 import pytest
 from fastapi.testclient import TestClient
+
 from main import app
 from services.database import get_db
-from services.auth import get_current_user
+
 from .test_data import TEST_PRODUCTS, TEST_USERS
-from datetime import UTC
 
 
 @pytest.fixture
@@ -33,6 +35,7 @@ def client(clean_database):
 def auth_client(clean_database, test_user):
     """Test client authenticated as the seeded regular user via UUID dev token."""
     from main import app
+
     app.dependency_overrides[get_db] = lambda: clean_database
     base_client = TestClient(app)
 
@@ -72,6 +75,7 @@ def auth_client(clean_database, test_user):
 def admin_client(clean_database, test_admin):
     """Test client authenticated as the seeded admin user via UUID dev token."""
     from main import app
+
     app.dependency_overrides[get_db] = lambda: clean_database
     base_client = TestClient(app)
 
@@ -111,6 +115,7 @@ def admin_client(clean_database, test_admin):
 def auth_client_2(clean_database, test_user_2):
     """Test client authenticated as the second test user via UUID dev token."""
     from main import app
+
     app.dependency_overrides[get_db] = lambda: clean_database
     base_client = TestClient(app)
 
@@ -150,8 +155,8 @@ def auth_client_2(clean_database, test_user_2):
 # Database fixtures (Supabase test instance)
 # ============================================================================
 
-from database_adapter import DatabaseAdapter
 from config import get_settings
+from database_adapter import DatabaseAdapter
 
 
 def _require_supabase(settings):
@@ -236,35 +241,44 @@ def _seed_test_data(db):
     flat_terms = [
         {"platform": platform, "search_term": term}
         for platform, terms in [
-            ("github", [
-                "assistive technology",
-                "screen reader",
-                "eye tracking",
-                "speech recognition",
-                "switch access",
-                "alternative input",
-                "text-to-speech",
-                "voice control",
-                "accessibility aid",
-                "mobility aid software",
-            ]),
-            ("thingiverse", [
-                "accessibility",
-                "assistive+device",
-                "arthritis+grip",
-                "adaptive+tool",
-                "mobility+aid",
-                "tremor+stabilizer",
-                "adaptive+utensil",
-            ]),
-            ("ravelry_pa_categories", [
-                "medical-device-access",
-                "medical-device-accessory",
-                "mobility-aid-accessory",
-                "other-accessibility",
-                "adaptive",
-                "therapy-aid",
-            ]),
+            (
+                "github",
+                [
+                    "assistive technology",
+                    "screen reader",
+                    "eye tracking",
+                    "speech recognition",
+                    "switch access",
+                    "alternative input",
+                    "text-to-speech",
+                    "voice control",
+                    "accessibility aid",
+                    "mobility aid software",
+                ],
+            ),
+            (
+                "thingiverse",
+                [
+                    "accessibility",
+                    "assistive+device",
+                    "arthritis+grip",
+                    "adaptive+tool",
+                    "mobility+aid",
+                    "tremor+stabilizer",
+                    "adaptive+utensil",
+                ],
+            ),
+            (
+                "ravelry_pa_categories",
+                [
+                    "medical-device-access",
+                    "medical-device-accessory",
+                    "mobility-aid-accessory",
+                    "other-accessibility",
+                    "adaptive",
+                    "therapy-aid",
+                ],
+            ),
         ]
         for term in terms
     ]
@@ -324,6 +338,7 @@ def test_admin(clean_database):
 def test_moderator(clean_database):
     """Create a test moderator user."""
     from uuid import uuid4
+
     moderator_data = {
         "id": str(uuid4()),
         "github_id": "test-moderator-567",
@@ -340,6 +355,7 @@ def test_moderator(clean_database):
 def test_user_2(clean_database):
     """Create a second regular test user."""
     from uuid import uuid4
+
     user_data = {
         "id": str(uuid4()),
         "github_id": "test-user-789",
@@ -356,7 +372,6 @@ def test_user_2(clean_database):
 def test_product(clean_database, test_user):
     """Create a test product owned by the test user."""
     from uuid import uuid4
-    from services.id_generator import normalize_to_snake_case
 
     product_data = {
         "name": "Test Product",
@@ -387,11 +402,13 @@ def auth_headers():
     For role-behaviour tests that only care about the role and not the specific identity,
     pass a ``dev-token-<role>`` header directly instead.
     """
+
     def _make(user: dict):
         user_id = user.get("id")
         if not user_id:
             raise ValueError("auth_headers: user dict must contain 'id'")
         return {"Authorization": f"Bearer dev-token-{user_id}"}
+
     return _make
 
 

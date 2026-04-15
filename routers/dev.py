@@ -5,10 +5,12 @@ Provides:
 - POST /api/dev/reset - Clear all data
 - Health check specific to dev
 """
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, Depends, HTTPException
+
 from config import load_settings_from_env
 from services.auth import ensure_admin, get_current_user
-from services.dev_mode import get_dev_stats, reset_database, enforce_dev_row_limits
+from services.dev_mode import enforce_dev_row_limits, get_dev_stats, reset_database
 
 router = APIRouter(prefix="/api/dev", tags=["dev"])
 
@@ -23,7 +25,7 @@ def _require_dev_mode():
 @router.get("/stats")
 async def get_stats(current_user: dict = Depends(get_current_user)):
     """Get dev mode statistics (admin only).
-    
+
     Returns:
         - mode: "dev"
         - max_rows_per_table: configured limit
@@ -33,7 +35,7 @@ async def get_stats(current_user: dict = Depends(get_current_user)):
     """
     _require_dev_mode()
     ensure_admin(current_user)
-    
+
     return await get_dev_stats()
 
 
@@ -41,18 +43,18 @@ async def get_stats(current_user: dict = Depends(get_current_user)):
 async def reset_db(current_user: dict = Depends(get_current_user)):
     """
     ⚠️ DANGEROUS: Reset database to clean state.
-    
+
     - Clears ALL user-created data
     - Only available in dev mode + admin role
     - Does NOT reseed (manually run seed script after)
-    
+
     Use cases:
     - Cleanup after messy testing
     - Before automated test runs
     - Reset when making schema changes
-    
+
     Admin only.
-    
+
     Returns:
         - status: "reset"
         - cleared_tables: dict of {table_name: rows_deleted}
@@ -60,7 +62,7 @@ async def reset_db(current_user: dict = Depends(get_current_user)):
     """
     _require_dev_mode()
     ensure_admin(current_user)
-    
+
     return await reset_database()
 
 
@@ -68,15 +70,15 @@ async def reset_db(current_user: dict = Depends(get_current_user)):
 async def check_limits(current_user: dict = Depends(get_current_user)):
     """
     Check if any table exceeds dev row limits.
-    
+
     Returns 200 if all tables are within limits.
     Returns 400 with details if any table exceeds limit.
-    
+
     Admin only.
     """
     _require_dev_mode()
     ensure_admin(current_user)
-    
+
     try:
         await enforce_dev_row_limits()
         return {"status": "ok", "message": "All tables within dev limits"}
@@ -87,16 +89,12 @@ async def check_limits(current_user: dict = Depends(get_current_user)):
 @router.get("/health-dev")
 async def health_dev():
     """Dev-specific health check - no auth required.
-    
+
     Confirms:
     - Dev mode is enabled
     - Dev endpoints are available
-    
+
     Always returns 200 in dev mode.
     """
     _require_dev_mode()
-    return {
-        "status": "healthy",
-        "mode": "dev",
-        "message": "Dev mode active - endpoints available"
-    }
+    return {"status": "healthy", "mode": "dev", "message": "Dev mode active - endpoints available"}

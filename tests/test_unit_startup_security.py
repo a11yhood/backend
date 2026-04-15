@@ -1,5 +1,7 @@
 """Unit tests for startup security predicates/validation."""
+
 import asyncio
+
 import pytest
 
 import main

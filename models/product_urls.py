@@ -1,11 +1,11 @@
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, HttpUrl
 
 
 class ProductUrlBase(BaseModel):
     url: HttpUrl
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class ProductUrlCreate(ProductUrlBase):
@@ -13,8 +13,8 @@ class ProductUrlCreate(ProductUrlBase):
 
 
 class ProductUrlUpdate(BaseModel):
-    url: Optional[HttpUrl] = None
-    description: Optional[str] = None
+    url: HttpUrl | None = None
+    description: str | None = None
 
 
 class ProductUrlResponse(ProductUrlBase):
@@ -23,5 +23,5 @@ class ProductUrlResponse(ProductUrlBase):
     created_by: str
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)

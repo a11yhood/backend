@@ -1,10 +1,12 @@
 """Test product endpoints using the Supabase test database"""
+
+import re
+import uuid
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 pytestmark = pytest.mark.integration
-import uuid
-import re
-from datetime import datetime, UTC, timedelta
 
 
 def _slugify_for_test(value: str) -> str:
@@ -56,32 +58,35 @@ def test_count_products_with_filters(client, clean_database, test_product):
     p2_id = str(uuid.uuid4())
     p3_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {
-            "id": p1_id,
-            "name": "Assistive Spoon",
-            "description": "Thingiverse fabrication tool",
-            "source": "Thingiverse",
-            "type": "Fabrication",
-            "url": "https://www.thingiverse.com/thing:spoon",
-        },
-        {
-            "id": p2_id,
-            "name": "Voice Control Tool",
-            "description": "Github software tool",
-            "source": "Github",
-            "type": "Tool",
-            "url": "https://github.com/example/tool",
-        },
-        {
-            "id": p3_id,
-            "name": "Knit Pattern",
-            "description": "Ravelry knit",
-            "source": "Ravelry",
-            "type": "Knitting",
-            "url": "https://www.ravelry.com/patterns/library/knit",
-        },
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": p1_id,
+                "name": "Assistive Spoon",
+                "description": "Thingiverse fabrication tool",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "url": "https://www.thingiverse.com/thing:spoon",
+            },
+            {
+                "id": p2_id,
+                "name": "Voice Control Tool",
+                "description": "Github software tool",
+                "source": "Github",
+                "type": "Tool",
+                "url": "https://github.com/example/tool",
+            },
+            {
+                "id": p3_id,
+                "name": "Knit Pattern",
+                "description": "Ravelry knit",
+                "source": "Ravelry",
+                "type": "Knitting",
+                "url": "https://www.ravelry.com/patterns/library/knit",
+            },
+        ],
+    )
 
     # Count all products with Thingiverse or Github source
     response = client.get("/api/products/count?sources=Thingiverse,Github")
@@ -95,22 +100,25 @@ def test_count_products_with_type_filter(client, clean_database):
     p1_id = str(uuid.uuid4())
     p2_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {
-            "id": p1_id,
-            "name": "3D Model",
-            "source": "Thingiverse",
-            "type": "Fabrication",
-            "url": "https://www.thingiverse.com/thing:1",
-        },
-        {
-            "id": p2_id,
-            "name": "Software Tool",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/tool",
-        },
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": p1_id,
+                "name": "3D Model",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "url": "https://www.thingiverse.com/thing:1",
+            },
+            {
+                "id": p2_id,
+                "name": "Software Tool",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/tool",
+            },
+        ],
+    )
 
     response = client.get("/api/products/count?type=Fabrication")
     assert response.status_code == 200
@@ -125,26 +133,31 @@ def test_count_products_with_tag_filter(client, clean_database):
     p2_id = str(uuid.uuid4())
 
     clean_database.table("tags").insert({"id": tag_id, "name": "AssistiveTech"}).execute()
-    _insert_products(clean_database, [
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": p1_id,
+                "name": "Tagged Product",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "url": "https://www.thingiverse.com/thing:tagged",
+            },
+            {
+                "id": p2_id,
+                "name": "Untagged Product",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/untagged",
+            },
+        ],
+    )
+    clean_database.table("product_tags").insert(
         {
-            "id": p1_id,
-            "name": "Tagged Product",
-            "source": "Thingiverse",
-            "type": "Fabrication",
-            "url": "https://www.thingiverse.com/thing:tagged",
-        },
-        {
-            "id": p2_id,
-            "name": "Untagged Product",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/untagged",
-        },
-    ])
-    clean_database.table("product_tags").insert({
-        "product_id": p1_id,
-        "tag_id": tag_id,
-    }).execute()
+            "product_id": p1_id,
+            "tag_id": tag_id,
+        }
+    ).execute()
 
     response = client.get("/api/products/count?tags=AssistiveTech")
     assert response.status_code == 200
@@ -157,22 +170,25 @@ def test_count_products_with_search(client, clean_database):
     p1_id = str(uuid.uuid4())
     p2_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {
-            "id": p1_id,
-            "name": "Voice Control Software",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/voice",
-        },
-        {
-            "id": p2_id,
-            "name": "3D Printed Cup",
-            "source": "Thingiverse",
-            "type": "Fabrication",
-            "url": "https://www.thingiverse.com/thing:cup",
-        },
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": p1_id,
+                "name": "Voice Control Software",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/voice",
+            },
+            {
+                "id": p2_id,
+                "name": "3D Printed Cup",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "url": "https://www.thingiverse.com/thing:cup",
+            },
+        ],
+    )
 
     response = client.get("/api/products/count?search=voice")
     assert response.status_code == 200
@@ -185,32 +201,35 @@ def test_get_products_with_filters(client, clean_database, test_product):
     p2_id = str(uuid.uuid4())
     p3_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {
-            "id": p1_id,
-            "name": "Assistive Spoon",
-            "description": "Thingiverse fabrication tool",
-            "source": "Thingiverse",
-            "type": "Fabrication",
-            "url": "https://www.thingiverse.com/thing:spoon",
-        },
-        {
-            "id": p2_id,
-            "name": "Voice Control Tool",
-            "description": "Github software tool",
-            "source": "Github",
-            "type": "Tool",
-            "url": "https://github.com/example/tool",
-        },
-        {
-            "id": p3_id,
-            "name": "Knit Pattern",
-            "description": "Ravelry knit",
-            "source": "Ravelry",
-            "type": "Knitting",
-            "url": "https://www.ravelry.com/patterns/library/knit",
-        },
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": p1_id,
+                "name": "Assistive Spoon",
+                "description": "Thingiverse fabrication tool",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "url": "https://www.thingiverse.com/thing:spoon",
+            },
+            {
+                "id": p2_id,
+                "name": "Voice Control Tool",
+                "description": "Github software tool",
+                "source": "Github",
+                "type": "Tool",
+                "url": "https://github.com/example/tool",
+            },
+            {
+                "id": p3_id,
+                "name": "Knit Pattern",
+                "description": "Ravelry knit",
+                "source": "Ravelry",
+                "type": "Knitting",
+                "url": "https://www.ravelry.com/patterns/library/knit",
+            },
+        ],
+    )
 
     response = client.get("/api/products?sources=Thingiverse,Github&types=Fabrication")
     assert response.status_code == 200
@@ -234,28 +253,33 @@ def test_get_products_filtered_by_tags(client, clean_database):
     other_product_id = str(uuid.uuid4())
 
     clean_database.table("tags").insert({"id": tag_id, "name": "AssistiveTech"}).execute()
-    _insert_products(clean_database, [
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": product_id,
+                "name": "Adapted Cup",
+                "description": "Assistive device",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "url": "https://www.thingiverse.com/thing:cup",
+            },
+            {
+                "id": other_product_id,
+                "name": "Unrelated Tool",
+                "description": "No tag match",
+                "source": "Github",
+                "type": "Tool",
+                "url": "https://github.com/example/unrelated",
+            },
+        ],
+    )
+    clean_database.table("product_tags").insert(
         {
-            "id": product_id,
-            "name": "Adapted Cup",
-            "description": "Assistive device",
-            "source": "Thingiverse",
-            "type": "Fabrication",
-            "url": "https://www.thingiverse.com/thing:cup",
-        },
-        {
-            "id": other_product_id,
-            "name": "Unrelated Tool",
-            "description": "No tag match",
-            "source": "Github",
-            "type": "Tool",
-            "url": "https://github.com/example/unrelated",
-        },
-    ])
-    clean_database.table("product_tags").insert({
-        "product_id": product_id,
-        "tag_id": tag_id,
-    }).execute()
+            "product_id": product_id,
+            "tag_id": tag_id,
+        }
+    ).execute()
 
     resp = client.get("/api/products?tags=AssistiveTech")
     assert resp.status_code == 200
@@ -270,32 +294,35 @@ def test_get_products_supports_multiple_source_params(client, clean_database):
     p2_id = str(uuid.uuid4())
     p3_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {
-            "id": p1_id,
-            "name": "MultiSource Thingiverse",
-            "description": "MultiSource filter",
-            "source": "Thingiverse",
-            "type": "Fabrication",
-            "url": "https://www.thingiverse.com/thing:multisource1",
-        },
-        {
-            "id": p2_id,
-            "name": "MultiSource Github",
-            "description": "MultiSource filter",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/multisource2",
-        },
-        {
-            "id": p3_id,
-            "name": "MultiSource Other",
-            "description": "MultiSource filter",
-            "source": "Ravelry",
-            "type": "Knitting",
-            "url": "https://www.ravelry.com/patterns/library/multisource3",
-        },
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": p1_id,
+                "name": "MultiSource Thingiverse",
+                "description": "MultiSource filter",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "url": "https://www.thingiverse.com/thing:multisource1",
+            },
+            {
+                "id": p2_id,
+                "name": "MultiSource Github",
+                "description": "MultiSource filter",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/multisource2",
+            },
+            {
+                "id": p3_id,
+                "name": "MultiSource Other",
+                "description": "MultiSource filter",
+                "source": "Ravelry",
+                "type": "Knitting",
+                "url": "https://www.ravelry.com/patterns/library/multisource3",
+            },
+        ],
+    )
 
     resp = client.get("/api/products?source=Thingiverse&source=Github&search=MultiSource")
     assert resp.status_code == 200
@@ -310,44 +337,49 @@ def test_get_products_filters_by_min_display_rating(client, clean_database, test
     mixed_id = str(uuid.uuid4())
     user_only_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {
-            "id": high_id,
-            "name": "RatingCase High",
-            "description": "RatingCase",
-            "source": "Github",
-            "type": "Software",
-            "source_rating": 4.5,
-            "computed_rating": 4.5,  # Set computed_rating for test
-            "url": "https://github.com/example/rating-high",
-            "created_by": test_user["id"],
-        },
-        {
-            "id": mixed_id,
-            "name": "RatingCase Mixed",
-            "description": "RatingCase",
-            "source": "Github",
-            "type": "Software",
-            "source_rating": 2.0,
-            "computed_rating": 2.0,  # Will be updated after ratings inserted
-            "url": "https://github.com/example/rating-mixed",
-            "created_by": test_user["id"],
-        },
-        {
-            "id": user_only_id,
-            "name": "RatingCase User",
-            "description": "RatingCase",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/rating-user",
-            "created_by": test_user["id"],
-        },
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": high_id,
+                "name": "RatingCase High",
+                "description": "RatingCase",
+                "source": "Github",
+                "type": "Software",
+                "source_rating": 4.5,
+                "computed_rating": 4.5,  # Set computed_rating for test
+                "url": "https://github.com/example/rating-high",
+                "created_by": test_user["id"],
+            },
+            {
+                "id": mixed_id,
+                "name": "RatingCase Mixed",
+                "description": "RatingCase",
+                "source": "Github",
+                "type": "Software",
+                "source_rating": 2.0,
+                "computed_rating": 2.0,  # Will be updated after ratings inserted
+                "url": "https://github.com/example/rating-mixed",
+                "created_by": test_user["id"],
+            },
+            {
+                "id": user_only_id,
+                "name": "RatingCase User",
+                "description": "RatingCase",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/rating-user",
+                "created_by": test_user["id"],
+            },
+        ],
+    )
 
-    clean_database.table("ratings").insert([
-        {"product_id": mixed_id, "user_id": test_user["id"], "rating": 4},
-        {"product_id": user_only_id, "user_id": test_user["id"], "rating": 5},
-    ]).execute()
+    clean_database.table("ratings").insert(
+        [
+            {"product_id": mixed_id, "user_id": test_user["id"], "rating": 4},
+            {"product_id": user_only_id, "user_id": test_user["id"], "rating": 5},
+        ]
+    ).execute()
     # computed_rating is updated automatically by the Supabase trigger on ratings insert
 
     resp = client.get("/api/products?search=RatingCase&min_rating=3.5")
@@ -364,41 +396,49 @@ def test_get_products_filters_by_min_display_rating(client, clean_database, test
 def test_get_products_filters_by_max_age(client, clean_database, test_user):
     """Test max_age filter shows only recently updated products from source"""
     # Clear all existing products first
-    clean_database.table("products").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-    
+    clean_database.table("products").delete().neq(
+        "id", "00000000-0000-0000-0000-000000000000"
+    ).execute()
+
     old_id = str(uuid.uuid4())
     recent_id = str(uuid.uuid4())
-    
+
     # Create old product (last updated from source 10 days ago)
     old_time = datetime.now(UTC) - timedelta(days=10)
-    _insert_products(clean_database, [
-        {
-            "id": old_id,
-            "name": "Old Product",
-            "description": "Product updated 10 days ago",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/old",
-            "created_by": test_user["id"],
-            "source_last_updated": old_time,
-        },
-    ])
-    
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": old_id,
+                "name": "Old Product",
+                "description": "Product updated 10 days ago",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/old",
+                "created_by": test_user["id"],
+                "source_last_updated": old_time,
+            },
+        ],
+    )
+
     # Create recent product (last updated from source 2 days ago)
     recent_time = datetime.now(UTC) - timedelta(days=2)
-    _insert_products(clean_database, [
-        {
-            "id": recent_id,
-            "name": "Recent Product",
-            "description": "Product updated 2 days ago",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/recent",
-            "created_by": test_user["id"],
-            "source_last_updated": recent_time,
-        },
-    ])
-    
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": recent_id,
+                "name": "Recent Product",
+                "description": "Product updated 2 days ago",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/recent",
+                "created_by": test_user["id"],
+                "source_last_updated": recent_time,
+            },
+        ],
+    )
+
     # Filter for products updated in last 5 days
     resp = client.get("/api/products?max_age=5")
     assert resp.status_code == 200
@@ -406,7 +446,7 @@ def test_get_products_filters_by_max_age(client, clean_database, test_user):
     ids = {item["id"] for item in data}
     assert recent_id in ids
     assert old_id not in ids
-    
+
     # Filter for products updated in last 15 days (should include both)
     resp = client.get("/api/products?max_age=15")
     assert resp.status_code == 200
@@ -419,41 +459,46 @@ def test_get_products_filters_by_max_age(client, clean_database, test_user):
 def test_count_products_respects_max_age(client, clean_database, test_user):
     """Test /count respects max_age filter"""
     # Clear all existing products first
-    clean_database.table("products").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-    
+    clean_database.table("products").delete().neq(
+        "id", "00000000-0000-0000-0000-000000000000"
+    ).execute()
+
     old_id = str(uuid.uuid4())
     recent_id = str(uuid.uuid4())
-    
+
     old_time = datetime.now(UTC) - timedelta(days=10)
     recent_time = datetime.now(UTC) - timedelta(days=2)
-    
-    _insert_products(clean_database, [
-        {
-            "id": old_id,
-            "name": "Old Product",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/old-count",
-            "created_by": test_user["id"],
-            "source_last_updated": old_time,
-        },
-        {
-            "id": recent_id,
-            "name": "Recent Product",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/recent-count",
-            "created_by": test_user["id"],
-            "source_last_updated": recent_time,
-        },
-    ])
-    
+
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": old_id,
+                "name": "Old Product",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/old-count",
+                "created_by": test_user["id"],
+                "source_last_updated": old_time,
+            },
+            {
+                "id": recent_id,
+                "name": "Recent Product",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/recent-count",
+                "created_by": test_user["id"],
+                "source_last_updated": recent_time,
+            },
+        ],
+    )
+
     # Count with 5 day filter should only include recent
     resp = client.get("/api/products/count?max_age=5")
     assert resp.status_code == 200
     data = resp.json()
     assert data["count"] == 1
-    
+
     # Count with 15 day filter should include both
     resp = client.get("/api/products/count?max_age=15")
     assert resp.status_code == 200
@@ -466,49 +511,56 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
     low_id = str(uuid.uuid4())
     user_high_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {
-            "id": high_id,
-            "name": "RatingCount High",
-            "description": "RatingCount",
-            "source": "Github",
-            "type": "Software",
-            "source_rating": 4.2,
-            "computed_rating": 4.2,  # Set computed_rating for test (no trigger in SQLite)
-            "url": "https://github.com/example/rating-count-high",
-            "created_by": test_user["id"],
-        },
-        {
-            "id": low_id,
-            "name": "RatingCount Low",
-            "description": "RatingCount",
-            "source": "Github",
-            "type": "Software",
-            "source_rating": 3.0,
-            "computed_rating": 3.0,  # Set computed_rating for test (no trigger in SQLite)
-            "url": "https://github.com/example/rating-count-low",
-            "created_by": test_user["id"],
-        },
-        {
-            "id": user_high_id,
-            "name": "RatingCount User High",
-            "description": "RatingCount",
-            "source": "Github",
-            "type": "Software",
-            "url": "https://github.com/example/rating-count-user",
-            "created_by": test_user["id"],
-        },
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": high_id,
+                "name": "RatingCount High",
+                "description": "RatingCount",
+                "source": "Github",
+                "type": "Software",
+                "source_rating": 4.2,
+                "computed_rating": 4.2,  # Set computed_rating for test (no trigger in SQLite)
+                "url": "https://github.com/example/rating-count-high",
+                "created_by": test_user["id"],
+            },
+            {
+                "id": low_id,
+                "name": "RatingCount Low",
+                "description": "RatingCount",
+                "source": "Github",
+                "type": "Software",
+                "source_rating": 3.0,
+                "computed_rating": 3.0,  # Set computed_rating for test (no trigger in SQLite)
+                "url": "https://github.com/example/rating-count-low",
+                "created_by": test_user["id"],
+            },
+            {
+                "id": user_high_id,
+                "name": "RatingCount User High",
+                "description": "RatingCount",
+                "source": "Github",
+                "type": "Software",
+                "url": "https://github.com/example/rating-count-user",
+                "created_by": test_user["id"],
+            },
+        ],
+    )
 
-    clean_database.table("ratings").insert([
-        {"product_id": low_id, "user_id": test_user["id"], "rating": 3},
-        {"product_id": user_high_id, "user_id": test_user["id"], "rating": 4},
-    ]).execute()
+    clean_database.table("ratings").insert(
+        [
+            {"product_id": low_id, "user_id": test_user["id"], "rating": 3},
+            {"product_id": user_high_id, "user_id": test_user["id"], "rating": 4},
+        ]
+    ).execute()
 
     # Manually update computed_rating since SQLite doesn't have the trigger
     clean_database.table("products").update({"computed_rating": 4.2}).eq("id", high_id).execute()
     clean_database.table("products").update({"computed_rating": 3.0}).eq("id", low_id).execute()
-    clean_database.table("products").update({"computed_rating": 4.0}).eq("id", user_high_id).execute()
+    clean_database.table("products").update({"computed_rating": 4.0}).eq(
+        "id", user_high_id
+    ).execute()
 
     resp = client.get("/api/products/count?search=RatingCount&min_rating=4")
     assert resp.status_code == 200
@@ -521,16 +573,18 @@ def test_products_pagination_with_filters(client, clean_database, test_user):
     for idx in range(4):
         pid = str(uuid.uuid4())
         created_at = base_time + timedelta(minutes=idx)
-        items.append({
-            "id": pid,
-            "name": f"PageTest {idx}",
-            "description": "Pagination check",
-            "source": "Github",
-            "type": "Software",
-            "url": f"https://github.com/example/pagetest-{idx}",
-            "created_by": test_user["id"],
-            "created_at": created_at,
-        })
+        items.append(
+            {
+                "id": pid,
+                "name": f"PageTest {idx}",
+                "description": "Pagination check",
+                "source": "Github",
+                "type": "Software",
+                "url": f"https://github.com/example/pagetest-{idx}",
+                "created_by": test_user["id"],
+                "created_at": created_at,
+            }
+        )
     _insert_products(clean_database, items)
 
     resp_page = client.get("/api/products?source=Github&search=PageTest&limit=2&offset=1")
@@ -550,30 +604,33 @@ def test_sort_by_rating_uses_recency_as_secondary_sort(client, clean_database, t
     older_id = str(uuid.uuid4())
     newer_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {
-            "id": older_id,
-            "name": "SortRatingRecency Older",
-            "description": "SortRatingRecency",
-            "source": "Github",
-            "type": "Software",
-            "computed_rating": 4.0,
-            "url": "https://github.com/example/sort-rating-older",
-            "created_by": test_user["id"],
-            "created_at": base_time,
-        },
-        {
-            "id": newer_id,
-            "name": "SortRatingRecency Newer",
-            "description": "SortRatingRecency",
-            "source": "Github",
-            "type": "Software",
-            "computed_rating": 4.0,
-            "url": "https://github.com/example/sort-rating-newer",
-            "created_by": test_user["id"],
-            "created_at": base_time + timedelta(minutes=5),
-        },
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": older_id,
+                "name": "SortRatingRecency Older",
+                "description": "SortRatingRecency",
+                "source": "Github",
+                "type": "Software",
+                "computed_rating": 4.0,
+                "url": "https://github.com/example/sort-rating-older",
+                "created_by": test_user["id"],
+                "created_at": base_time,
+            },
+            {
+                "id": newer_id,
+                "name": "SortRatingRecency Newer",
+                "description": "SortRatingRecency",
+                "source": "Github",
+                "type": "Software",
+                "computed_rating": 4.0,
+                "url": "https://github.com/example/sort-rating-newer",
+                "created_by": test_user["id"],
+                "created_at": base_time + timedelta(minutes=5),
+            },
+        ],
+    )
 
     resp = client.get("/api/products?search=SortRatingRecency&sort_by=rating&sort_order=desc")
     assert resp.status_code == 200
@@ -666,18 +723,38 @@ def test_bulk_delete_by_source_query_param(admin_client, clean_database):
     p2_id = str(uuid.uuid4())
     keep_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {"id": p1_id, "name": "Bulk A", "source": source_name, "url": f"https://example.com/{p1_id}"},
-        {"id": p2_id, "name": "Bulk B", "source": source_name, "url": f"https://example.com/{p2_id}"},
-        {"id": keep_id, "name": "Keep", "source": "Other", "url": f"https://example.com/{keep_id}"},
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": p1_id,
+                "name": "Bulk A",
+                "source": source_name,
+                "url": f"https://example.com/{p1_id}",
+            },
+            {
+                "id": p2_id,
+                "name": "Bulk B",
+                "source": source_name,
+                "url": f"https://example.com/{p2_id}",
+            },
+            {
+                "id": keep_id,
+                "name": "Keep",
+                "source": "Other",
+                "url": f"https://example.com/{keep_id}",
+            },
+        ],
+    )
 
     resp = admin_client.post(f"/api/products/bulk-delete?source={source_name}")
     assert resp.status_code == 200
     data = resp.json()
     assert data["deleted_count"] == 2
 
-    remaining_bulk = clean_database.table("products").select("id").eq("source", source_name).execute()
+    remaining_bulk = (
+        clean_database.table("products").select("id").eq("source", source_name).execute()
+    )
     assert remaining_bulk.data == []
 
     keep_row = clean_database.table("products").select("id").eq("id", keep_id).execute()
@@ -687,10 +764,23 @@ def test_bulk_delete_by_source_query_param(admin_client, clean_database):
 def test_bulk_delete_accepts_json_body(admin_client, clean_database):
     source_name = "JsonSource"
     ids = [str(uuid.uuid4()) for _ in range(2)]
-    _insert_products(clean_database, [
-        {"id": ids[0], "name": "JSON A", "source": source_name, "url": f"https://example.com/{ids[0]}"},
-        {"id": ids[1], "name": "JSON B", "source": source_name, "url": f"https://example.com/{ids[1]}"},
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": ids[0],
+                "name": "JSON A",
+                "source": source_name,
+                "url": f"https://example.com/{ids[0]}",
+            },
+            {
+                "id": ids[1],
+                "name": "JSON B",
+                "source": source_name,
+                "url": f"https://example.com/{ids[1]}",
+            },
+        ],
+    )
 
     resp = admin_client.post("/api/products/bulk-delete", json={"source": source_name})
     assert resp.status_code == 200
@@ -700,12 +790,17 @@ def test_bulk_delete_accepts_json_body(admin_client, clean_database):
 def test_bulk_delete_by_product_ids_dedupes(admin_client, clean_database):
     ids = [str(uuid.uuid4()) for _ in range(3)]
     for pid in ids:
-        _insert_products(clean_database, [{
-            "id": pid,
-            "name": f"Target {pid[:8]}",
-            "source": "DedupSource",
-            "url": f"https://example.com/{pid}",
-        }])
+        _insert_products(
+            clean_database,
+            [
+                {
+                    "id": pid,
+                    "name": f"Target {pid[:8]}",
+                    "source": "DedupSource",
+                    "url": f"https://example.com/{pid}",
+                }
+            ],
+        )
 
     resp = admin_client.post(
         "/api/products/bulk-delete",
@@ -725,18 +820,43 @@ def test_bulk_delete_uses_search_filters(admin_client, clean_database):
     matching_ids = [str(uuid.uuid4()) for _ in range(2)]
     keep_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {"id": matching_ids[0], "name": "Alpha Screen Reader", "source": source_name, "type": "Software", "url": f"https://example.com/{matching_ids[0]}"},
-        {"id": matching_ids[1], "name": "Alpha Magnifier", "source": source_name, "type": "Software", "url": f"https://example.com/{matching_ids[1]}"},
-        {"id": keep_id, "name": "Beta Keyboard", "source": source_name, "type": "Hardware", "url": f"https://example.com/{keep_id}"},
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": matching_ids[0],
+                "name": "Alpha Screen Reader",
+                "source": source_name,
+                "type": "Software",
+                "url": f"https://example.com/{matching_ids[0]}",
+            },
+            {
+                "id": matching_ids[1],
+                "name": "Alpha Magnifier",
+                "source": source_name,
+                "type": "Software",
+                "url": f"https://example.com/{matching_ids[1]}",
+            },
+            {
+                "id": keep_id,
+                "name": "Beta Keyboard",
+                "source": source_name,
+                "type": "Hardware",
+                "url": f"https://example.com/{keep_id}",
+            },
+        ],
+    )
 
-    resp = admin_client.post("/api/products/bulk-delete?source=SearchSource&search=Alpha&type=Software")
+    resp = admin_client.post(
+        "/api/products/bulk-delete?source=SearchSource&search=Alpha&type=Software"
+    )
 
     assert resp.status_code == 200
     assert resp.json()["deleted_count"] == 2
 
-    remaining = clean_database.table("products").select("id").in_("id", matching_ids + [keep_id]).execute()
+    remaining = (
+        clean_database.table("products").select("id").in_("id", matching_ids + [keep_id]).execute()
+    )
     remaining_ids = {row["id"] for row in (remaining.data or [])}
     assert remaining_ids == {keep_id}
 
@@ -746,10 +866,27 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
     delete_id = str(uuid.uuid4())
     keep_id = str(uuid.uuid4())
 
-    _insert_products(clean_database, [
-        {"id": delete_id, "name": "Body Filter Match", "source": source_name, "type": "Software", "source_rating": 4.5, "url": f"https://example.com/{delete_id}"},
-        {"id": keep_id, "name": "Body Filter Keep", "source": source_name, "type": "Software", "source_rating": 2.0, "url": f"https://example.com/{keep_id}"},
-    ])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": delete_id,
+                "name": "Body Filter Match",
+                "source": source_name,
+                "type": "Software",
+                "source_rating": 4.5,
+                "url": f"https://example.com/{delete_id}",
+            },
+            {
+                "id": keep_id,
+                "name": "Body Filter Keep",
+                "source": source_name,
+                "type": "Software",
+                "source_rating": 2.0,
+                "url": f"https://example.com/{keep_id}",
+            },
+        ],
+    )
 
     resp = admin_client.post(
         "/api/products/bulk-delete",
@@ -759,7 +896,9 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
     assert resp.status_code == 200
     assert resp.json()["deleted_count"] == 1
 
-    remaining = clean_database.table("products").select("id").in_("id", [delete_id, keep_id]).execute()
+    remaining = (
+        clean_database.table("products").select("id").in_("id", [delete_id, keep_id]).execute()
+    )
     remaining_ids = {row["id"] for row in (remaining.data or [])}
     assert remaining_ids == {keep_id}
 
@@ -767,6 +906,7 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
 # ============================================================================
 # TESTS FOR STORY 3.1 & 3.4: PRODUCT SUBMISSION WITH URL CHECK
 # ============================================================================
+
 
 def test_product_exists_endpoint_returns_false_for_new_url(client):
     """Test that /exists endpoint returns false for non-existent product"""
@@ -792,7 +932,7 @@ def test_product_exists_includes_necessary_fields(client, test_product):
     response = client.get(f"/api/products/exists?source_url={test_product['url']}")
     assert response.status_code == 200
     data = response.json()
-    
+
     # Product should have these fields for UI to display
     product = data["product"]
     assert "id" in product
@@ -816,10 +956,10 @@ def test_create_product_by_new_user_adds_ownership(auth_client, test_user):
     response = auth_client.post("/api/products", json=product_data)
     assert response.status_code == 201
     product = response.json()
-    
+
     # Product should have created_by set to current user
     assert product["created_by"] == test_user["id"]
-    
+
     # Verify user is in managers list by querying product_editors table
     # This would require a GET endpoint or checking via the product management response
 
@@ -839,7 +979,7 @@ def test_product_submission_logs_activity(auth_client, test_user, clean_database
     response = auth_client.post("/api/products", json=product_data)
     assert response.status_code == 201
     product = response.json()
-    
+
     # Check that activity was logged (in a real implementation)
     # For now, verify product was created with correct fields
     assert product["name"] == "New Accessible Tool"
@@ -871,14 +1011,19 @@ def test_ban_requires_moderator_or_admin(auth_client, test_product):
 def test_include_banned_requires_privileged_role(client, auth_client, clean_database):
     # Seed banned product
     banned_id = str(uuid.uuid4())
-    _insert_products(clean_database, [{
-        "id": banned_id,
-        "name": "Banned Item",
-        "description": "",
-        "source": "github",
-        "type": "tool",
-        "banned": True,
-    }])
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": banned_id,
+                "name": "Banned Item",
+                "description": "",
+                "source": "github",
+                "type": "tool",
+                "banned": True,
+            }
+        ],
+    )
 
     # Anonymous/user without role cannot request include_banned=true
     resp = client.get("/api/products?include_banned=true")

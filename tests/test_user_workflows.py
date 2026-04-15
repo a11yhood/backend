@@ -7,14 +7,12 @@ These tests verify that complete user actions have the expected side effects:
 - Creating a discussion → activity is logged
 """
 
+import uuid
+from datetime import UTC, datetime
+
 import pytest
 
 pytestmark = pytest.mark.integration
-from datetime import datetime, UTC
-import uuid
-
-from main import app
-from services.database import get_db
 
 
 @pytest.fixture
@@ -40,6 +38,7 @@ def test_product_data():
 # STORY 3.1: USER SUBMITS A NEW PRODUCT
 # ============================================================================
 
+
 def test_product_submission_creates_product_and_adds_owner(
     auth_client,
     test_user,
@@ -58,10 +57,10 @@ def test_product_submission_creates_product_and_adds_owner(
         "categories": ["testing"],
         "source_url": f"https://github.com/test/tool-{uuid.uuid4()}",
     }
-    
+
     # Submit product via API with auth
     response = auth_client.post("/api/products", json=product_data)
-    
+
     # Verify product creation succeeds
     assert response.status_code == 201
     product = response.json()
@@ -86,15 +85,15 @@ def test_product_submission_sets_correct_created_at(
         "type": "Software",
         "source_url": f"https://github.com/user/test-{uuid.uuid4()}",
     }
-    
+
     before_submission = datetime.now(UTC)
     response = auth_client.post("/api/products", json=product_data)
     after_submission = datetime.now(UTC)
-    
+
     assert response.status_code == 201
     product = response.json()
     assert "created_at" in product
-    
+
     # Verify timestamp is reasonable
     created_at = datetime.fromisoformat(product["created_at"].replace("Z", "+00:00"))
     assert before_submission <= created_at <= after_submission
@@ -103,6 +102,7 @@ def test_product_submission_sets_correct_created_at(
 # ============================================================================
 # STORY 4.1: USER RATES A PRODUCT
 # ============================================================================
+
 
 def test_product_rating_logs_activity(
     auth_client,
@@ -116,12 +116,12 @@ def test_product_rating_logs_activity(
     - Rating can be retrieved
     """
     rating_value = 4
-    
+
     response = auth_client.post(
         "/api/ratings",
         json={"product_id": test_product["id"], "rating": rating_value},
     )
-    
+
     assert response.status_code == 201
     rating = response.json()
     assert rating["rating"] == rating_value
@@ -133,6 +133,7 @@ def test_product_rating_logs_activity(
 # ============================================================================
 # STORY 5.1: USER PARTICIPATES IN DISCUSSIONS
 # ============================================================================
+
 
 def test_discussion_creation_with_parent_id(
     auth_client,
@@ -155,7 +156,7 @@ def test_discussion_creation_with_parent_id(
     )
     assert parent_response.status_code == 201
     parent_id = parent_response.json()["id"]
-    
+
     # Now create a reply with parent_id
     comment_text = "Great accessibility features!"
     response = auth_client.post(
@@ -166,7 +167,7 @@ def test_discussion_creation_with_parent_id(
             "content": comment_text,
         },
     )
-    
+
     assert response.status_code == 201
     discussion = response.json()
     assert discussion["content"] == comment_text
@@ -185,7 +186,7 @@ def test_discussion_creation_without_parent_starts_new_thread(
     Discussion without parent_id starts a new thread
     """
     comment_text = "Starting a new discussion"
-    
+
     response = auth_client.post(
         "/api/discussions",
         json={
@@ -193,7 +194,7 @@ def test_discussion_creation_without_parent_starts_new_thread(
             "content": comment_text,
         },
     )
-    
+
     assert response.status_code == 201
     discussion = response.json()
     assert discussion["content"] == comment_text
@@ -204,6 +205,7 @@ def test_discussion_creation_without_parent_starts_new_thread(
 # ============================================================================
 # STORY 8.1: USER ACTIVITIES ARE LOGGED
 # ============================================================================
+
 
 def test_activity_logging_stores_metadata(
     auth_client,
@@ -216,7 +218,7 @@ def test_activity_logging_stores_metadata(
     """
     product_id = test_product["id"]
     timestamp = int(datetime.now(UTC).timestamp() * 1000)
-    
+
     response = auth_client.post(
         "/api/activities",
         json={
@@ -227,7 +229,7 @@ def test_activity_logging_stores_metadata(
             "metadata": {"rating": 5},
         },
     )
-    
+
     assert response.status_code == 201
     activity = response.json()
     assert activity["type"] == "rating"
@@ -255,10 +257,10 @@ def test_activities_can_be_queried_by_user(
                 "timestamp": int(datetime.now(UTC).timestamp() * 1000),
             },
         )
-    
+
     # Query activities
     response = auth_client.get("/api/activities")
-    
+
     assert response.status_code == 200
     activities = response.json()
     # Should have at least the activities we just created
@@ -268,6 +270,7 @@ def test_activities_can_be_queried_by_user(
 # ============================================================================
 # STORY 3.3: USER REQUESTS PRODUCT MANAGEMENT
 # ============================================================================
+
 
 def test_user_can_request_product_editor(
     auth_client,
@@ -279,16 +282,12 @@ def test_user_can_request_product_editor(
     User should be able to request ownership of a product
     """
     reason = "I created this product"
-    
+
     response = auth_client.post(
         "/api/requests",
-        json={
-            "type": "product-ownership",
-            "product_id": test_product["id"],
-            "reason": reason
-        },
+        json={"type": "product-ownership", "product_id": test_product["id"], "reason": reason},
     )
-    
+
     assert response.status_code == 201
     request = response.json()
     assert request["status"] == "pending"
@@ -299,7 +298,7 @@ def test_user_can_request_product_editor(
 
 def test_approved_ownership_request_updates_status(
     admin_client,
-        test_admin,
+    test_admin,
     test_product,
     clean_database,
 ):
@@ -308,25 +307,21 @@ def test_approved_ownership_request_updates_status(
     - Request status changes to approved
     """
     reason = "I should own this product"
-    
+
     # Admin creates request (admins can create requests too)
     request_response = admin_client.post(
         "/api/requests",
-        json={
-            "type": "product-ownership",
-            "product_id": test_product["id"],
-            "reason": reason
-        },
+        json={"type": "product-ownership", "product_id": test_product["id"], "reason": reason},
     )
     assert request_response.status_code == 201
     request_id = request_response.json()["id"]
-    
+
     # Admin approves request
     response = admin_client.patch(
         f"/api/requests/{request_id}",
         json={"status": "approved"},
     )
-    
+
     assert response.status_code == 200
     request = response.json()
     assert request["status"] == "approved"
@@ -336,6 +331,7 @@ def test_approved_ownership_request_updates_status(
 # STORY 3.4: USER SUBMITS EXISTING PRODUCT (URL CHECK FLOW)
 # ============================================================================
 
+
 def test_product_exists_endpoint_for_new_url(client):
     """
     Story 3.4: When user checks URL that doesn't exist
@@ -344,7 +340,7 @@ def test_product_exists_endpoint_for_new_url(client):
     response = client.get(
         "/api/products/exists?source_url=https://github.com/user/never-submitted-product"
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["exists"] is False
@@ -361,20 +357,22 @@ def test_product_exists_endpoint_for_existing_product(
     """
     # Create a product first
     test_url = "https://github.com/test/existing-product"
-    clean_database.table("products").insert({
-        "id": str(uuid.uuid4()),
-        "slug": f"existing-accessible-product-{uuid.uuid4().hex[:8]}",
-        "name": "Existing Accessible Product",
-        "source": "github",
-        "type": "Software",
-        "url": test_url,
-        "description": "Product that exists",
-        "created_by": test_user["id"],
-    }).execute()
-    
+    clean_database.table("products").insert(
+        {
+            "id": str(uuid.uuid4()),
+            "slug": f"existing-accessible-product-{uuid.uuid4().hex[:8]}",
+            "name": "Existing Accessible Product",
+            "source": "github",
+            "type": "Software",
+            "url": test_url,
+            "description": "Product that exists",
+            "created_by": test_user["id"],
+        }
+    ).execute()
+
     # Check if it exists
     response = client.get(f"/api/products/exists?source_url={test_url}")
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["exists"] is True
@@ -395,12 +393,12 @@ def test_product_submission_new_product_workflow(
     - User is added as owner
     """
     test_url = f"https://github.com/user/new-product-{uuid.uuid4()}"
-    
+
     # Step 1: Check if product exists (it doesn't)
     response = auth_client.get(f"/api/products/exists?source_url={test_url}")
     assert response.status_code == 200
     assert response.json()["exists"] is False
-    
+
     # Step 2: User fills form and submits new product
     product_data = {
         "name": "New Accessibility Tool",
@@ -409,7 +407,7 @@ def test_product_submission_new_product_workflow(
         "type": "Software",
         "source_url": test_url,
     }
-    
+
     response = auth_client.post("/api/products", json=product_data)
     assert response.status_code == 201
     product = response.json()
@@ -430,26 +428,27 @@ def test_product_submission_existing_product_workflow(
     """
     test_url = "https://github.com/existing/tool"
     existing_product_id = str(uuid.uuid4())
-    
+
     # Create existing product owned by test_user_2
-    clean_database.table("products").insert({
-        "id": existing_product_id,
-        "slug": f"existing-accessible-tool-{uuid.uuid4().hex[:8]}",
-        "name": "Existing Accessible Tool",
-        "source": "github",
-        "type": "Software",
-        "url": test_url,
-        "description": "Already in database",
-        "created_by": test_user_2["id"],
-    }).execute()
-    
+    clean_database.table("products").insert(
+        {
+            "id": existing_product_id,
+            "slug": f"existing-accessible-tool-{uuid.uuid4().hex[:8]}",
+            "name": "Existing Accessible Tool",
+            "source": "github",
+            "type": "Software",
+            "url": test_url,
+            "description": "Already in database",
+            "created_by": test_user_2["id"],
+        }
+    ).execute()
+
     # Step 1: User checks URL (exists)
     response = client.get(f"/api/products/exists?source_url={test_url}")
     assert response.status_code == 200
     data = response.json()
     assert data["exists"] is True
     assert data["product"]["id"] == existing_product_id
-    
+
     # Step 2: Check created_by is set correctly
     assert data["product"]["created_by"] == test_user_2["id"]
-

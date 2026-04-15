@@ -1,7 +1,8 @@
 """Unit tests for slug/normalization helpers."""
+
 import pytest
 
-from services.id_generator import normalize_to_snake_case, generate_id_with_uniqueness_check
+from services.id_generator import generate_id_with_uniqueness_check, normalize_to_snake_case
 
 pytestmark = pytest.mark.unit
 

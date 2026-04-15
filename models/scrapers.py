@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict
-from typing import Optional, List
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ScrapingLogBase(BaseModel):
@@ -10,7 +10,7 @@ class ScrapingLogBase(BaseModel):
     products_updated: int
     duration_seconds: float
     status: str  # 'success', 'error', 'halted'
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 class ScrapingLogCreate(ScrapingLogBase):
@@ -21,7 +21,7 @@ class ScrapingLogResponse(ScrapingLogBase):
     id: str
     user_id: str
     created_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -37,11 +37,11 @@ class OAuthConfigCreate(OAuthConfigBase):
 
 
 class OAuthConfigUpdate(BaseModel):
-    client_id: Optional[str] = None
-    client_secret: Optional[str] = None
-    redirect_uri: Optional[str] = None
-    access_token: Optional[str] = None
-    refresh_token: Optional[str] = None
+    client_id: str | None = None
+    client_secret: str | None = None
+    redirect_uri: str | None = None
+    access_token: str | None = None
+    refresh_token: str | None = None
 
 
 class OAuthConfigResponse(BaseModel):
@@ -52,15 +52,16 @@ class OAuthConfigResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     # client_secret is intentionally excluded for security
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
-from enum import Enum
+from enum import StrEnum
 
 
-class ScraperSource(str, Enum):
+class ScraperSource(StrEnum):
     """Valid scraper sources"""
+
     thingiverse = "thingiverse"
     ravelry = "ravelry"
     github = "github"
@@ -68,6 +69,8 @@ class ScraperSource(str, Enum):
 
 
 class ScraperTriggerRequest(BaseModel):
-    source: ScraperSource = Field(..., description="Platform to scrape: 'thingiverse', 'ravelry', 'github', 'goat'")
+    source: ScraperSource = Field(
+        ..., description="Platform to scrape: 'thingiverse', 'ravelry', 'github', 'goat'"
+    )
     test_mode: bool = Field(False, description="If true, only scrape limited items for testing")
     test_limit: int = Field(5, description="Number of items to scrape in test mode", ge=1, le=50)

@@ -1,12 +1,14 @@
-from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+
+from pydantic import BaseModel, Field
 
 
 class SupportedSourceBase(BaseModel):
     domain: str = Field(..., min_length=1, max_length=255)
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = Field(None, description="Markdown-formatted description of the source")
+    description: str | None = Field(
+        None, description="Markdown-formatted description of the source"
+    )
 
 
 class SupportedSourceCreate(SupportedSourceBase):
@@ -14,9 +16,11 @@ class SupportedSourceCreate(SupportedSourceBase):
 
 
 class SupportedSourceUpdate(BaseModel):
-    domain: Optional[str] = Field(None, min_length=1, max_length=255)
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = Field(None, description="Markdown-formatted description of the source")
+    domain: str | None = Field(None, min_length=1, max_length=255)
+    name: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = Field(
+        None, description="Markdown-formatted description of the source"
+    )
 
 
 class SupportedSourceResponse(SupportedSourceBase):

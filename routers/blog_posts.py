@@ -4,21 +4,21 @@ Admin-only blog posts with markdown content, header images, and multi-author sup
 Security: All mutations require admin role; image uploads size-limited to ~5MB.
 Markdown content should be sanitized before rendering to prevent XSS.
 """
-from datetime import datetime, UTC
+
 import re
-from typing import List, Optional, Union
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from models.blog_posts import BlogPostCreate, BlogPostResponse, BlogPostUpdate
 from services.auth import ensure_admin, get_current_user, get_current_user_optional
-from services.database import get_db, db_adapter
+from services.database import get_db
 from services.sanitizer import sanitize_html
 
 router = APIRouter(prefix="/api/blog-posts", tags=["blog"])
 
 
-def _serialize_datetime(dt: Optional[datetime]) -> Union[datetime, str, None]:
+def _serialize_datetime(dt: datetime | None) -> datetime | str | None:
     """Serialize datetime to ISO string for Supabase."""
     if dt is None:
         return None
@@ -27,23 +27,27 @@ def _serialize_datetime(dt: Optional[datetime]) -> Union[datetime, str, None]:
 
 def _slugify(text: str) -> str:
     """Generate URL-friendly slug from blog post title.
-    
+
     Normalizes title to lowercase, removes special chars, and replaces spaces with hyphens.
     Example: "Hello World & Friends" -> "hello-world-and-friends"
     Used for clean URLs: /blog/hello-world-and-friends
     """
     return (
-        text.lower()
-        .strip()
-        .replace("'", "")
-        .replace("\"", "")
-        .replace("&", " and ")
-        .replace("/", "-")
-        .replace("\\", "-")
-    ).replace(" ", "-").replace("--", "-")
+        (
+            text.lower()
+            .strip()
+            .replace("'", "")
+            .replace('"', "")
+            .replace("&", " and ")
+            .replace("/", "-")
+            .replace("\\", "-")
+        )
+        .replace(" ", "-")
+        .replace("--", "-")
+    )
 
 
-def _to_datetime(value: Optional[object]) -> Optional[datetime]:
+def _to_datetime(value: object | None) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -62,7 +66,7 @@ def _to_datetime(value: Optional[object]) -> Optional[datetime]:
     raise HTTPException(status_code=400, detail="Unsupported date value")
 
 
-def _to_timestamp_ms(value: Optional[object]) -> Optional[int]:
+def _to_timestamp_ms(value: object | None) -> int | None:
     if value is None:
         return None
     if isinstance(value, (int, float)):
@@ -79,14 +83,15 @@ def _to_timestamp_ms(value: Optional[object]) -> Optional[int]:
         return int(dt.timestamp() * 1000)
     return None
 
-def _normalize_image_string(value: Optional[str]) -> Optional[str]:
+
+def _normalize_image_string(value: str | None) -> str | None:
     """Normalize header image values to a consistent, browser-friendly format.
 
     Handles multiple input formats:
     - HTTP(S) URLs: passed through unchanged
     - Data URLs: passed through unchanged
     - Raw base64: auto-detects mime type from magic bytes and adds data URL prefix
-    
+
     MIME detection examines base64 prefix:
     - /9j/ -> JPEG, iVBOR -> PNG, R0lGOD -> GIF, Qk -> BMP
     - Default: PNG if unrecognized
@@ -112,7 +117,8 @@ def _normalize_image_string(value: Optional[str]) -> Optional[str]:
         mime = "image/bmp"
     return f"data:{mime};base64,{src}"
 
-def _validate_image_size(data_url: Optional[str], field_name: str = "header_image"):
+
+def _validate_image_size(data_url: str | None, field_name: str = "header_image"):
     """Enforce a ~5MB maximum payload for images.
 
     We estimate byte size from the base64 payload length: bytes ~= len * 3 / 4.
@@ -136,7 +142,7 @@ _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 _HTML_IMG_RE = re.compile(r"<img[^>]+src=[\"\']([^\"\']+)[\"\'][^>]*>", re.IGNORECASE)
 
 
-def _normalize_content_images(content: Optional[str]) -> Optional[str]:
+def _normalize_content_images(content: str | None) -> str | None:
     """Normalize and validate inline images embedded in markdown/HTML content.
 
     - Converts raw base64 URLs to data URLs with a mime prefix
@@ -153,7 +159,7 @@ def _normalize_content_images(content: Optional[str]) -> Optional[str]:
             _validate_image_size(norm, field_name="content image")
         # Rebuild the original "![alt](...)" with normalized URL
         start, end = match.span(1)
-        return content[match.start():start] + (norm or url) + content[end:match.end()]
+        return content[match.start() : start] + (norm or url) + content[end : match.end()]
 
     # We'll replace by building progressively to avoid nested span confusion.
     # First handle markdown images.
@@ -169,7 +175,7 @@ def _normalize_content_images(content: Optional[str]) -> Optional[str]:
         parts.append(content[last:start_url])
         parts.append(norm or url)
         last = end_url
-    md_normalized = ''.join(parts) + content[last:]
+    md_normalized = "".join(parts) + content[last:]
 
     # Now handle <img src="..."> inside the markdown content
     parts = []
@@ -183,9 +189,10 @@ def _normalize_content_images(content: Optional[str]) -> Optional[str]:
         parts.append(md_normalized[last:start_url])
         parts.append(norm or url)
         last = end_url
-    html_normalized = ''.join(parts) + md_normalized[last:]
+    html_normalized = "".join(parts) + md_normalized[last:]
 
     return html_normalized
+
 
 def _normalize_post(record: dict) -> dict:
     if not record:
@@ -193,8 +200,12 @@ def _normalize_post(record: dict) -> dict:
 
     post = dict(record)
     post["tags"] = post.get("tags") or []
-    post["author_ids"] = post.get("author_ids") or ([post["author_id"]] if post.get("author_id") else [])
-    post["author_names"] = post.get("author_names") or ([post["author_name"]] if post.get("author_name") else [])
+    post["author_ids"] = post.get("author_ids") or (
+        [post["author_id"]] if post.get("author_id") else []
+    )
+    post["author_names"] = post.get("author_names") or (
+        [post["author_name"]] if post.get("author_name") else []
+    )
 
     for field in ["created_at", "updated_at", "published_at", "publish_date"]:
         post[field] = _to_timestamp_ms(post.get(field))
@@ -205,7 +216,7 @@ def _normalize_post(record: dict) -> dict:
     return post
 
 
-def _ensure_slug_unique(db, slug: str, exclude_id: Optional[str] = None):
+def _ensure_slug_unique(db, slug: str, exclude_id: str | None = None):
     query = db.table("blog_posts").select("id").eq("slug", slug)
     if exclude_id:
         query = query.neq("id", exclude_id)
@@ -214,13 +225,13 @@ def _ensure_slug_unique(db, slug: str, exclude_id: Optional[str] = None):
         raise HTTPException(status_code=400, detail="Slug already exists")
 
 
-@router.get("", response_model=List[BlogPostResponse])
+@router.get("", response_model=list[BlogPostResponse])
 async def list_blog_posts(
     include_unpublished: bool = Query(False, alias="includeUnpublished"),
     limit: int = Query(20, le=100),
     offset: int = Query(0, ge=0),
     response: Response = None,
-    current_user: Optional[dict] = Depends(get_current_user_optional),
+    current_user: dict | None = Depends(get_current_user_optional),
     db=Depends(get_db),
 ):
     if include_unpublished:
@@ -233,8 +244,7 @@ async def list_blog_posts(
     # Push ordering to SQL: primary publish_date desc NULLS LAST, then published_at desc, then created_at desc
     # Supabase/PostgREST supports multiple order clauses by repeating `order`.
     query = (
-        query
-        .order("publish_date", desc=True, nullsfirst=False)
+        query.order("publish_date", desc=True, nullsfirst=False)
         .order("published_at", desc=True, nullsfirst=False)
         .order("created_at", desc=True)
     )
@@ -242,7 +252,7 @@ async def list_blog_posts(
 
     db_resp = query.execute()
     posts = [_normalize_post(p) for p in (db_resp.data or [])]
-    # Cache for 5 minutes for public listing 
+    # Cache for 5 minutes for public listing
     if response is not None and not include_unpublished:
         response.headers["Cache-Control"] = "public, max-age=300"
     return posts
@@ -251,7 +261,7 @@ async def list_blog_posts(
 @router.get("/{post_id}", response_model=BlogPostResponse)
 async def get_blog_post(
     post_id: str,
-    current_user: Optional[dict] = Depends(get_current_user_optional),
+    current_user: dict | None = Depends(get_current_user_optional),
     db=Depends(get_db),
 ):
     response = db.table("blog_posts").select("*").eq("id", post_id).execute()
@@ -268,7 +278,7 @@ async def get_blog_post(
 @router.get("/slug/{slug}", response_model=BlogPostResponse)
 async def get_blog_post_by_slug(
     slug: str,
-    current_user: Optional[dict] = Depends(get_current_user_optional),
+    current_user: dict | None = Depends(get_current_user_optional),
     db=Depends(get_db),
 ):
     response = db.table("blog_posts").select("*").eq("slug", slug).execute()

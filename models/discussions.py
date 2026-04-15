@@ -1,12 +1,12 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DiscussionBase(BaseModel):
     product_id: str
     content: str = Field(..., min_length=1)
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
 
 
 class DiscussionCreate(DiscussionBase):
@@ -14,11 +14,11 @@ class DiscussionCreate(DiscussionBase):
 
 
 class DiscussionUpdate(BaseModel):
-    content: Optional[str] = Field(None, min_length=1)
+    content: str | None = Field(None, min_length=1)
 
 
 class DiscussionBlockRequest(BaseModel):
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class DiscussionResponse(DiscussionBase):
@@ -28,9 +28,8 @@ class DiscussionResponse(DiscussionBase):
     created_at: datetime
     updated_at: datetime
     blocked: bool = False
-    blocked_by: Optional[str] = None
-    blocked_reason: Optional[str] = None
-    blocked_at: Optional[datetime] = None
-    
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    blocked_by: str | None = None
+    blocked_reason: str | None = None
+    blocked_at: datetime | None = None
 
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

@@ -37,9 +37,7 @@ def seed_supported_sources():
     added = 0
     for source in SUPPORTED_SOURCES:
         try:
-            result = db.table("supported_sources").upsert(
-                source, on_conflict="domain"
-            ).execute()
+            result = db.table("supported_sources").upsert(source, on_conflict="domain").execute()
             if result.data:
                 added += 1
                 print(f"  ✓ {source['domain']} ({source['name']})")

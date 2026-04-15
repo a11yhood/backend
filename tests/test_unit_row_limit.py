@@ -1,4 +1,5 @@
 """Unit tests for dev-mode row limit helper."""
+
 import pytest
 
 from database_adapter import _RowLimitedTableBuilder

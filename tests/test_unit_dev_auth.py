@@ -1,4 +1,5 @@
 """Unit tests for dev auth token parsing logic."""
+
 import pytest
 from fastapi import HTTPException
 
@@ -65,6 +66,7 @@ def test_rejects_dev_tokens_when_not_in_test_mode(monkeypatch):
 
     with pytest.raises(HTTPException, match="Dev tokens only in TEST_MODE") as exc:
         import asyncio
+
         asyncio.run(auth.parse_dev_token(authorization="Bearer dev-token-user", x_dev_role=None))
 
     assert exc.value.status_code == 401
@@ -76,6 +78,7 @@ def test_rejects_when_headers_missing(monkeypatch):
 
     with pytest.raises(HTTPException, match="No authorization header") as exc:
         import asyncio
+
         asyncio.run(auth.parse_dev_token(authorization=None, x_dev_role=None))
 
     assert exc.value.status_code == 401
@@ -87,6 +90,7 @@ def test_rejects_invalid_token_format(monkeypatch):
 
     with pytest.raises(HTTPException, match="Invalid dev token format") as exc:
         import asyncio
+
         asyncio.run(auth.parse_dev_token(authorization="Bearer not-a-dev-token", x_dev_role=None))
 
     assert exc.value.status_code == 401
@@ -108,7 +112,10 @@ def test_uuid_token_resolves_exact_seeded_user(monkeypatch):
     )
 
     import asyncio
-    result = asyncio.run(auth.parse_dev_token(authorization=f"Bearer dev-token-{user_id}", x_dev_role=None))
+
+    result = asyncio.run(
+        auth.parse_dev_token(authorization=f"Bearer dev-token-{user_id}", x_dev_role=None)
+    )
 
     assert result["id"] == user_id
     assert result["username"] == "regular_user"
@@ -123,7 +130,10 @@ def test_uuid_token_returns_404_when_user_missing(monkeypatch):
 
     with pytest.raises(HTTPException, match="Dev user not found") as exc:
         import asyncio
-        asyncio.run(auth.parse_dev_token(authorization=f"Bearer dev-token-{missing_id}", x_dev_role=None))
+
+        asyncio.run(
+            auth.parse_dev_token(authorization=f"Bearer dev-token-{missing_id}", x_dev_role=None)
+        )
 
     assert exc.value.status_code == 404
 
@@ -134,7 +144,10 @@ def test_role_token_creates_dev_user_when_missing(monkeypatch):
     monkeypatch.setattr(auth, "get_db", lambda: _FakeDB(users_table))
 
     import asyncio
-    result = asyncio.run(auth.parse_dev_token(authorization="Bearer dev-token-admin", x_dev_role=None))
+
+    result = asyncio.run(
+        auth.parse_dev_token(authorization="Bearer dev-token-admin", x_dev_role=None)
+    )
 
     assert result["username"] == "dev_admin"
     assert result["role"] == "admin"
@@ -155,6 +168,7 @@ def test_x_dev_role_takes_priority_over_authorization_header(monkeypatch):
     monkeypatch.setattr(auth, "get_db", lambda: _FakeDB(users_table))
 
     import asyncio
+
     result = asyncio.run(
         auth.parse_dev_token(
             authorization="Bearer dev-token-admin",

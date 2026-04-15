@@ -21,7 +21,6 @@ load_dotenv(env_file, override=True)
 from config import get_settings
 from database_adapter import DatabaseAdapter
 
-
 SEEDS = [
     {
         "platform": "github",
@@ -77,10 +76,14 @@ def main():
         platform = seed["platform"]
         for term in seed["search_terms"]:
             try:
-                result = db.table("scraper_search_terms").upsert(
-                    {"platform": platform, "search_term": term},
-                    on_conflict="platform,search_term",
-                ).execute()
+                result = (
+                    db.table("scraper_search_terms")
+                    .upsert(
+                        {"platform": platform, "search_term": term},
+                        on_conflict="platform,search_term",
+                    )
+                    .execute()
+                )
                 if result.data:
                     count += 1
             except Exception as e:

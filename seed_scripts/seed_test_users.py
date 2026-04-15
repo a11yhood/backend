@@ -79,7 +79,9 @@ def seed_users():
     print(f"{'Role':<12} | {'Username':<18} | {'Email':<25} | {'GitHub ID'}")
     print("-" * 70)
     for user in TEST_USERS:
-        print(f"{user['role']:<12} | {user['username']:<18} | {user['email']:<25} | {user['github_id']}")
+        print(
+            f"{user['role']:<12} | {user['username']:<18} | {user['email']:<25} | {user['github_id']}"
+        )
     print("-" * 70)
 
 

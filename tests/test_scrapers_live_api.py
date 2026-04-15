@@ -20,10 +20,12 @@ Notes:
 - Requires backend TEST_MODE for dev-token path, or a valid admin JWT.
 - Uses /api/scrapers/trigger which pulls tokens from oauth_configs.
 """
+
+import logging
 import os
 import time
-import logging
 from urllib.parse import urlparse
+
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -36,7 +38,10 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 if not os.getenv("RUN_LIVE_SCRAPERS") or not os.getenv("RUN_AGAINST_SERVER"):
-    pytest.skip("Skipping live API tests without RUN_LIVE_SCRAPERS=1 and RUN_AGAINST_SERVER=1", allow_module_level=True)
+    pytest.skip(
+        "Skipping live API tests without RUN_LIVE_SCRAPERS=1 and RUN_AGAINST_SERVER=1",
+        allow_module_level=True,
+    )
 
 
 def _insecure_local_https() -> bool:
@@ -78,7 +83,9 @@ def _ravelry_seed_payload() -> dict | None:
 
     client_id = pick("RAVELRY_APP_KEY")
     client_secret = pick("RAVELRY_APP_SECRET")
-    redirect_uri = pick("RAVELRY_REDIRECT_URI") or f"{BACKEND_BASE_URL}/api/scrapers/oauth/ravelry/callback"
+    redirect_uri = (
+        pick("RAVELRY_REDIRECT_URI") or f"{BACKEND_BASE_URL}/api/scrapers/oauth/ravelry/callback"
+    )
     access_token = pick(
         "RAVELRY_ACCESS_TOKEN",
         "RAVELRY_OAUTH_ACCESS_TOKEN",
@@ -123,15 +130,20 @@ def _auth_headers():
         headers["Authorization"] = f"dev-token-{dev_user_id}"
     else:
         if _insecure_local_https():
-            pytest.skip("No ADMIN_TOKEN/DEV_USER_ID provided for HTTPS backend; set ADMIN_TOKEN for live auth checks")
+            pytest.skip(
+                "No ADMIN_TOKEN/DEV_USER_ID provided for HTTPS backend; set ADMIN_TOKEN for live auth checks"
+            )
         # Try to create a temporary admin in TEST_MODE using dev-token
         temp_id = "live-admin-temp-0001"
         # Create user account (no auth required)
         import requests
-        put_resp = requests.put(f"{BACKEND_BASE_URL}/api/users/{temp_id}", json={
-            "username": "live_admin",
-            "email": "live_admin@example.com"
-        }, verify=_http_verify_setting(), timeout=15)
+
+        put_resp = requests.put(
+            f"{BACKEND_BASE_URL}/api/users/{temp_id}",
+            json={"username": "live_admin", "email": "live_admin@example.com"},
+            verify=_http_verify_setting(),
+            timeout=15,
+        )
         if put_resp.status_code not in (200, 201):
             pytest.skip("Could not create temp user and no admin token provided")
         # Promote self with dev-token
@@ -149,7 +161,9 @@ def _auth_headers():
 
 
 async def _has_token(client: httpx.AsyncClient, platform: str, headers: dict) -> bool:
-    resp = await client.get(f"{BACKEND_BASE_URL}/api/scrapers/oauth/{platform}/config", headers=headers)
+    resp = await client.get(
+        f"{BACKEND_BASE_URL}/api/scrapers/oauth/{platform}/config", headers=headers
+    )
     if resp.status_code != 200:
         return False
     data = resp.json()
@@ -182,16 +196,21 @@ async def test_scrape_thingiverse_via_api():
         if not await _has_token(client, "thingiverse", headers):
             pytest.skip("No saved Thingiverse token in DB")
         # Trigger real run
-        resp = await client.post(f"{BACKEND_BASE_URL}/api/scrapers/trigger", json={
-            "source": "thingiverse",
-            "test_mode": False
-        }, headers=headers)
+        resp = await client.post(
+            f"{BACKEND_BASE_URL}/api/scrapers/trigger",
+            json={"source": "thingiverse", "test_mode": False},
+            headers=headers,
+        )
         assert resp.status_code == 200
         # Poll for products
         found = False
         for _ in range(20):
             time.sleep(3)
-            pr = await client.get(f"{BACKEND_BASE_URL}/api/products", params={"origin": "scraped-thingiverse", "limit": 1}, headers=headers)
+            pr = await client.get(
+                f"{BACKEND_BASE_URL}/api/products",
+                params={"origin": "scraped-thingiverse", "limit": 1},
+                headers=headers,
+            )
             if pr.status_code == 200 and isinstance(pr.json(), list) and len(pr.json()) > 0:
                 found = True
                 break
@@ -216,14 +235,14 @@ async def test_scrape_ravelry_via_api():
             headers=headers,
         )
         assert prev_logs.status_code == 200
-        prev_log_id = (prev_logs.json()[0].get("id") if prev_logs.json() else None)
+        prev_log_id = prev_logs.json()[0].get("id") if prev_logs.json() else None
 
         # Trigger test run with limit of 5 items
-        resp = await client.post(f"{BACKEND_BASE_URL}/api/scrapers/trigger", json={
-            "source": "ravelry",
-            "test_mode": True,
-            "test_limit": 5
-        }, headers=headers)
+        resp = await client.post(
+            f"{BACKEND_BASE_URL}/api/scrapers/trigger",
+            json={"source": "ravelry", "test_mode": True, "test_limit": 5},
+            headers=headers,
+        )
         assert resp.status_code == 200
 
         # /trigger runs in background. Poll logs until a new ravelry run appears.
@@ -294,7 +313,9 @@ async def test_ravelry_oauth_debug_health():
     """
     headers = _auth_headers()
     async with httpx.AsyncClient(timeout=30.0, verify=_http_verify_setting()) as client:
-        resp = await client.get(f"{BACKEND_BASE_URL}/api/scrapers/oauth/ravelry/debug", headers=headers)
+        resp = await client.get(
+            f"{BACKEND_BASE_URL}/api/scrapers/oauth/ravelry/debug", headers=headers
+        )
         assert resp.status_code == 200, resp.text
 
         data = resp.json()
@@ -302,7 +323,9 @@ async def test_ravelry_oauth_debug_health():
         # Always upsert from env if available so debug reflects the latest local token fixes.
         upserted = await _upsert_ravelry_from_env_if_available(client, headers)
         if upserted:
-            resp = await client.get(f"{BACKEND_BASE_URL}/api/scrapers/oauth/ravelry/debug", headers=headers)
+            resp = await client.get(
+                f"{BACKEND_BASE_URL}/api/scrapers/oauth/ravelry/debug", headers=headers
+            )
             assert resp.status_code == 200, resp.text
             data = resp.json()
 

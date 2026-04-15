@@ -5,7 +5,9 @@ Handles:
 - Database reset/reseed
 - Dev-specific configuration
 """
+
 import logging
+
 from config import load_settings_from_env
 from services.database import get_db
 
@@ -24,16 +26,16 @@ async def enforce_dev_row_limits():
     """
     Check if any table exceeds dev row limit.
     Raises error if limit is exceeded.
-    
+
     Only runs in dev mode.
     """
     settings = load_settings_from_env()
     if not settings.TEST_MODE:
         return
-    
+
     max_rows = settings.DEV_MODE_MAX_ROWS_PER_TABLE
     db = get_db()
-    
+
     # List of important tables to check
     tables_to_check = [
         "products",
@@ -44,7 +46,7 @@ async def enforce_dev_row_limits():
         "scraping_logs",
         "oauth_configs",
     ]
-    
+
     over_limit = []
     for table in tables_to_check:
         try:
@@ -54,9 +56,11 @@ async def enforce_dev_row_limits():
                 over_limit.append(f"{table}: {count}/{max_rows}")
         except Exception as e:
             logger.warning(f"Could not count rows in {table}: {e}")
-    
+
     if over_limit:
-        msg = f"Dev row limits exceeded (max {max_rows}):\n" + "\n".join(f"  - {item}" for item in over_limit)
+        msg = f"Dev row limits exceeded (max {max_rows}):\n" + "\n".join(
+            f"  - {item}" for item in over_limit
+        )
         logger.warning(msg)
         raise ValueError(msg)
 
@@ -74,9 +78,9 @@ async def reset_database():
     settings = load_settings_from_env()
     if not settings.TEST_MODE:
         raise PermissionError("Database reset only available in dev mode")
-    
+
     db = get_db()
-    
+
     # Tables to clear (in order, respecting foreign keys)
     clear_order = [
         "scraping_logs",
@@ -88,23 +92,23 @@ async def reset_database():
         "oauth_configs",
         "users",
     ]
-    
+
     cleared = {}
     for table in clear_order:
         try:
             # Get count before
             resp_before = db.table(table).select("id", count="exact").execute()
             count_before = resp_before.count or 0
-            
+
             # Clear table
             db.table(table).delete().neq("id", "").execute()
-            
+
             cleared[table] = count_before
             logger.info(f"Cleared {table}: {count_before} rows deleted")
         except Exception as e:
             logger.error(f"Failed to clear {table}: {e}")
             raise
-    
+
     logger.info(f"Database reset complete. Cleared tables: {', '.join(cleared.keys())}")
     return {
         "status": "reset",
@@ -115,14 +119,14 @@ async def reset_database():
 
 async def get_dev_stats():
     """Get current dev mode statistics.
-    
+
     Returns:
         Dict with table row counts and dev configuration
     """
     settings = load_settings_from_env()
     if not settings.TEST_MODE:
         raise PermissionError("Dev stats only available in dev mode")
-    
+
     db = get_db()
     stats = {
         "mode": "dev",
@@ -130,12 +134,17 @@ async def get_dev_stats():
         "test_scraper_limit": settings.TEST_SCRAPER_LIMIT,
         "tables": {},
     }
-    
+
     tables_to_check = [
-        "products", "users", "ratings", "discussions",
-        "collections", "scraping_logs", "oauth_configs",
+        "products",
+        "users",
+        "ratings",
+        "discussions",
+        "collections",
+        "scraping_logs",
+        "oauth_configs",
     ]
-    
+
     for table in tables_to_check:
         try:
             resp = db.table(table).select("id", count="exact").execute()
@@ -146,5 +155,5 @@ async def get_dev_stats():
             }
         except Exception as e:
             stats["tables"][table] = {"error": str(e)}
-    
+
     return stats

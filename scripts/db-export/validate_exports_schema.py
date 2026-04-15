@@ -104,7 +104,7 @@ RATINGS_AGG_RE = re.compile(
 )
 TRUNCATE_RE = re.compile(r"TRUNCATE\s+TABLE\s+([\w\.\"]+)\s+CASCADE", re.IGNORECASE)
 INSERT_LINE_RE = re.compile(
-    r'^INSERT INTO\s+([\w\.\"]+)\s*\((.*?)\)\s*VALUES\s*\((.*)\);\s*$',
+    r"^INSERT INTO\s+([\w\.\"]+)\s*\((.*?)\)\s*VALUES\s*\((.*)\);\s*$",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -139,7 +139,9 @@ def parse_expected_schema(schema_sql: str) -> dict[str, list[str]]:
 
 def parse_export_inserts(export_sql: str) -> dict[str, set[str]]:
     seen: dict[str, set[str]] = {}
-    pattern = re.compile(r"INSERT INTO\s+([\w\.\"]+)\s*\((.*?)\)\s*VALUES", re.IGNORECASE | re.DOTALL)
+    pattern = re.compile(
+        r"INSERT INTO\s+([\w\.\"]+)\s*\((.*?)\)\s*VALUES", re.IGNORECASE | re.DOTALL
+    )
 
     for match in pattern.finditer(export_sql):
         table = normalize_table_name(match.group(1))
@@ -330,7 +332,9 @@ def normalize_table_name(name: str) -> str:
     return clean
 
 
-def load_connection_values(env_file: str, url_var: str, key_var: str) -> tuple[str | None, str | None]:
+def load_connection_values(
+    env_file: str, url_var: str, key_var: str
+) -> tuple[str | None, str | None]:
     env_values = dotenv_values(env_file) if Path(env_file).exists() else {}
     url = os.getenv(url_var) or env_values.get(url_var) or env_values.get("SUPABASE_URL")
     key = os.getenv(key_var) or env_values.get(key_var) or env_values.get("SUPABASE_KEY")
@@ -407,10 +411,7 @@ def normalize_value_for_compare(value):
 
 
 def canonical_row_hash(row: dict, columns: list[str]) -> str:
-    payload = {
-        column: normalize_value_for_compare(row.get(column))
-        for column in sorted(columns)
-    }
+    payload = {column: normalize_value_for_compare(row.get(column)) for column in sorted(columns)}
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -426,7 +427,9 @@ def build_column_invariants(rows: list[dict], columns: list[str]) -> dict[str, d
             "distinct": len({json.dumps(value, sort_keys=True, default=str) for value in non_null}),
         }
 
-        if non_null and all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in non_null):
+        if non_null and all(
+            isinstance(value, (int, float)) and not isinstance(value, bool) for value in non_null
+        ):
             invariant["min"] = min(non_null)
             invariant["max"] = max(non_null)
             invariant["sum"] = round(sum(float(value) for value in non_null), 6)
@@ -505,7 +508,9 @@ def validate_live_counts(
 
         if label == "public" and table == "ratings":
             raw_rows = fetch_all_rows(client, "ratings", "product_id,rating")
-            live_count = len({row["product_id"] for row in raw_rows if row.get("product_id") is not None})
+            live_count = len(
+                {row["product_id"] for row in raw_rows if row.get("product_id") is not None}
+            )
             raw_live_count = len(raw_rows)
             raw_export_count = source_counts.get("ratings")
             print(
@@ -617,7 +622,9 @@ def main() -> int:
                     private_col_missing.append((table, miss[:8]))
 
         if private_col_missing:
-            failures.append(f"private export missing expected columns in {len(private_col_missing)} tables")
+            failures.append(
+                f"private export missing expected columns in {len(private_col_missing)} tables"
+            )
             for table, cols in private_col_missing[:10]:
                 failures.append(f"private export column mismatch: {table} missing {cols}")
 

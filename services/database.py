@@ -2,8 +2,9 @@
 
 Uses Supabase for all environments; configure SUPABASE_URL/KEY in .env or .env.test.
 """
-from typing import Optional
+
 from fastapi import HTTPException
+
 from config import settings
 from database_adapter import DatabaseAdapter, set_supabase_auth_token
 
@@ -25,7 +26,7 @@ def get_db():
     return db_adapter
 
 
-def verify_token(token: str, adapter: Optional[DatabaseAdapter] = None):
+def verify_token(token: str, adapter: DatabaseAdapter | None = None):
     """Verify a Supabase JWT using the adapter's Supabase client.
 
     Raises HTTPException 500 if Supabase isn't configured, 401 on auth failure.
@@ -34,7 +35,10 @@ def verify_token(token: str, adapter: Optional[DatabaseAdapter] = None):
     db = adapter or db_adapter
     supabase_client = getattr(db, "supabase", None)
     if supabase_client is None:
-        raise HTTPException(status_code=500, detail="Supabase client unavailable; ensure SUPABASE_URL/SUPABASE_KEY are configured")
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase client unavailable; ensure SUPABASE_URL/SUPABASE_KEY are configured",
+        )
 
     try:
         user = supabase_client.auth.get_user(token)

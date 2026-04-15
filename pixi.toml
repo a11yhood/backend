@@ -85,12 +85,16 @@ description = "Export test data to supabase/seed.sql and verify it restores clea
 cmd = "python scripts/db-export/export_full_database.py --mode test --output supabase/seed.sql --include-seed-output && bash scripts/db-export/verify_restore_local.sh supabase/seed.sql"
 
 [tasks.lint-python]
-description = "Lint Python code with ruff"
-cmd = "ruff check scripts/db-export/ --fix"
+description = "Lint Python code with ruff (whole project)"
+cmd = "ruff check ."
+
+[tasks.lint-python-fix]
+description = "Lint Python code with ruff and auto-fix (whole project)"
+cmd = "ruff check . --fix"
 
 [tasks.format-python]
-description = "Format Python code with ruff"
-cmd = "ruff format scripts/db-export/"
+description = "Format Python code with ruff (whole project)"
+cmd = "ruff format ."
 
 [tasks.lint-shell]
 description = "Lint shell scripts with shellcheck"
@@ -98,7 +102,7 @@ cmd = "shellcheck scripts/db-export/verify_restore_local.sh"
 
 [tasks.lint]
 description = "Run all linters"
-cmd = "pixi run lint-python && pixi run lint-shell"
+cmd = "pixi run lint-python && pixi run lint-shell"  # Use lint-python-fix to auto-correct
 
 [tasks.serve]
 description = "serve the a11yhood application from supabase"

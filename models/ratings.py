@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RatingBase(BaseModel):
@@ -13,7 +13,7 @@ class RatingCreate(RatingBase):
 
 
 class RatingUpdate(BaseModel):
-    rating: Optional[int] = Field(None, ge=1, le=5)
+    rating: int | None = Field(None, ge=1, le=5)
 
 
 class RatingResponse(RatingBase):
@@ -21,5 +21,5 @@ class RatingResponse(RatingBase):
     user_id: str
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)

@@ -1,4 +1,5 @@
 """Guards for deterministic auth fixtures used by integration tests."""
+
 import pytest
 
 pytestmark = pytest.mark.integration

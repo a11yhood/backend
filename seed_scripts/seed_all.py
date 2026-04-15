@@ -12,9 +12,9 @@ Runs all seed scripts in the correct order:
 Run with: uv run python seed_scripts/seed_all.py
 """
 
+import logging
 import os
 import sys
-import logging
 
 # Ensure project root and seed_scripts are on sys.path for imports
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -57,6 +57,7 @@ def run_seed(script_name: str, module_name: str, function_name: str = "main") ->
     except Exception as e:
         logger.error(f"✗ {script_name} failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -68,12 +69,12 @@ def main():
     logger.info("=" * 60)
 
     seeds = [
-        ("seed_supported_sources",    "seed_supported_sources",    "seed_supported_sources"),
-        ("seed_oauth_configs",        "seed_oauth_configs",        "seed_oauth_configs"),
+        ("seed_supported_sources", "seed_supported_sources", "seed_supported_sources"),
+        ("seed_oauth_configs", "seed_oauth_configs", "seed_oauth_configs"),
         ("seed_scraper_search_terms", "seed_scraper_search_terms", "main"),
-        ("seed_test_users",           "seed_test_users",           "seed_users"),
-        ("seed_test_product",         "seed_test_product",         "seed_product"),
-        ("seed_test_collections",     "seed_test_collections",     "seed_collections"),
+        ("seed_test_users", "seed_test_users", "seed_users"),
+        ("seed_test_product", "seed_test_product", "seed_product"),
+        ("seed_test_collections", "seed_test_collections", "seed_collections"),
     ]
 
     results = {}

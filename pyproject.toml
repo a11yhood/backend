@@ -30,10 +30,11 @@ packages = ["models", "routers", "scrapers", "services", "migrations"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+exclude = ["EXAMPLES.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
-ignore = ["E501"]  # Line too long (handled by formatter)
+ignore = ["E501", "E402"]  # E501: line too long (handled by formatter); E402: module-level import order (intentional in seeds/tests)
 
 [tool.ruff.lint.isort]
 known-first-party = ["models", "routers", "scrapers", "services", "migrations"]

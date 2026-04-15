@@ -8,7 +8,6 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-
 def test_load_url_blocks_unsupported_domain(client):
     """Public load-url should reject domains not in supported_sources."""
     response = client.post("/api/scrapers/load-url", json={"url": "https://example.com/widget"})
@@ -39,10 +38,7 @@ def test_source_domain_request_approval_adds_source_and_allows_validation(
     assert approve.status_code == 200
 
     sources = (
-        sqlite_db.table("supported_sources")
-        .select("domain")
-        .eq("domain", "example.com")
-        .execute()
+        sqlite_db.table("supported_sources").select("domain").eq("domain", "example.com").execute()
     )
     assert len(sources.data) == 1
 

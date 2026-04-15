@@ -172,7 +172,9 @@ def _escape_array_element(value: Any) -> str:
     return f"'{escaped}'"
 
 
-def _escape_sql_value(value: Any, table_name: str | None = None, column_name: str | None = None) -> str:
+def _escape_sql_value(
+    value: Any, table_name: str | None = None, column_name: str | None = None
+) -> str:
     """Escape Python values to SQL format."""
     complex_type = PRIVATE_COMPLEX_COLUMN_TYPES.get(table_name or "", {}).get(column_name or "")
 
@@ -372,9 +374,7 @@ def _export_ratings_aggregated(db) -> list[str]:
             aggregated[product_id]["count"] += 1
             aggregated[product_id]["sum"] += rating
 
-        lines.append(
-            f"-- ratings ({len(aggregated)} aggregated rows from {len(data)} raw ratings)"
-        )
+        lines.append(f"-- ratings ({len(aggregated)} aggregated rows from {len(data)} raw ratings)")
         lines.append("-- Aggregated into products.computed_rating (no user identifiers)")
         lines.append("")
 
@@ -605,9 +605,7 @@ def main():
             logger.info(f"  Exported {len(exported_tables)} tables")
             logger.info("  Safe to share publicly")
         else:
-            logger.info(
-                f"✓ Test database export complete: {output_path} ({file_size:,} bytes)"
-            )
+            logger.info(f"✓ Test database export complete: {output_path} ({file_size:,} bytes)")
             logger.info(f"  Exported {len(exported_tables)} tables")
             logger.info("  Safe to share with developers and use in CI/CD")
 

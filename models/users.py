@@ -3,9 +3,10 @@
 Defines schemas for user CRUD operations with role management.
 Email validation enforced via EmailStr for security.
 """
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+
 from datetime import datetime
+
+from pydantic import BaseModel, EmailStr
 
 
 class UserBase(BaseModel):
@@ -18,10 +19,10 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    username: Optional[str] = None
-    email: Optional[EmailStr] = None
-    products_owned: Optional[list[str]] = None
-    role: Optional[str] = None
+    username: str | None = None
+    email: EmailStr | None = None
+    products_owned: list[str] | None = None
+    role: str | None = None
 
 
 class UserResponse(UserBase):
@@ -30,7 +31,7 @@ class UserResponse(UserBase):
     role: str = "user"
     created_at: datetime
     updated_at: datetime
-    username_display: Optional[str] = None
+    username_display: str | None = None
 
     class Config:
         from_attributes = True
@@ -38,5 +39,6 @@ class UserResponse(UserBase):
 
 class UserProfile(UserResponse):
     """Extended user profile with statistics"""
-    ratings_count: Optional[int] = None
-    discussions_count: Optional[int] = None
+
+    ratings_count: int | None = None
+    discussions_count: int | None = None
