@@ -1323,6 +1323,7 @@ async def create_product(
             result = updated.data[0] if updated.data else existing_product
             product_id = result["id"]
             # Normalize fields for API response
+            result["source_url"] = result.get("url")
             result["image_url"] = result.get("image")
             result["external_id"] = result.get("external_id")
 
@@ -1391,6 +1392,7 @@ async def create_product(
     # Map database response back to API response format
     result = response.data[0]
     product_id = result["id"]
+    result["source_url"] = result.get("url")
     result["image_url"] = result.get("image")
     result["external_id"] = result.get("external_id")
 
