@@ -216,7 +216,7 @@ def test_activity_logging_stores_metadata(
     Activity logging should store extra metadata for later analysis
     """
     product_id = test_product["id"]
-    timestamp = int(datetime.now(UTC).timestamp() * 1000)
+    timestamp = datetime.now(UTC).isoformat()
 
     response = auth_client.post(
         "/api/activities",
@@ -253,7 +253,7 @@ def test_activities_can_be_queried_by_user(
                 "user_id": test_user["id"],
                 "type": "rating" if i % 2 == 0 else "discussion",
                 "product_id": test_product["id"],
-                "timestamp": int(datetime.now(UTC).timestamp() * 1000),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
         )
 

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -11,8 +13,8 @@ class BlogPostBase(BaseModel):
     tags: list[str] = Field(default_factory=list)
     featured: bool = False
     published: bool = False
-    publish_date: int | None = None
-    published_at: int | None = None
+    publish_date: datetime | None = None
+    published_at: datetime | None = None
     author_ids: list[str] | None = None
     author_names: list[str] | None = None
 
@@ -32,8 +34,8 @@ class BlogPostUpdate(BaseModel):
     tags: list[str] | None = None
     featured: bool | None = None
     published: bool | None = None
-    publish_date: int | None = None
-    published_at: int | None = None
+    publish_date: datetime | None = None
+    published_at: datetime | None = None
     author_id: str | None = None
     author_name: str | None = None
     author_ids: list[str] | None = None
@@ -44,7 +46,9 @@ class BlogPostResponse(BlogPostBase):
     id: str
     author_id: str
     author_name: str
-    created_at: int
-    updated_at: int
+    created_at: str  # ISO 8601 UTC datetime string
+    updated_at: str  # ISO 8601 UTC datetime string
+    publish_date: str | None = None  # type: ignore[assignment]  # ISO 8601 UTC
+    published_at: str | None = None  # type: ignore[assignment]  # ISO 8601 UTC
 
     model_config = ConfigDict(from_attributes=True)

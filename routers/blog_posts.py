@@ -18,11 +18,21 @@ from services.sanitizer import sanitize_html
 router = APIRouter(prefix="/api/blog-posts", tags=["blog"])
 
 
-def _serialize_datetime(dt: datetime | None) -> datetime | str | None:
-    """Serialize datetime to ISO string for Supabase."""
-    if dt is None:
+def _to_iso_utc(value: object | None) -> str | None:
+    """Normalize any datetime value to a canonical ISO 8601 UTC string."""
+    if value is None:
         return None
-    return dt.isoformat()
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            dt = dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+        except ValueError:
+            return None
+        return dt.astimezone(UTC).isoformat()
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo else value.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).isoformat()
+    return None
 
 
 def _slugify(text: str) -> str:
@@ -45,43 +55,6 @@ def _slugify(text: str) -> str:
         .replace(" ", "-")
         .replace("--", "-")
     )
-
-
-def _to_datetime(value: object | None) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value / 1000, tz=UTC).replace(tzinfo=None)
-    if isinstance(value, datetime):
-        dt = value if value.tzinfo else value.replace(tzinfo=UTC)
-        return dt.astimezone(UTC).replace(tzinfo=None)
-    if isinstance(value, str):
-        try:
-            # Support both Z and offset formats
-            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            dt = dt if dt.tzinfo else dt.replace(tzinfo=UTC)
-            return dt.astimezone(UTC).replace(tzinfo=None)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid date format: {value}") from exc
-    raise HTTPException(status_code=400, detail="Unsupported date value")
-
-
-def _to_timestamp_ms(value: object | None) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            dt = dt if dt.tzinfo else dt.replace(tzinfo=UTC)
-        except ValueError:
-            return None
-        return int(dt.timestamp() * 1000)
-    if isinstance(value, datetime):
-        dt = value if value.tzinfo else value.replace(tzinfo=UTC)
-        return int(dt.timestamp() * 1000)
-    return None
 
 
 def _normalize_image_string(value: str | None) -> str | None:
@@ -208,7 +181,7 @@ def _normalize_post(record: dict) -> dict:
     )
 
     for field in ["created_at", "updated_at", "published_at", "publish_date"]:
-        post[field] = _to_timestamp_ms(post.get(field))
+        post[field] = _to_iso_utc(post.get(field))
 
     # Ensure header_image is always a valid src for clients
     post["header_image"] = _normalize_image_string(post.get("header_image"))
@@ -306,8 +279,7 @@ async def create_blog_post(
     _ensure_slug_unique(db, slug)
 
     now = datetime.now(UTC)
-    publish_date = _to_datetime(payload.publish_date)
-    published_at = _to_datetime(payload.published_at) or (now if payload.published else None)
+    published_at_iso = _to_iso_utc(payload.published_at) or (_to_iso_utc(now) if payload.published else None)
 
     author_ids = payload.author_ids or [payload.author_id]
     author_names = payload.author_names or [payload.author_name]
@@ -333,11 +305,11 @@ async def create_blog_post(
         "author_names": author_names,
         "tags": payload.tags or [],
         "published": payload.published,
-        "published_at": _serialize_datetime(published_at),
-        "publish_date": _serialize_datetime(publish_date),
+        "published_at": published_at_iso,
+        "publish_date": _to_iso_utc(payload.publish_date),
         "featured": payload.featured,
-        "created_at": _serialize_datetime(now),
-        "updated_at": _serialize_datetime(now),
+        "created_at": _to_iso_utc(now),
+        "updated_at": _to_iso_utc(now),
     }
 
     response = db.table("blog_posts").insert(record).execute()
@@ -394,20 +366,18 @@ async def update_blog_post(
     if updates.author_names is not None:
         update_data["author_names"] = updates.author_names
     if updates.publish_date is not None:
-        dt = _to_datetime(updates.publish_date)
-        update_data["publish_date"] = _serialize_datetime(dt)
+        update_data["publish_date"] = _to_iso_utc(updates.publish_date)
     if updates.published_at is not None:
-        dt = _to_datetime(updates.published_at)
-        update_data["published_at"] = _serialize_datetime(dt)
+        update_data["published_at"] = _to_iso_utc(updates.published_at)
     if updates.published is not None:
         update_data["published"] = updates.published
         if updates.published:
             if "published_at" not in update_data or update_data["published_at"] is None:
-                update_data["published_at"] = _serialize_datetime(datetime.now(UTC))
+                update_data["published_at"] = _to_iso_utc(datetime.now(UTC))
         else:
             update_data["published_at"] = None
 
-    update_data["updated_at"] = _serialize_datetime(datetime.now(UTC))
+    update_data["updated_at"] = _to_iso_utc(datetime.now(UTC))
 
     updated = db.table("blog_posts").update(update_data).eq("id", post_id).execute()
     if not updated.data:

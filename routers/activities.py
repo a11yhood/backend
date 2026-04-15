@@ -3,7 +3,7 @@ User activity tracking routes.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -14,6 +14,20 @@ from services.database import get_db
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
 
+def _normalize_timestamp(value: object | None) -> str | None:
+    """Normalize a DB timestamp value to a canonical ISO 8601 UTC string."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        dt = dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).isoformat()
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo else value.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).isoformat()
+    return None
+
+
 @router.post("", response_model=UserActivityResponse, status_code=201)
 async def log_user_activity(
     activity: UserActivityCreate,
@@ -22,16 +36,14 @@ async def log_user_activity(
     """Log a user activity event"""
     activity_id = str(uuid.uuid4())
     now = datetime.now(UTC)
-
-    # Convert milliseconds since epoch to ISO datetime string for TIMESTAMPTZ column
-    timestamp_dt = datetime.fromtimestamp(activity.timestamp / 1000, tz=UTC)
+    timestamp_iso = activity.timestamp.astimezone(UTC).isoformat()
 
     activity_data = {
         "id": activity_id,
         "user_id": activity.user_id,
         "type": activity.type,
         "product_id": activity.product_id,
-        "timestamp": timestamp_dt.isoformat(),
+        "timestamp": timestamp_iso,
         "activity_metadata": activity.metadata,  # Use activity_metadata column name
         "created_at": now.isoformat(),
     }
@@ -46,10 +58,7 @@ async def log_user_activity(
     if "activity_metadata" in result:
         result["metadata"] = result.pop("activity_metadata")
 
-    # Convert TIMESTAMPTZ string back to milliseconds since epoch for response
-    if "timestamp" in result and isinstance(result["timestamp"], str):
-        dt = datetime.fromisoformat(result["timestamp"].replace("Z", "+00:00"))
-        result["timestamp"] = int(dt.timestamp() * 1000)
+    result["timestamp"] = _normalize_timestamp(result.get("timestamp"))
 
     return result
 
@@ -85,11 +94,7 @@ async def get_activities(
         if "activity_metadata" in activity:
             activity["metadata"] = activity.pop("activity_metadata")
 
-        # Convert timestamp back to milliseconds for response
-        if "timestamp" in activity and isinstance(activity["timestamp"], str):
-            timestamp_str = activity["timestamp"]
-            dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-            activity["timestamp"] = int(dt.timestamp() * 1000)
+        activity["timestamp"] = _normalize_timestamp(activity.get("timestamp"))
 
     return activities
 
@@ -108,10 +113,7 @@ async def get_activity(
     activity = response.data[0]
     if "activity_metadata" in activity:
         activity["metadata"] = activity.pop("activity_metadata")
-    if "timestamp" in activity and isinstance(activity["timestamp"], str):
-        timestamp_str = activity["timestamp"]
-        dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-        activity["timestamp"] = int(dt.timestamp() * 1000)
+    activity["timestamp"] = _normalize_timestamp(activity.get("timestamp"))
 
     return activity
 
@@ -127,12 +129,9 @@ async def cleanup_old_activities(
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    # Calculate cutoff timestamp (milliseconds)
-    import time
+    cutoff_iso = (datetime.now(UTC) - timedelta(days=days_to_keep)).isoformat()
 
-    cutoff_ms = int((time.time() - (days_to_keep * 86400)) * 1000)
-
-    # Delete activities older than cutoff
-    db.table("user_activities").delete().lt("timestamp", cutoff_ms).execute()
+    # Delete activities older than cutoff using TIMESTAMPTZ comparison.
+    db.table("user_activities").delete().lt("timestamp", cutoff_iso).execute()
 
     return {"success": True, "message": f"Cleaned up activities older than {days_to_keep} days"}

@@ -3,7 +3,7 @@ Scheduled scraper service - runs scrapers on a schedule
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -88,7 +88,7 @@ class ScheduledScraperService:
         """
         try:
             logger.info(
-                f"[{platform}] Starting scheduled scrape at {datetime.utcnow().isoformat()}..."
+                f"[{platform}] Starting scheduled scrape at {datetime.now(UTC).isoformat()}..."
             )
 
             scraper_service = ScraperService(self.supabase)
