@@ -386,7 +386,8 @@ app.include_router(product_urls.router)
 app.include_router(collections.router)
 app.include_router(blog_posts.router)
 app.include_router(sources.router)
-app.include_router(dev.router)
+if settings.TEST_MODE:
+    app.include_router(dev.router)
 
 
 if __name__ == "__main__":
