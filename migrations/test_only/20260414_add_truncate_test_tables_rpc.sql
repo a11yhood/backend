@@ -14,31 +14,32 @@ CREATE OR REPLACE FUNCTION truncate_test_tables()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
   TRUNCATE TABLE
     -- Junction / child tables first so FK constraints are satisfied
-    collection_products,
-    product_tags,
-    product_editors,
-    product_urls,
-    ratings,
-    discussions,
-    user_activities,
-    user_requests,
-    scraping_logs,
+    public.collection_products,
+    public.product_tags,
+    public.product_editors,
+    public.product_urls,
+    public.ratings,
+    public.discussions,
+    public.user_activities,
+    public.user_requests,
+    public.scraping_logs,
     -- Parent tables
-    tags,
-    blog_posts,
-    collections,
-    products,
-    users,
-    oauth_configs,
-    supported_sources,
-    scraper_search_terms
+    public.tags,
+    public.blog_posts,
+    public.collections,
+    public.products,
+    public.users,
+    public.oauth_configs,
+    public.supported_sources,
+    public.scraper_search_terms
   RESTART IDENTITY CASCADE;
 END;
 $$;
 
 -- Allow the service-role key (used by DatabaseAdapter) to call this function.
-GRANT EXECUTE ON FUNCTION truncate_test_tables() TO service_role;
+GRANT EXECUTE ON FUNCTION public.truncate_test_tables() TO service_role;
