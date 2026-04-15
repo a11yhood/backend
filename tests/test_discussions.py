@@ -6,9 +6,8 @@ Story 5.2: User Replies to a Discussion Thread
 """
 
 from datetime import datetime
-
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 pytestmark = pytest.mark.integration
 

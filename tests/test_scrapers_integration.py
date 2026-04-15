@@ -19,10 +19,10 @@ Run tests:
 import os
 
 import pytest
-
-pytestmark = pytest.mark.integration
 from scrapers.github import GitHubScraper
 from scrapers.thingiverse import ThingiverseScraper
+
+pytestmark = pytest.mark.integration
 
 if not os.getenv("RUN_LIVE_SCRAPERS"):
     pytest.skip(

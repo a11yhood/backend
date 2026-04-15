@@ -9,9 +9,9 @@ Tests the user experience for:
 """
 
 import pytest
+from datetime import datetime
 
 pytestmark = pytest.mark.integration
-from datetime import datetime
 
 
 def test_user_can_request_moderator_status(client, test_user, auth_headers):

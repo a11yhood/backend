@@ -26,7 +26,7 @@
    - Thingiverse (2:30 AM) → **OFF**
    - Ravelry (3 AM) → **OFF**
    - **Manual runs**: Still work (capped at 5 products via `TEST_SCRAPER_LIMIT`)
-   - **Configuration**: `DEV_MODE_DISABLE_SCHEDULED_SCRAPERS=true`
+   - **Configuration**: Controlled by `TEST_MODE=true` (no separate flag needed)
    - **Location**: `main.py` startup event
 
 ### 4. **Database Reset Endpoint**
@@ -150,7 +150,6 @@ No syntax errors, ready to integrate with frontend!
 ## 📚 Documentation
 
 - **User Guide**: `documentation/DEV_MODE.md` - How to use all features
-- **Future Ideas**: `documentation/DEV_MODE_FUTURE.md` - What to build next
 - **Code**: `services/auth.py`, `services/dev_mode.py`, `routers/dev.py`
 
 All code is well-commented and production-safe (conditional on TEST_MODE).

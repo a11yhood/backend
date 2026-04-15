@@ -1,9 +1,9 @@
 """Tests for scraper endpoints and services using the Supabase test database"""
 
 import pytest
+from routers import scrapers as scrapers_router
 
 pytestmark = pytest.mark.integration
-from routers import scrapers as scrapers_router
 
 
 def test_trigger_github_scraper_success(admin_client, monkeypatch):

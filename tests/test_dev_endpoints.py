@@ -10,13 +10,11 @@ Covers:
 """
 
 import pytest
+from unittest.mock import MagicMock
+from fastapi.testclient import TestClient
+from routers import dev as dev_router
 
 pytestmark = pytest.mark.integration
-from unittest.mock import MagicMock
-
-from fastapi.testclient import TestClient
-
-from routers import dev as dev_router
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from services.auth import get_current_user
 from services.database import get_db
 from services.sources import extract_domain
+from config import get_settings
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
@@ -235,6 +236,10 @@ def update_user_request(
 
     request_data = request_response.data[0]
 
+    # Only admins can approve requests that grant the 'admin' role.
+    if update.status == 'approved' and request_data.get('type') == 'admin' and user_role != 'admin':
+        raise HTTPException(status_code=403, detail="Only admins can approve admin-role requests")
+    
     # Update the request
     now = datetime.now(UTC)
     update_data = {
@@ -285,7 +290,17 @@ def _grant_permission(db, request_data: dict, reviewer_id: str | None = None):
             else:
                 db.table("users").update({"role": request_type}).eq("id", user_id).execute()
         except Exception:
-            # Fall back to direct update for test setups that don't yet have the RPC.
+            # Fall back to direct update only in TEST_MODE (test setups may not have the RPC).
+            settings = get_settings()
+            if not settings.TEST_MODE:
+                logging.exception(
+                    "admin_update_user_role RPC failed in production; role update skipped",
+                    extra={"user_id": user_id, "request_type": request_type},
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to update user role to '{request_type}': RPC unavailable",
+                )
             try:
                 db.table("users").update({"role": request_type}).eq("id", user_id).execute()
             except Exception:

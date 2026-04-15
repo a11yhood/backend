@@ -1,10 +1,10 @@
 """Test user account endpoints"""
 
 import pytest
-
-pytestmark = pytest.mark.integration
 import uuid
 from datetime import datetime
+
+pytestmark = pytest.mark.integration
 
 
 def test_get_user_account_with_joined_and_last_active(client, clean_database, test_user):

@@ -27,10 +27,10 @@ import time
 from urllib.parse import urlparse
 
 import pytest
-
-pytestmark = pytest.mark.integration
 import httpx
 from dotenv import dotenv_values
+
+pytestmark = pytest.mark.integration
 
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
 
