@@ -25,6 +25,11 @@ app = FastAPI(
 import os
 import logging
 
+# Configure structured logging for the entire application
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
 # Setup rate limiter
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter

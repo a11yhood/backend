@@ -9,11 +9,6 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-# Configure structured logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-
 security_logger = logging.getLogger("security")
 
 

@@ -23,13 +23,15 @@ async def log_user_activity(
     activity_id = str(uuid.uuid4())
     now = datetime.now(UTC)
 
+    # Convert milliseconds since epoch to ISO datetime string for TIMESTAMPTZ column
+    timestamp_dt = datetime.fromtimestamp(activity.timestamp / 1000, tz=UTC)
+
     activity_data = {
         "id": activity_id,
         "user_id": activity.user_id,
         "type": activity.type,
         "product_id": activity.product_id,
-        # DB column is bigint milliseconds since epoch
-        "timestamp": int(activity.timestamp),
+        "timestamp": timestamp_dt.isoformat(),
         "activity_metadata": activity.metadata,  # Use activity_metadata column name
         "created_at": now.isoformat(),
     }
@@ -44,10 +46,9 @@ async def log_user_activity(
     if "activity_metadata" in result:
         result["metadata"] = result.pop("activity_metadata")
 
-    # Convert timestamp back to milliseconds for response
+    # Convert TIMESTAMPTZ string back to milliseconds since epoch for response
     if "timestamp" in result and isinstance(result["timestamp"], str):
-        timestamp_str = result["timestamp"]
-        dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(result["timestamp"].replace("Z", "+00:00"))
         result["timestamp"] = int(dt.timestamp() * 1000)
 
     return result

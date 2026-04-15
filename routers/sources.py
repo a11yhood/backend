@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from models.sources import SupportedSourceCreate, SupportedSourceResponse, SupportedSourceUpdate
 from services.auth import get_current_user
 from services.database import get_db
-from services.id_generator import generate_id_with_uniqueness_check
 
 router = APIRouter(prefix="/api/supported-sources", tags=["supported-sources"])
 
@@ -55,10 +54,7 @@ async def create_supported_source(
         raise HTTPException(status_code=409, detail="This domain is already supported")
 
     # Generate ID and create record
-    source_id = generate_id_with_uniqueness_check(source.name, db, "supported_sources")
-
     db_data = {
-        "id": source_id,
         "domain": domain,
         "name": source.name,
     }
