@@ -954,7 +954,7 @@ async def count_products(
 
 @router.get("/exists")
 async def product_exists(
-    url: str,
+    source_url: str,
     db = Depends(get_db),
 ):
     """Check if a product exists by its source URL.
@@ -962,11 +962,13 @@ async def product_exists(
     Used by scrapers and frontend to avoid duplicate submissions.
     Returns {exists: bool, product: ProductResponse | null}.
     """
-    response = db.table("products").select("*").eq("url", url).limit(1).execute()
+    response = db.table("products").select("*").eq("url", source_url).limit(1).execute()
     if response.data:
         item = response.data[0]
         if item.get("banned"):
-            return {"exists": True, "product": _normalize_product(item, db), "banned": True}
+            normalized = _normalize_product(item, db)
+            normalized.pop("url", None)
+            return {"exists": True, "product": normalized, "banned": True}
         # Normalize fields
         item["tags"] = item.get("tags") or []
         item["stars"] = item.get("source_rating_count") or 0
@@ -974,6 +976,7 @@ async def product_exists(
             item["image_url"] = item.get("image")
         if "url" in item:
             item["source_url"] = item.get("url")
+            item.pop("url", None)
         # Add editor_ids from relationship table
         owners_response = db.table("product_editors").select("user_id").eq("product_id", item["id"]).execute()
         item["editor_ids"] = [owner["user_id"] for owner in owners_response.data] if owners_response.data else []

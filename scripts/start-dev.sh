@@ -6,25 +6,30 @@
 # Usage:
 #   ./start-dev.sh              # Normal start
 #   ./start-dev.sh --reset-db   # Reset Supabase test data before optional seeding
+#   ./start-dev.sh --port 8002  # Expose dev service on a custom host port
 #   ./start-dev.sh --help       # Show help
 
-# Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+set -euo pipefail
 
-# Timing helper
-SECONDS=0
-ts() {
-  echo "${SECONDS}s"
-}
+# Source common helper functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/backend-common.sh"
 
-# Parse arguments
+# ============================================================================
+# Configuration
+# ============================================================================
+
+CONTAINER_NAME="a11yhood-backend-dev"
+IMAGE_TAG="a11yhood-backend:dev"
+ENV_FILE=".env.test"
+HOST_PORT=8002
 RESET_DB=false
 SEED_DB=false
 HELP=false
+
+# ============================================================================
+# Argument parsing
+# ============================================================================
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -35,6 +40,14 @@ while [[ $# -gt 0 ]]; do
     --seed)
       SEED_DB=true
       shift
+      ;;
+    --port)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --port requires a value"
+        exit 1
+      fi
+      HOST_PORT="$2"
+      shift 2
       ;;
     --help)
       HELP=true
@@ -49,116 +62,101 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ "$HELP" = true ]; then
-  echo "Usage: ./start-dev.sh [OPTIONS]"
-  echo ""
-  echo "Options:"
-  echo "  --reset-db   Reset Supabase test data before optional seeding"
-  echo "  --seed       Seed the database (runs seed_scripts/seed_all.py in the container)"
-  echo "  --help       Show this help message"
+  cat <<'EOF'
+Usage: ./start-dev.sh [OPTIONS]
+
+Start a11yhood backend development server in Docker, backed by Supabase test project.
+
+Options:
+  --reset-db   Reset Supabase test data before optional seeding
+  --seed       Seed the database with test data
+  --port       Host port for the Docker container (default: 8002)
+  --help       Show this help message
+
+Examples:
+  ./start-dev.sh                # Normal start
+  ./start-dev.sh --reset-db     # Reset test data
+  ./start-dev.sh --seed         # Start and seed
+  ./start-dev.sh --port 8003    # Use custom port
+  ./start-dev.sh --reset-db --seed  # Reset and seed
+
+Environment:
+  .env.test   - Development environment config (required if using this script)
+
+See documentation/PIXI_TASKS.md for pixi commands that wrap this script.
+EOF
   exit 0
 fi
 
-# Check if Docker is running
-if ! docker info >/dev/null 2>&1; then
-  echo -e "${RED}✗ Docker is not running${NC}"
-  echo "  Please start Docker (or Colima) first:"
-  echo "    colima start"
-  exit 1
-fi
+# ============================================================================
+# Initialization
+# ============================================================================
+
+setup_colors
+init_timing
 
 echo -e "${BLUE}🚀 Starting a11yhood backend development server (Docker)...${NC} (t=0s)"
 echo ""
 
-# Check if container is already running and stop it
-echo -e "${YELLOW}🔧 Checking for existing containers...${NC} (t=$(ts))"
-if docker ps -a --format "{{.Names}}" | grep -qx "a11yhood-backend-dev"; then
-  echo "  Stopping existing container..."
-  docker stop a11yhood-backend-dev >/dev/null 2>&1
-  docker rm a11yhood-backend-dev >/dev/null 2>&1
-  sleep 1
-fi
-if docker ps --format "{{.Names}}" | grep -qx "a11yhood-backend-prod"; then
-  echo "  Production container detected and left running (a11yhood-backend-prod)."
-fi
-echo -e "${GREEN}✓ Ready to start${NC}"
-echo ""
-
-# Build if needed
-echo -e "${YELLOW}🔨 Building Docker image...${NC} (t=$(ts))"
-if docker build -t a11yhood-backend:dev . 2>&1 | grep -q "Successfully built\|image.*built"; then
-  echo -e "${GREEN}✓ Image ready${NC}"
-else
-  echo -e "${YELLOW}⚠️  Build completed with warnings (check output if needed)${NC}"
-fi
-echo ""
-
-# Start container with volume mount for hot reload
-echo -e "${GREEN}🚀 Starting backend container...${NC} (t=$(ts))"
-echo "   Server will be available at: http://localhost:8002"
-echo "   API documentation at: http://localhost:8002/docs"
-echo "   Code changes will auto-reload"
-echo ""
-
-docker run \
-  -d \
-  --name a11yhood-backend-dev \
-  --env-file .env.test \
-  -e ENV_FILE=.env.test \
-  -p 8002:8000 \
-  -v "$(pwd):/app" \
-  --restart unless-stopped \
-  --health-cmd="curl -f http://localhost:8000/health || exit 1" \
-  --health-interval=30s \
-  --health-timeout=3s \
-  --health-retries=3 \
-  --health-start-period=5s \
-  a11yhood-backend:dev \
-  uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
-if [ $? -ne 0 ]; then
-  echo -e "${RED}✗ Failed to start container${NC}"
+# Validate Docker
+if ! check_docker_running; then
   exit 1
 fi
 
-# Wait for server to be ready
-echo -e "${YELLOW}⏳ Waiting for server to start...${NC}"
-for i in {1..30}; do
-  if curl -s http://localhost:8002/health >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Backend is ready!${NC} (t=$(ts))"
-    break
-  fi
-  
-  # Check if container is still running
-  if ! docker ps --filter "name=a11yhood-backend-dev" --format "{{.Names}}" | grep -q "a11yhood-backend-dev"; then
-    echo -e "${RED}✗ Container is not running${NC}"
-    echo "  Check logs with: docker logs a11yhood-backend-dev"
-    exit 1
-  fi
-  
-  sleep 1
-  
-  # Show progress
-  if [ $i -eq 10 ]; then
-    echo "  Still waiting..."
-  fi
-  if [ $i -eq 20 ]; then
-    echo "  Taking longer than usual..."
-  fi
-done
+# ============================================================================
+# Container preparation
+# ============================================================================
 
-# Final check
-if ! curl -s http://localhost:8002/health >/dev/null 2>&1; then
-  echo -e "${RED}✗ Server failed to start within 30 seconds${NC}"
-  echo "  Check logs with: docker logs a11yhood-backend-dev"
-  docker logs --tail=50 a11yhood-backend-dev
+log_step "Checking for existing containers..."
+if cleanup_container "$CONTAINER_NAME"; then
+  echo "  Stopped existing container"
+======= end
+fi
+if is_container_running "a11yhood-backend-prod"; then
+  echo "  Production container detected and left running"
+fi
+log_success "Ready to start"
+echo ""
+
+# ============================================================================
+# Build Docker image
+# ============================================================================
+
+if ! build_docker_image "$IMAGE_TAG" "."; then
   exit 1
 fi
+echo ""
+
+# ============================================================================
+# Start container
+# ============================================================================
+
+if ! run_dev_container "$CONTAINER_NAME" "$IMAGE_TAG" "$HOST_PORT" "$ENV_FILE"; then
+  log_error "Failed to start container"
+  exit 1
+fi
+
+# ============================================================================
+# Health check
+# ============================================================================
+
+HEALTH_URL="http://localhost:${HOST_PORT}/health"
+if ! wait_for_health_check "$HEALTH_URL" 30 "http"; then
+  log_error "Container is not running"
+  echo "  Check logs with: docker logs $CONTAINER_NAME"
+  docker logs --tail=50 "$CONTAINER_NAME" 2>/dev/null || true
+  exit 1
+fi
+
+# ============================================================================
+# Database operations (if requested)
+# ============================================================================
 
 # Reset test data if requested
 if [ "$RESET_DB" = true ]; then
   echo ""
-  echo -e "${YELLOW}🗑️  Resetting Supabase test data...${NC} (t=$(ts))"
-  if docker exec -w /app a11yhood-backend-dev bash -c "export ENV_FILE=.env.test && /usr/local/bin/python3 - <<'PY'
+  log_step "Resetting Supabase test data..."
+  if docker exec -w /app "$CONTAINER_NAME" bash -c "export ENV_FILE=.env.test && /usr/local/bin/python3 - <<'PY'
 from config import get_settings
 from database_adapter import DatabaseAdapter
 
@@ -166,10 +164,10 @@ db = DatabaseAdapter(get_settings('.env.test'))
 db.cleanup()
 print('Supabase test data reset complete.')
 PY" >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Supabase test data reset${NC}"
+    log_success "Supabase test data reset"
   else
-    echo -e "${RED}✗ Reset failed${NC}"
-    echo "  Check logs with: docker logs a11yhood-backend-dev"
+    log_error "Reset failed"
+    echo "  Check logs with: docker logs $CONTAINER_NAME"
     exit 1
   fi
 fi
@@ -177,28 +175,32 @@ fi
 # Seed database if requested
 if [ "$SEED_DB" = true ]; then
   echo ""
-  echo -e "${YELLOW}🌱 Seeding database inside container...${NC} (t=$(ts))"
-  if docker exec -w /app a11yhood-backend-dev bash -c "export ENV_FILE=.env.test && /usr/local/bin/python3 seed_scripts/seed_all.py" >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Database seeded${NC}"
+  log_step "Seeding database inside container..."
+  if docker exec -w /app "$CONTAINER_NAME" bash -c "export ENV_FILE=.env.test && /usr/local/bin/python3 seed_scripts/seed_all.py" >/dev/null 2>&1; then
+    log_success "Database seeded"
   else
-    echo -e "${RED}✗ Seeding failed${NC}"
-    echo "  Check logs with: docker logs a11yhood-backend-dev"
+    log_error "Seeding failed"
+    echo "  Check logs with: docker logs $CONTAINER_NAME"
     exit 1
   fi
 fi
 
+# ============================================================================
+# Startup summary
+# ============================================================================
+
 echo ""
-echo -e "${GREEN}✅ Development environment is running!${NC} (t=$(ts))"
+log_success "Development environment is running! (t=$(ts))"
 echo ""
-echo -e "${BLUE}📡 Backend API:${NC}"
-echo "   http://localhost:8002"
+log_info "Backend API:"
+echo "   http://localhost:${HOST_PORT}"
 echo ""
-echo -e "${BLUE}📚 API Documentation:${NC}"
-echo "   http://localhost:8002/docs"
+log_info "API Documentation:"
+echo "   http://localhost:${HOST_PORT}/docs"
 echo ""
-echo -e "${BLUE}💡 To monitor logs:${NC}"
-echo "   docker logs -f a11yhood-backend-dev"
+log_info "To monitor logs:"
+echo "   docker logs -f $CONTAINER_NAME"
 echo ""
-echo -e "${BLUE}🛑 To stop the server:${NC}"
-echo "   ./stop-dev.sh"
+log_info "To stop the server:"
+echo "   pixi run dev-stop"
 echo ""
