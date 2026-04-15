@@ -311,7 +311,10 @@ def _grant_permission(db, request_data: dict, reviewer_id: Optional[str] = None)
                     "admin_update_user_role RPC failed in production; role update skipped",
                     extra={"user_id": user_id, "request_type": request_type},
                 )
-                return
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to update user role to '{request_type}': RPC unavailable",
+                )
             try:
                 db.table("users").update({"role": request_type}).eq("id", user_id).execute()
             except Exception:
