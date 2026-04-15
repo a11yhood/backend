@@ -176,14 +176,8 @@ echo ""
 # Build or pull Docker image
 # ============================================================================
 
-if [ "$NO_BUILD" = false ]; then
-  if ! build_docker_image "$IMAGE_TAG" "."; then
-    exit 1
-  fi
-else
-  if ! pull_docker_image "ghcr.io/a11yhood/a11yhood-backend:latest" "$IMAGE_TAG"; then
-    exit 1
-  fi
+if ! ensure_docker_image "$IMAGE_TAG" "$NO_BUILD" "ghcr.io/a11yhood/a11yhood-backend:latest"; then
+  exit 1
 fi
 echo ""
 
@@ -191,15 +185,7 @@ echo ""
 # Container preparation
 # ============================================================================
 
-log_step "Checking for existing containers..."
-if cleanup_container "$CONTAINER_NAME"; then
-  echo "  Stopped existing container"
-fi
-if is_container_running "a11yhood-backend-dev"; then
-  echo "  Development container detected and left running"
-fi
-log_success "Ready to start"
-echo ""
+prepare_container_startup "$CONTAINER_NAME" "a11yhood-backend-dev" "Development"
 
 # ============================================================================
 # Start container
@@ -224,21 +210,8 @@ fi
 # ============================================================================
 
 HEALTH_URL="${PROTO}://localhost:${HOST_PORT}/health"
-if [ "$PROTO" = "https" ]; then
-  # HTTPS health check requires curl to ignore cert validation
-  if ! wait_for_health_check "$HEALTH_URL" 60 "https"; then
-    log_error "Container is not running"
-    echo "  Check logs with: docker logs $CONTAINER_NAME"
-    docker logs --tail=50 "$CONTAINER_NAME" 2>/dev/null || true
-    exit 1
-  fi
-else
-  if ! wait_for_health_check "$HEALTH_URL" 60 "http"; then
-    log_error "Container is not running"
-    echo "  Check logs with: docker logs $CONTAINER_NAME"
-    docker logs --tail=50 "$CONTAINER_NAME" 2>/dev/null || true
-    exit 1
-  fi
+if ! verify_container_health "$HEALTH_URL" 60 "$PROTO" "$CONTAINER_NAME"; then
+  exit 1
 fi
 
 # ============================================================================

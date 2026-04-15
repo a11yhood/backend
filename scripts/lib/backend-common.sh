@@ -233,21 +233,101 @@ pull_docker_image() {
   fi
 }
 
+# Build locally or pull from registry depending on no-build mode
+# Args: image_tag, no_build(true/false), registry_image
+ensure_docker_image() {
+  local image_tag="$1"
+  local no_build="$2"
+  local registry_image="${3:-}"
+
+  if [ "$no_build" = "true" ]; then
+    if [ -z "$registry_image" ]; then
+      log_error "No registry image specified for --no-build mode"
+      return 1
+    fi
+    pull_docker_image "$registry_image" "$image_tag"
+  else
+    build_docker_image "$image_tag" "."
+  fi
+}
+
+# Prepare startup by cleaning the target container and noting peer container status
+# Args: target_container, peer_container, peer_label
+prepare_container_startup() {
+  local target_container="$1"
+  local peer_container="${2:-}"
+  local peer_label="${3:-$peer_container}"
+
+  log_step "Checking for existing containers..."
+  if cleanup_container "$target_container"; then
+    echo "  Stopped existing container"
+  fi
+  if [ -n "$peer_container" ] && is_container_running "$peer_container"; then
+    echo "  ${peer_label} container detected and left running"
+  fi
+  log_success "Ready to start"
+  echo ""
+}
+
+# Standard health-check wrapper with consistent failure output
+# Args: health_url, timeout_seconds, protocol, container_name
+verify_container_health() {
+  local health_url="$1"
+  local timeout="$2"
+  local proto="$3"
+  local container_name="$4"
+
+  if ! wait_for_health_check "$health_url" "$timeout" "$proto"; then
+    log_error "Container is not running"
+    echo "  Check logs with: docker logs $container_name"
+    docker logs --tail=50 "$container_name" 2>/dev/null || true
+    return 1
+  fi
+
+  return 0
+}
+
 # ============================================================================
 # Container startup
 # ============================================================================
 
 # Run docker container for development (with volume mount for hot reload)
-# Args: container_name, image_tag, port, env_file
+# Args: container_name, image_tag, port, env_file, [use_https], [cert_file], [key_file]
 run_dev_container() {
   local container_name="$1"
   local image_tag="$2"
   local port="$3"
   local env_file="$4"
+  local use_https="${5:-false}"
+  local cert_file="${6:-}"
+  local key_file="${7:-}"
+
+  local scheme="http"
+  local uvicorn_args="uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+  local mount_args=()
+
+  if [ "$use_https" = "true" ]; then
+    scheme="https"
+  fi
+
+  local health_cmd
+  if [ "$use_https" = "true" ]; then
+    health_cmd="python -c 'import urllib.request, ssl; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; urllib.request.urlopen(\"https://localhost:8000/health\", context=ctx, timeout=2)'"
+  else
+    health_cmd="python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\", timeout=2)'"
+  fi
+
+  if [ "$use_https" = "true" ] && [ -n "$cert_file" ] && [ -n "$key_file" ]; then
+    uvicorn_args="$uvicorn_args --ssl-certfile /certs/server.crt --ssl-keyfile /certs/server.key"
+    mount_args=(
+      -v "$(cd "$(dirname "$cert_file")" && pwd)/$(basename "$cert_file")":/certs/server.crt:ro
+      -v "$(cd "$(dirname "$key_file")" && pwd)/$(basename "$key_file")":/certs/server.key:ro
+    )
+  fi
   
   log_action "Starting backend container..."
-  echo "   Server will be available at: http://localhost:${port}"
-  echo "   API documentation at: http://localhost:${port}/docs"
+  echo "   Server will be available at: ${scheme}://localhost:${port}"
+  echo "   API documentation at: ${scheme}://localhost:${port}/docs"
   echo "   Code changes will auto-reload"
   echo ""
   
@@ -259,13 +339,14 @@ run_dev_container() {
     -p "${port}:8000" \
     -v "$(pwd):/app" \
     --restart unless-stopped \
-    --health-cmd="python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\", timeout=2)'" \
+    --health-cmd="$health_cmd" \
     --health-interval=30s \
     --health-timeout=3s \
     --health-retries=3 \
     --health-start-period=5s \
+    "${mount_args[@]}" \
     "$image_tag" \
-    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    $uvicorn_args
 }
 
 # Run docker container for production (no volume mount, multiple workers)

@@ -7,6 +7,8 @@
 #   ./start-dev.sh              # Normal start
 #   ./start-dev.sh --reset-db   # Reset Supabase test data before optional seeding
 #   ./start-dev.sh --port 8002  # Expose dev service on a custom host port
+#   ./start-dev.sh --no-build   # Skip local build and pull from registry
+#   ./start-dev.sh --https-port 8443 --cert certs/localhost.pem --key certs/localhost-key.pem
 #   ./start-dev.sh --help       # Show help
 
 set -euo pipefail
@@ -23,8 +25,13 @@ CONTAINER_NAME="a11yhood-backend-dev"
 IMAGE_TAG="a11yhood-backend:dev"
 ENV_FILE=".env.test"
 HOST_PORT=8002
+HTTPS_PORT=8443
+HTTPS_CERTFILE=""
+HTTPS_KEYFILE=""
 RESET_DB=false
 SEED_DB=false
+NO_BUILD=false
+HTTPS_ENABLED=false
 HELP=false
 
 # ============================================================================
@@ -49,6 +56,34 @@ while [[ $# -gt 0 ]]; do
       HOST_PORT="$2"
       shift 2
       ;;
+    --no-build)
+      NO_BUILD=true
+      shift
+      ;;
+    --https-port)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --https-port requires a value"
+        exit 1
+      fi
+      HTTPS_PORT="$2"
+      shift 2
+      ;;
+    --cert)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --cert requires a value"
+        exit 1
+      fi
+      HTTPS_CERTFILE="$2"
+      shift 2
+      ;;
+    --key)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --key requires a value"
+        exit 1
+      fi
+      HTTPS_KEYFILE="$2"
+      shift 2
+      ;;
     --help)
       HELP=true
       shift
@@ -61,6 +96,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Detect HTTPS: explicit cert/key or local certs
+if [ -n "$HTTPS_CERTFILE" ] && [ -n "$HTTPS_KEYFILE" ]; then
+  HTTPS_ENABLED=true
+  HOST_PORT=$HTTPS_PORT
+elif [ -f "certs/localhost.pem" ] && [ -f "certs/localhost-key.pem" ]; then
+  HTTPS_ENABLED=true
+  HTTPS_CERTFILE="certs/localhost.pem"
+  HTTPS_KEYFILE="certs/localhost-key.pem"
+  HOST_PORT=$HTTPS_PORT
+fi
+
 if [ "$HELP" = true ]; then
   cat <<'EOF'
 Usage: ./start-dev.sh [OPTIONS]
@@ -71,6 +117,10 @@ Options:
   --reset-db   Reset Supabase test data before optional seeding
   --seed       Seed the database with test data
   --port       Host port for the Docker container (default: 8002)
+  --no-build   Skip local build, pull from registry instead
+  --cert PATH  TLS certificate file (enables HTTPS)
+  --key PATH   TLS private key file (paired with --cert)
+  --https-port Host port for HTTPS when TLS is enabled (default: 8443)
   --help       Show this help message
 
 Examples:
@@ -78,6 +128,8 @@ Examples:
   ./start-dev.sh --reset-db     # Reset test data
   ./start-dev.sh --seed         # Start and seed
   ./start-dev.sh --port 8003    # Use custom port
+  ./start-dev.sh --no-build     # Pull image from registry
+  ./start-dev.sh --cert certs/localhost.pem --key certs/localhost-key.pem
   ./start-dev.sh --reset-db --seed  # Reset and seed
 
 Environment:
@@ -103,25 +155,33 @@ if ! check_docker_running; then
   exit 1
 fi
 
+if ! validate_env_file "$ENV_FILE"; then
+  log_error "Development requires $ENV_FILE with test Supabase credentials"
+  exit 1
+fi
+
+if [ "$HTTPS_ENABLED" = true ]; then
+  if [ ! -f "$HTTPS_CERTFILE" ]; then
+    log_error "TLS certificate not found: $HTTPS_CERTFILE"
+    exit 1
+  fi
+  if [ ! -f "$HTTPS_KEYFILE" ]; then
+    log_error "TLS key not found: $HTTPS_KEYFILE"
+    exit 1
+  fi
+fi
+
 # ============================================================================
 # Container preparation
 # ============================================================================
 
-log_step "Checking for existing containers..."
-if cleanup_container "$CONTAINER_NAME"; then
-  echo "  Stopped existing container"
-fi
-if is_container_running "a11yhood-backend-prod"; then
-  echo "  Production container detected and left running"
-fi
-log_success "Ready to start"
-echo ""
+prepare_container_startup "$CONTAINER_NAME" "a11yhood-backend-prod" "Production"
 
 # ============================================================================
-# Build Docker image
+# Build or pull Docker image
 # ============================================================================
 
-if ! build_docker_image "$IMAGE_TAG" "."; then
+if ! ensure_docker_image "$IMAGE_TAG" "$NO_BUILD" "ghcr.io/a11yhood/a11yhood-backend:latest"; then
   exit 1
 fi
 echo ""
@@ -130,20 +190,29 @@ echo ""
 # Start container
 # ============================================================================
 
-if ! run_dev_container "$CONTAINER_NAME" "$IMAGE_TAG" "$HOST_PORT" "$ENV_FILE"; then
-  log_error "Failed to start container"
-  exit 1
+if [ "$HTTPS_ENABLED" = true ]; then
+  if ! run_dev_container "$CONTAINER_NAME" "$IMAGE_TAG" "$HOST_PORT" "$ENV_FILE" "true" "$HTTPS_CERTFILE" "$HTTPS_KEYFILE"; then
+    log_error "Failed to start container"
+    exit 1
+  fi
+else
+  if ! run_dev_container "$CONTAINER_NAME" "$IMAGE_TAG" "$HOST_PORT" "$ENV_FILE" "false"; then
+    log_error "Failed to start container"
+    exit 1
+  fi
 fi
 
 # ============================================================================
 # Health check
 # ============================================================================
 
-HEALTH_URL="http://localhost:${HOST_PORT}/health"
-if ! wait_for_health_check "$HEALTH_URL" 30 "http"; then
-  log_error "Container is not running"
-  echo "  Check logs with: docker logs $CONTAINER_NAME"
-  docker logs --tail=50 "$CONTAINER_NAME" 2>/dev/null || true
+PROTO="http"
+if [ "$HTTPS_ENABLED" = true ]; then
+  PROTO="https"
+fi
+
+HEALTH_URL="${PROTO}://localhost:${HOST_PORT}/health"
+if ! verify_container_health "$HEALTH_URL" 60 "$PROTO" "$CONTAINER_NAME"; then
   exit 1
 fi
 
@@ -192,10 +261,10 @@ echo ""
 log_success "Development environment is running! (t=$(ts))"
 echo ""
 log_info "Backend API:"
-echo "   http://localhost:${HOST_PORT}"
+echo "   ${PROTO}://localhost:${HOST_PORT}"
 echo ""
 log_info "API Documentation:"
-echo "   http://localhost:${HOST_PORT}/docs"
+echo "   ${PROTO}://localhost:${HOST_PORT}/docs"
 echo ""
 log_info "To monitor logs:"
 echo "   docker logs -f $CONTAINER_NAME"
