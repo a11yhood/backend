@@ -296,7 +296,6 @@ class TestGetCollectionDetails:
             json={"name": "Slug Test Collection"}
         )
         assert create_response.status_code == 201
-        collection_id = create_response.json()["id"]
         collection_slug = create_response.json()["slug"]
 
         # Add the test product
