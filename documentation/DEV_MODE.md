@@ -88,6 +88,31 @@ headers: { "X-Dev-Role": "moderator" }  // Moderation features
 headers: { "X-Dev-Role": "user" }       // Regular user features
 ```
 
+For frontend integration tests that need exact user ownership/permissions, use
+the deterministic test-auth endpoint and UUID dev tokens instead of role shortcuts:
+
+```bash
+curl -X POST http://localhost:8000/api/dev/test-auth/login \
+   -H "Content-Type: application/json" \
+   -d '{"username":"frontend_case_user","create_if_missing":true,"role":"user"}'
+
+# Response includes access_token = "dev-token-<exact-user-id>"
+```
+
+Then pass:
+
+```http
+Authorization: Bearer dev-token-<exact-user-id>
+```
+
+This guarantees that create/read/update/delete and cleanup run under the same identity.
+
+### Seeded-role shortcuts policy
+
+- `X-Dev-Role` and role-based `dev-token-<role>` remain supported.
+- These shortcuts are optional and intended for QA tests with a running frontend.
+- They should not be used for identity-sensitive integration tests that require deterministic ownership.
+
 ---
 
 ## 🛡️ Security

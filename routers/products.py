@@ -1682,7 +1682,7 @@ async def delete_product(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Delete a product (admin only)
+    """Delete a product (owner/editor/admin/moderator).
 
     Note: Most related data (ratings, discussions, product_urls, etc.) will be
     automatically deleted via CASCADE. We explicitly handle a few tables that
@@ -1690,12 +1690,6 @@ async def delete_product(
     """
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
-
-    if not current_user.get("role") == "admin":
-        raise HTTPException(
-            status_code=403,
-            detail=f"Admin access required. Your current role: {current_user.get('role', 'user')}",
-        )
 
     # Check if product exists first; accept either ID or slug for convenience.
     # Avoid UUID parsing errors by only querying id when the input resembles a UUID.
@@ -1710,6 +1704,31 @@ async def delete_product(
             raise HTTPException(status_code=404, detail="Product not found")
         resolved_id = slug_lookup.data[0]["id"]
     product_id = resolved_id
+
+    # Authorization check parity with update endpoints: creator/editor/admin/moderator.
+    product_row = db.table("products").select("id, created_by").eq("id", product_id).limit(1).execute()
+    if not product_row.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    row = product_row.data[0]
+    is_creator = row.get("created_by") == current_user["id"]
+    role = current_user.get("role")
+    is_admin_or_moderator = role in ("admin", "moderator")
+
+    is_editor = False
+    if not is_creator and not is_admin_or_moderator:
+        editors_check = (
+            db.table("product_editors")
+            .select("user_id")
+            .eq("product_id", product_id)
+            .eq("user_id", current_user["id"])
+            .limit(1)
+            .execute()
+        )
+        is_editor = bool(editors_check.data)
+
+    if not (is_creator or is_admin_or_moderator or is_editor):
+        raise HTTPException(status_code=403, detail="Not authorized to delete this product")
 
     # The database schema has ON DELETE CASCADE for most relationships,
     # so they should auto-delete. But we can be explicit for safety.

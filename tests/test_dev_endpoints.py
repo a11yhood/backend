@@ -192,3 +192,59 @@ def test_check_limits_returns_400_when_exceeded(client, test_admin, clean_databa
     assert response.status_code == 400
     assert "Dev row limits exceeded" in response.json()["detail"]
     assert "products:" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# /api/dev/test-auth/login
+# ---------------------------------------------------------------------------
+
+
+def test_test_auth_login_resolves_exact_user_identity(client, test_user):
+    """test-auth/login returns a UUID dev token bound to the requested user."""
+    payload = {"user_id": test_user["id"]}
+    response = client.post("/api/dev/test-auth/login", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["access_token"] == f"dev-token-{test_user['id']}"
+    assert data["token_type"] == "Bearer"
+    assert data["created"] is False
+    assert data["user"]["id"] == test_user["id"]
+
+    me_resp = client.get(
+        "/api/users/me",
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+    )
+    assert me_resp.status_code == 200
+    assert me_resp.json()["id"] == test_user["id"]
+
+
+def test_test_auth_login_creates_user_when_requested(client):
+    """test-auth/login can create and authenticate a non-seeded test user."""
+    payload = {
+        "username": f"frontend_test_{uuid4().hex[:8]}",
+        "email": f"frontend-test-{uuid4().hex[:8]}@a11yhood.test",
+        "create_if_missing": True,
+        "role": "user",
+    }
+    response = client.post("/api/dev/test-auth/login", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created"] is True
+    assert data["access_token"].startswith("dev-token-")
+    assert data["user"]["username"] == payload["username"]
+
+    me_resp = client.get(
+        "/api/users/me",
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+    )
+    assert me_resp.status_code == 200
+    me_data = me_resp.json()
+    assert me_data["username"] == payload["username"]
+    assert me_data["email"] == payload["email"]
+
+
+def test_test_auth_login_requires_identifier(client):
+    """test-auth/login requires at least one user identifier."""
+    response = client.post("/api/dev/test-auth/login", json={})
+    assert response.status_code == 400
+    assert "One of user_id, username, or email is required" in response.json()["detail"]

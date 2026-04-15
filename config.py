@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # Dev mode features
     DEV_MODE_MAX_ROWS_PER_TABLE: int = 20  # Max rows per table in dev mode
+    DEV_TEST_AUTH_SECRET: str | None = None  # Optional shared secret for /api/dev/test-auth/login
 
     # GitHub API token for higher rate limits (optional)
     GITHUB_TOKEN: str | None = None

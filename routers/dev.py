@@ -4,15 +4,41 @@ Provides:
 - GET /api/dev/stats - Table statistics
 - POST /api/dev/reset - Clear all data
 - Health check specific to dev
+- POST /api/dev/test-auth/login - deterministic test auth for exact user identity
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+import uuid
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel
 
 from config import load_settings_from_env
+from services.auth import VALID_DEV_ROLES
 from services.auth import ensure_admin, get_current_user
+from services.database import get_db
 from services.dev_mode import enforce_dev_row_limits, get_dev_stats, reset_database
 
 router = APIRouter(prefix="/api/dev", tags=["dev"])
+
+
+class DevTestAuthLoginRequest(BaseModel):
+    """Identity-bound test login request for frontend integration tests."""
+
+    user_id: str | None = None
+    username: str | None = None
+    email: str | None = None
+    create_if_missing: bool = False
+    role: str = "user"
+    display_name: str | None = None
+
+
+class DevTestAuthLoginResponse(BaseModel):
+    """Response with deterministic dev token bound to one exact user ID."""
+
+    access_token: str
+    token_type: str = "Bearer"
+    user: dict
+    created: bool = False
 
 
 def _require_dev_mode():
@@ -20,6 +46,65 @@ def _require_dev_mode():
     settings = load_settings_from_env()
     if not settings.TEST_MODE:
         raise HTTPException(status_code=404, detail="Dev endpoints not available outside TEST_MODE")
+
+
+def _require_dev_test_auth_secret(x_test_auth_secret: str | None):
+    """Require optional shared secret when configured for test-auth endpoint."""
+    configured_secret = load_settings_from_env().DEV_TEST_AUTH_SECRET
+    if configured_secret and x_test_auth_secret != configured_secret:
+        raise HTTPException(status_code=403, detail="Invalid test auth secret")
+
+
+def _resolve_test_auth_user(db, payload: DevTestAuthLoginRequest):
+    """Resolve a user by id/username/email in deterministic order."""
+    if payload.user_id:
+        resp = db.table("users").select("*").eq("id", payload.user_id).limit(1).execute()
+        if resp.data:
+            return resp.data[0]
+
+    if payload.username:
+        resp = db.table("users").select("*").eq("username", payload.username).limit(1).execute()
+        if resp.data:
+            return resp.data[0]
+
+    if payload.email:
+        resp = db.table("users").select("*").eq("email", payload.email).limit(1).execute()
+        if resp.data:
+            return resp.data[0]
+
+    return None
+
+
+def _create_test_auth_user(db, payload: DevTestAuthLoginRequest):
+    """Create a deterministic test user for identity-bound auth flows."""
+    role = (payload.role or "user").strip().lower()
+    if role not in VALID_DEV_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role '{role}'. Valid: {', '.join(sorted(VALID_DEV_ROLES))}",
+        )
+
+    user_id = payload.user_id or str(uuid.uuid4())
+    username = payload.username or f"test_user_{user_id[:8]}"
+    email = payload.email or f"{username}@a11yhood.test"
+    display_name = payload.display_name or username
+
+    new_user = {
+        "id": user_id,
+        "github_id": f"dev-test-{user_id}",
+        "username": username,
+        "display_name": display_name,
+        "email": email,
+        "role": role,
+    }
+
+    try:
+        created = db.table("users").insert(new_user).execute()
+        if created.data:
+            return created.data[0]
+        return new_user
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create test user: {exc}")
 
 
 @router.get("/stats")
@@ -98,3 +183,45 @@ async def health_dev():
     """
     _require_dev_mode()
     return {"status": "healthy", "mode": "dev", "message": "Dev mode active - endpoints available"}
+
+
+@router.post("/test-auth/login", response_model=DevTestAuthLoginResponse)
+async def test_auth_login(
+    payload: DevTestAuthLoginRequest,
+    x_test_auth_secret: str | None = Header(default=None, alias="X-Test-Auth-Secret"),
+    db=Depends(get_db),
+):
+    """Resolve or create a user and return a UUID-based dev token for exact identity auth.
+
+    This endpoint is only available in TEST_MODE and returns a token in the
+    existing format expected by get_current_user: ``dev-token-<user_id>``.
+    """
+    _require_dev_mode()
+    _require_dev_test_auth_secret(x_test_auth_secret)
+
+    if not payload.user_id and not payload.username and not payload.email:
+        raise HTTPException(
+            status_code=400,
+            detail="One of user_id, username, or email is required",
+        )
+
+    user = _resolve_test_auth_user(db, payload)
+    created = False
+
+    if not user:
+        if not payload.create_if_missing:
+            raise HTTPException(status_code=404, detail="User not found")
+        user = _create_test_auth_user(db, payload)
+        created = True
+
+    token = f"dev-token-{user['id']}"
+    return DevTestAuthLoginResponse(
+        access_token=token,
+        user={
+            "id": user.get("id"),
+            "username": user.get("username"),
+            "email": user.get("email"),
+            "role": user.get("role", "user"),
+        },
+        created=created,
+    )

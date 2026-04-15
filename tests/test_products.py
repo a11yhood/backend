@@ -682,9 +682,15 @@ def test_update_product_owner_only(auth_client, test_product):
     assert response.json()["name"] == "New Name"
 
 
-def test_delete_product_admin_only(auth_client, test_product):
+def test_delete_product_owner_success(auth_client, test_product):
     response = auth_client.delete(f"/api/products/{test_product['id']}")
+    assert response.status_code == 204
+
+
+def test_delete_product_non_owner_forbidden(auth_client_2, test_product):
+    response = auth_client_2.delete(f"/api/products/{test_product['id']}")
     assert response.status_code == 403
+    assert "Not authorized to delete this product" in response.json()["detail"]
 
 
 def test_delete_product_admin_success(admin_client, test_product):
