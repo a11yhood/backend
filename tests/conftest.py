@@ -31,7 +31,7 @@ def client(clean_database):
 
 @pytest.fixture
 def auth_client(clean_database, test_user):
-    """Test client authenticated as regular user via Authorization header (dev-token-user)."""
+    """Test client authenticated as the seeded regular user via UUID dev token."""
     from main import app
     app.dependency_overrides[get_db] = lambda: clean_database
     base_client = TestClient(app)
@@ -39,7 +39,7 @@ def auth_client(clean_database, test_user):
     class _AuthClient:
         def __init__(self, base, user):
             self._base = base
-            self._headers = {"Authorization": "dev-token-user"}
+            self._headers = {"Authorization": f"Bearer dev-token-{user['id']}"}
 
         def request(self, method, url, **kwargs):
             headers = kwargs.pop("headers", {}) or {}
@@ -70,7 +70,7 @@ def auth_client(clean_database, test_user):
 
 @pytest.fixture
 def admin_client(clean_database, test_admin):
-    """Test client authenticated as admin user via Authorization header (dev-token-admin)."""
+    """Test client authenticated as the seeded admin user via UUID dev token."""
     from main import app
     app.dependency_overrides[get_db] = lambda: clean_database
     base_client = TestClient(app)
@@ -78,7 +78,7 @@ def admin_client(clean_database, test_admin):
     class _AuthClient:
         def __init__(self, base, user):
             self._base = base
-            self._headers = {"Authorization": "dev-token-admin"}
+            self._headers = {"Authorization": f"Bearer dev-token-{user['id']}"}
 
         def request(self, method, url, **kwargs):
             headers = kwargs.pop("headers", {}) or {}
@@ -109,7 +109,7 @@ def admin_client(clean_database, test_admin):
 
 @pytest.fixture
 def auth_client_2(clean_database, test_user_2):
-    """Test client authenticated as second test user via Authorization header (dev-token-user)."""
+    """Test client authenticated as the second test user via UUID dev token."""
     from main import app
     app.dependency_overrides[get_db] = lambda: clean_database
     base_client = TestClient(app)
@@ -117,7 +117,7 @@ def auth_client_2(clean_database, test_user_2):
     class _AuthClient:
         def __init__(self, base, user):
             self._base = base
-            self._headers = {"Authorization": "dev-token-user"}
+            self._headers = {"Authorization": f"Bearer dev-token-{user['id']}"}
 
         def request(self, method, url, **kwargs):
             headers = kwargs.pop("headers", {}) or {}
@@ -395,10 +395,19 @@ def sqlite_db(clean_database):
 
 @pytest.fixture
 def auth_headers():
-    """Return a factory that builds dev-token Authorization headers based on user role."""
+    """Return a factory that builds UUID-based dev token Authorization headers for a user.
+
+    Identity-sensitive tests (ownership, `/api/users/me`) should use this factory so that
+    authentication resolves to the exact seeded user rather than a shared role bucket.
+
+    For role-behaviour tests that only care about the role and not the specific identity,
+    pass a ``dev-token-<role>`` header directly instead.
+    """
     def _make(user: dict):
-        role = user.get("role", "user")
-        return {"Authorization": f"dev-token-{role}"}
+        user_id = user.get("id")
+        if not user_id:
+            raise ValueError("auth_headers: user dict must contain 'id'")
+        return {"Authorization": f"Bearer dev-token-{user_id}"}
     return _make
 
 

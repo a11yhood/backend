@@ -33,25 +33,30 @@ async def parse_dev_token(
     x_dev_role: str = Header(None)
 ) -> dict:
     """
-    Parse dev mode authentication: either fixed dev token or dynamic role-based user.
-    
-    Supports two modes in dev:
-    1. Bearer dev-token-<role>: Create/fetch test user with given role (e.g., dev-token-admin)
-    2. X-Dev-Role: <role_name>: Create/fetch test user with given role (e.g., X-Dev-Role: admin)
-       - Valid roles: admin, moderator, manager, user
-       - Creates deterministic user per role (username = "dev_<role>")
-    
+    Parse dev mode authentication: UUID-based, role-based, or X-Dev-Role header.
+
+    Supports three modes (evaluated in this order):
+    1. X-Dev-Role: <role>  - Create/fetch test user with given role (frontend/manual dev use).
+    2. Bearer dev-token-<uuid>  - Resolve exact user by UUID (deterministic test identity).
+    3. Bearer dev-token-<role>  - Create/fetch test user with given role (role-behaviour tests).
+
+    UUID tokens are preferred for identity-sensitive tests because they map 1:1 to a seeded
+    user row.  Role tokens are preferred for role-behaviour tests because they do not depend
+    on a specific pre-seeded ID.
+
+    Valid roles: admin, moderator, manager, user
+
     Args:
         authorization: Authorization header (Bearer token)
         x_dev_role: X-Dev-Role header for dynamic role switching
-    
+
     Returns:
-        Dict with user_id, email, username, role, is_dev_user=True
-    
+        Dict with id, email, username, role, is_dev_user=True
+
     Raises:
-        HTTPException 400 if role invalid
-        HTTPException 404 if test user not found
-        HTTPException 401 if auth invalid
+        HTTPException 400 if role is invalid
+        HTTPException 404 if UUID user is not found
+        HTTPException 401 if auth header is missing or malformed
     """
     settings_fresh = load_settings_from_env()
     if not settings_fresh.TEST_MODE:
@@ -114,28 +119,52 @@ async def parse_dev_token(
                 detail=f"Failed to create test user for role {role}"
             )
     
-    # Mode 2: Role-based dev token (dev-token-admin, dev-token-user, etc.)
+    # Mode 2: Authorization header (UUID or role)
     if not authorization:
         raise HTTPException(status_code=401, detail="No authorization header or X-Dev-Role header")
-    
+
     token = authorization.replace("Bearer ", "").strip()
     if not token.startswith("dev-token-"):
         raise HTTPException(status_code=401, detail="Invalid dev token format")
-    
-    role = token.replace("dev-token-", "").strip().lower()
+
+    suffix = token[len("dev-token-"):].strip()
+
+    # Mode 2a: UUID-based token — resolve exact user by ID (deterministic test identity)
+    try:
+        uuid.UUID(suffix)
+        # Suffix is a valid UUID; look up the user by ID.
+        resp = db.table("users").select("*").eq("id", suffix).execute()
+        if not resp.data:
+            raise HTTPException(status_code=404, detail=f"Dev user not found: {suffix}")
+        user = resp.data[0]
+        logger.debug(f"Resolved dev user by UUID: {user['id']} (role: {user.get('role')})")
+        return {
+            "id": user["id"],
+            "email": user.get("email"),
+            "username": user.get("username"),
+            "role": user.get("role", "user"),
+            "is_dev_user": True,
+        }
+    except HTTPException:
+        raise
+    except ValueError:
+        pass  # Not a UUID; fall through to role-based lookup.
+
+    # Mode 2b: Role-based dev token (dev-token-admin, dev-token-user, etc.)
+    role = suffix.lower()
     if role not in VALID_DEV_ROLES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid dev token role '{role}'. Valid: {', '.join(sorted(VALID_DEV_ROLES))}"
         )
-    
+
     # Use the same role-based user lookup/creation as X-Dev-Role header
     dev_username = f"dev_{role}"
     dev_email = f"dev-{role}@a11yhood.test"
-    
+
     # Check if test user with this role exists
     resp = db.table("users").select("*").eq("username", dev_username).execute()
-    
+
     if resp.data and len(resp.data) > 0:
         user = resp.data[0]
         logger.debug(f"Found existing dev user: {user['id']} (role: {role})")
@@ -146,7 +175,7 @@ async def parse_dev_token(
             "role": user.get("role", "user"),
             "is_dev_user": True,
         }
-    
+
     # Create new test user for this role
     user_id = str(uuid.uuid4())
     dev_github_id = f"dev-role-{role}"
@@ -258,8 +287,10 @@ async def get_current_user_optional(authorization: str = Header(None), x_dev_rol
     """
     Variant of get_current_user that returns None when no Authorization header is provided.
     Useful for public endpoints that optionally enforce ownership/visibility checks.
-    
-    In TEST_MODE, also returns None if dev token references non-existent user (for user creation).
+
+    In TEST_MODE, UUID-based dev tokens that reference a non-existent user raise 404;
+    role-based tokens and X-Dev-Role always create a user on demand.
+    Returns None only when both the authorization header and X-Dev-Role header are absent.
     """
     if not authorization and not x_dev_role:
         return None

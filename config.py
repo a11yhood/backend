@@ -42,7 +42,6 @@ class Settings(BaseSettings):
     
     # Dev mode features
     DEV_MODE_MAX_ROWS_PER_TABLE: int = 20  # Max rows per table in dev mode
-    DEV_MODE_DISABLE_SCHEDULED_SCRAPERS: bool = True  # Disable all scrapers in dev
     
     # GitHub API token for higher rate limits (optional)
     GITHUB_TOKEN: Optional[str] = None

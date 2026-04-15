@@ -63,13 +63,13 @@ async def enforce_dev_row_limits():
 
 async def reset_database():
     """
-    Reset database to clean state.
-    Clears all data and optionally reseeds with test data.
-    
+    Reset database to a clean state.
+    Clears configured tables and returns details about the rows deleted.
+
     ⚠️ DANGEROUS - Only available in dev mode
-    
+
     Returns:
-        Dict with reset status
+        Dict with reset status and cleared row counts
     """
     settings = load_settings_from_env()
     if not settings.TEST_MODE:
@@ -127,7 +127,6 @@ async def get_dev_stats():
     stats = {
         "mode": "dev",
         "max_rows_per_table": settings.DEV_MODE_MAX_ROWS_PER_TABLE,
-        "scrapers_disabled": settings.DEV_MODE_DISABLE_SCHEDULED_SCRAPERS,
         "test_scraper_limit": settings.TEST_SCRAPER_LIMIT,
         "tables": {},
     }

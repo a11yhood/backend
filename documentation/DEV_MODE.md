@@ -3,8 +3,8 @@
 ## Overview
 
 Dev mode enables safe local development with:
-- **Role-based test user creation** via X-Dev-Role header
-- **Database row limits** (20 rows max per table by default)
+- **Dual dev-token auth** (UUID-based for deterministic tests, role-based for frontend/manual dev)
+- **Automatic database row limits** (20 rows max per table — enforced on every insert)
 - **Disabled scheduled scrapers** (test scrapers limited to 5 products)
 - **Database reset endpoint** for cleanup
 - **Dev statistics/monitoring** endpoints
@@ -13,64 +13,73 @@ Enabled when `TEST_MODE=true` in `.env.test`.
 
 ---
 
-## Authentication: X-Dev-Role Header
+## Authentication
 
-### Quick Start
+### Two Token Formats
 
-Instead of hardcoding user UUIDs, the frontend sends an `X-Dev-Role` header to test different roles:
+Dev mode supports two `Authorization: Bearer` token formats.  Choose the right one for your use case:
+
+| Format | When to Use | Example |
+|--------|-------------|---------|
+| `dev-token-<uuid>` | **Deterministic tests** — maps to the exact seeded user row | `Bearer dev-token-2a3b7c3e-971b-4b42-9c8c-0f1843486c50` |
+| `dev-token-<role>` | **Role-behaviour tests / frontend dev** — creates/fetches a shared `dev_<role>` user | `Bearer dev-token-admin` |
+| `X-Dev-Role: <role>` | **Frontend dev only** — same as role token but via header | `X-Dev-Role: moderator` |
+
+**Parse order** (backend evaluates in this order):
+1. `X-Dev-Role` header → role-based, create-on-demand
+2. `Bearer dev-token-<uuid>` → look up exact user by ID (404 if missing)
+3. `Bearer dev-token-<role>` → role-based, create-on-demand
+
+All dev tokens require `TEST_MODE=true`; they are silently ignored (401) in production.
+
+### UUID Tokens (for Tests)
+
+```bash
+# Authenticate as the exact seeded regular user
+curl -H "Authorization: Bearer dev-token-2a3b7c3e-971b-4b42-9c8c-0f1843486c50" \
+  http://localhost:8002/api/users/me
+```
+
+Seeded test UUIDs (defined in `tests/test_data.py` and `services/auth.py`):
+
+| UUID | Username | Role |
+|------|----------|------|
+| `49366adb-2d13-412f-9ae5-4c35dbffab10` | `admin_user` | admin |
+| `94e116f7-885d-4d32-87ae-697c5dc09b9e` | `moderator_user` | moderator |
+| `2a3b7c3e-971b-4b42-9c8c-0f1843486c50` | `regular_user` | user |
+
+### Role Tokens (for Frontend / Role-Behaviour Tests)
 
 ```bash
 # Test as admin
-curl -H "X-Dev-Role: admin" http://localhost:8002/api/users/me
+curl -H "Authorization: Bearer dev-token-admin" http://localhost:8002/api/users/me
 
 # Test as moderator
 curl -H "X-Dev-Role: moderator" http://localhost:8002/api/products
 
 # Test as regular user
-curl -H "X-Dev-Role: user" http://localhost:8002/api/products
+curl -H "Authorization: Bearer dev-token-user" http://localhost:8002/api/products
 ```
 
-### Backend Behavior
-
-When dev mode receives `X-Dev-Role`:
-1. **Validates** the role (must be: `admin`, `moderator`, `manager`, or `user`)
-2. **Checks** if test user exists with that role (username: `dev_<role>`)
-3. **Creates** test user on-demand if not found
-4. **Returns** user with that role for rest of request
+Valid roles: `admin`, `moderator`, `manager`, `user`
 
 ### Frontend Implementation Example
 
 ```javascript
-// JavaScript - pass X-Dev-Role header instead of hardcoding user ID
+// Use X-Dev-Role for role switching in manual frontend dev
 async function callApi(role = "user") {
   const response = await fetch("http://localhost:8002/api/products", {
-    headers: {
-      "X-Dev-Role": role,  // Let backend create/fetch test user for this role
-    },
+    headers: { "X-Dev-Role": role },
   });
   return response.json();
 }
-
-// Test different roles easily
-await callApi("admin");      // Admin features
-await callApi("moderator");  // Moderator features
-await callApi("user");       // Regular user features
 ```
-
-### Valid Roles
-
-| Role | Use Case |
-|------|----------|
-| `admin` | Full access, can create scrapers, approve ratings, manage users |
-| `moderator` | Can flag content, resolve disputes |
-| `manager` | Can manage collections/categories |
-| `user` | Regular user, can rate/review products |
 
 ---
 
 ## Database Row Limits
 
-**Automatic enforcement** of 20 rows per table in dev mode prevents accidental mass-inserts from filling your test database.
+**Automatic enforcement** on every insert in TEST_MODE: inserting into a table that already holds ≥ 20 rows raises a `ValueError` before the row reaches the database.  This prevents accidental mass-inserts from filling your test instance.
 
 ### Configuration
 
@@ -81,13 +90,15 @@ DEV_MODE_MAX_ROWS_PER_TABLE: int = 20
 
 ### Limits Apply To
 
-- `products` (main table)
+- `products`
 - `users`
 - `ratings`
 - `discussions`
 - `collections`
 - `scraping_logs`
 - `oauth_configs`
+
+(System tables such as `supported_sources`, `scraper_search_terms`, and join tables are exempt.)
 
 ### When You Hit the Limit
 
@@ -105,7 +116,7 @@ DEV_MODE_MAX_ROWS_PER_TABLE: int = 20
 - Ravelry: Daily at 3:00 AM UTC
 
 ### Dev Behavior
-- **All scheduled scrapers disabled**
+- **All scheduled scrapers disabled** (controlled by `TEST_MODE`)
 - Test scrapers limited to 5 products per run
 - Can still trigger scraper manually via API:
   ```bash
@@ -118,8 +129,7 @@ DEV_MODE_MAX_ROWS_PER_TABLE: int = 20
 
 ```python
 # config.py
-DEV_MODE_DISABLE_SCHEDULED_SCRAPERS: bool = True  # Disable night-time jobs
-TEST_SCRAPER_LIMIT: int = 5                        # Max products per manual run
+TEST_SCRAPER_LIMIT: int = 5  # Max products per manual run
 ```
 
 ---
@@ -131,7 +141,7 @@ TEST_SCRAPER_LIMIT: int = 5                        # Max products per manual run
 View current dev configuration and table row counts.
 
 ```bash
-curl -H "X-Dev-Role: admin" http://localhost:8002/api/dev/stats
+curl -H "Authorization: Bearer dev-token-admin" http://localhost:8002/api/dev/stats
 ```
 
 Response:
@@ -139,7 +149,6 @@ Response:
 {
   "mode": "dev",
   "max_rows_per_table": 20,
-  "scrapers_disabled": true,
   "test_scraper_limit": 5,
   "tables": {
     "products": {"rows": 15, "at_limit": false},
@@ -155,7 +164,7 @@ Response:
 ⚠️ **Dangerous**: Clears ALL data from user tables.
 
 ```bash
-curl -X POST -H "X-Dev-Role: admin" http://localhost:8002/api/dev/reset
+curl -X POST -H "Authorization: Bearer dev-token-admin" http://localhost:8002/api/dev/reset
 ```
 
 Response:
@@ -178,10 +187,10 @@ After reset:
 
 ### GET `/api/dev/check-limits` (Admin Only)
 
-Check if any table exceeds row limit.
+Manually check if any table exceeds row limit.
 
 ```bash
-curl -H "X-Dev-Role: admin" http://localhost:8002/api/dev/check-limits
+curl -H "Authorization: Bearer dev-token-admin" http://localhost:8002/api/dev/check-limits
 ```
 
 Returns **200** if all within limits, **400** if any table exceeds:
@@ -213,19 +222,17 @@ Response:
 ## Security
 
 ### Production
-- X-Dev-Role header **ignored**
+- Dev tokens / X-Dev-Role header **ignored** (401)
 - Dev endpoints **not mounted** (404)
 - All schedulers **enabled**
 - Row limits **inactive**
 
 ### Dev Mode
-- X-Dev-Role header **creates test users on demand**
+- UUID dev tokens resolve to exact seeded user rows
+- Role tokens / X-Dev-Role create test users on demand (username: `dev_<role>`)
 - Dev endpoints **require admin role**
-- Schedulers **disabled** (reduce API load)
-- Row limits **enforced** (prevent test data bloat)
-
-**Security:** Dev test users (username: `dev_*`) are only created in TEST_MODE.  
-In production, they're treated as regular users with standard permissions.
+- Schedulers **disabled** (reduces API load in TEST_MODE)
+- Row limits **enforced on every insert**
 
 ---
 
@@ -238,29 +245,29 @@ In production, they're treated as regular users with standard permissions.
 pixi run dev-start
 
 # Test admin features
-curl -H "X-Dev-Role: admin" ... 
+curl -H "Authorization: Bearer dev-token-admin" ...
 
 # Test moderator features
 curl -H "X-Dev-Role: moderator" ...
 
-# Test user features (no header needed, defaults to 'user')
-curl http://localhost:8002/api/products
+# Test specific seeded user
+curl -H "Authorization: Bearer dev-token-2a3b7c3e-971b-4b42-9c8c-0f1843486c50" ...
 ```
 
 ### 2. Check Your Test Data
 
 ```bash
-curl -H "X-Dev-Role: admin" http://localhost:8002/api/dev/stats
+curl -H "Authorization: Bearer dev-token-admin" http://localhost:8002/api/dev/stats
 ```
 
 ### 3. Clean Up When Full
 
 ```bash
 # View stats
-curl -H "X-Dev-Role: admin" http://localhost:8002/api/dev/stats
+curl -H "Authorization: Bearer dev-token-admin" http://localhost:8002/api/dev/stats
 
 # If you hit limits:
-curl -X POST -H "X-Dev-Role: admin" http://localhost:8002/api/dev/reset
+curl -X POST -H "Authorization: Bearer dev-token-admin" http://localhost:8002/api/dev/reset
 
 # Reseed
 pixi run dev-seed
@@ -273,8 +280,8 @@ pixi run dev-seed
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | "Dev tokens only in TEST_MODE" | Running with `.env` (production) | Use `.env.test` or set `TEST_MODE=true` |
-| "Invalid dev role 'foo'" | Wrong role name | Use: `admin`, `moderator`, `manager`, or `user` |
+| "Invalid dev token role 'foo'" | Wrong role name | Use: `admin`, `moderator`, `manager`, or `user` |
+| "Dev user not found: \<uuid\>" | UUID not in DB | Run `pixi run dev-seed` to reseed test users |
 | "Dev row limits exceeded" | Too much test data | `POST /api/dev/reset` then `pixi run dev-seed` |
 | Dev endpoints return 404 | Not in dev mode | Confirm `TEST_MODE=true` in `.env.test` |
-| Scrapers still running nightly | Schedulers enabled | Verify `DEV_MODE_DISABLE_SCHEDULED_SCRAPERS=true` in config |
 
