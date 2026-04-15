@@ -61,7 +61,6 @@
 - ✅ `services/dev_mode.py` - Row limit & reset logic (150 lines)
 - ✅ `routers/dev.py` - Dev API endpoints (100 lines)
 - ✅ `documentation/DEV_MODE.md` - Complete user guide (350 lines)
-- ✅ `documentation/DEV_MODE_FUTURE.md` - 18 future feature ideas (200 lines)
 
 ### Modified Files
 - ✅ `services/auth.py` - Rewritten with X-Dev-Role support
