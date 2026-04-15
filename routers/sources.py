@@ -55,7 +55,7 @@ async def create_supported_source(
         raise HTTPException(status_code=409, detail="This domain is already supported")
 
     # Generate ID and create record
-    source_id = generate_id_with_uniqueness_check(db, "supported_sources")
+    source_id = generate_id_with_uniqueness_check(source.name, db, "supported_sources")
 
     db_data = {
         "id": source_id,

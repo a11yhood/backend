@@ -182,7 +182,7 @@ def setup_test_database(test_settings):
 
     _require_supabase(test_settings)
     test_db = DatabaseAdapter(test_settings)
-    test_db.cleanup()
+    _reset_and_assert_clean(test_db)
     print("\n✓ Test database reset at session start")
 
 
@@ -200,11 +200,74 @@ def test_db(test_settings):
     yield db
 
 
+def _table_row_count(db, table_name: str) -> int:
+    """Return exact row count for a table using Supabase count metadata."""
+    resp = db.table(table_name).select("*", count="exact").limit(1).execute()
+    return resp.count or 0
+
+
+def _reset_and_assert_clean(db):
+    """Reset tables and fail loudly if any key table still has rows."""
+    db.cleanup()
+
+    tables_must_be_empty = [
+        "products",
+        "users",
+        "ratings",
+        "discussions",
+        "collections",
+        "scraping_logs",
+        "oauth_configs",
+        "supported_sources",
+        "scraper_search_terms",
+        "product_urls",
+        "product_tags",
+        "product_editors",
+        "collection_products",
+    ]
+
+    leftovers = {}
+    for table in tables_must_be_empty:
+        count = _table_row_count(db, table)
+        if count != 0:
+            leftovers[table] = count
+
+    if leftovers:
+        detail = ", ".join(f"{name}={count}" for name, count in leftovers.items())
+        raise RuntimeError(
+            "Test DB reset failed: tables still contain rows after cleanup: " + detail
+        )
+
+
+def _assert_seed_baseline(db):
+    """Fail fast if baseline seed data was not inserted as expected."""
+    supported_sources_count = _table_row_count(db, "supported_sources")
+    users_count = _table_row_count(db, "users")
+    products_count = _table_row_count(db, "products")
+
+    if supported_sources_count < 3:
+        raise RuntimeError(
+            "Test seed failed: expected at least 3 supported_sources rows, "
+            f"found {supported_sources_count}"
+        )
+    if users_count < len(TEST_USERS):
+        raise RuntimeError(
+            "Test seed failed: expected at least "
+            f"{len(TEST_USERS)} users rows, found {users_count}"
+        )
+    if products_count < len(TEST_PRODUCTS):
+        raise RuntimeError(
+            "Test seed failed: expected at least "
+            f"{len(TEST_PRODUCTS)} products rows, found {products_count}"
+        )
+
+
 @pytest.fixture
 def clean_database(test_db):
     """Provide a freshly cleaned and re-seeded database for each test."""
-    test_db.cleanup()
+    _reset_and_assert_clean(test_db)
     _seed_test_data(test_db)
+    _assert_seed_baseline(test_db)
     yield test_db
 
 
