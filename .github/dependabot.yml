@@ -11,11 +11,9 @@ updates:
       - dependency-type: "direct"
     groups:
       development-dependencies:
-        dependency-types:
-          - "dev"
+        dependency-type: "development"
       production-dependencies:
-        dependency-types:
-          - "production"
+        dependency-type: "production"
     commit-message:
       prefix: "deps:"
     pull-request-branch-name:
