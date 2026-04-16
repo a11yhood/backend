@@ -81,48 +81,63 @@ async def reset_database():
 
     db = get_db()
 
-    # Tables to clear (in order, respecting foreign keys)
+    # Use the atomic TRUNCATE RPC function (migrations/20260415_dev_truncate_all_tables.sql).
+    # This lets Postgres handle FK ordering and is safe from partial-clear bugs.
+    try:
+        resp = db.rpc("dev_truncate_all_tables").execute()
+        result = resp.data
+        logger.info(
+            f"Database reset via RPC. "
+            f"total_rows_deleted={result.get('total_rows_deleted', '?')}"
+        )
+        return result
+    except Exception as e:
+        # RPC function not yet applied to this environment — fall back to table-by-table delete.
+        logger.warning(
+            f"dev_truncate_all_tables RPC unavailable ({e}); "
+            "falling back to table-by-table delete. "
+            "Apply migrations/20260415_dev_truncate_all_tables.sql to eliminate this path."
+        )
+
+    # Fallback: delete in FK dependency order (children before parents).
     clear_order = [
-        "scraping_logs",
-        "discussions",
-        "ratings",
-        "collection_products",
-        "collections",
-        "products",
-        "oauth_configs",
-        "users",
+        "product_tags", "product_editors", "product_urls",
+        "scraping_logs", "discussions", "ratings",
+        "blog_posts", "user_activities", "user_requests",
+        "collection_products", "collections",
+        "products", "tags", "oauth_configs", "users",
     ]
 
     cleared = {}
+    errors = {}
     for table in clear_order:
         try:
-            # Count rows and sample one row to discover an existing column for filtering.
             resp_before = db.table(table).select("*", count="exact").limit(1).execute()
             count_before = resp_before.count or 0
-
-            # PostgREST requires a WHERE clause for DELETE. Use any real column from the table.
             if count_before > 0:
                 sample_row = resp_before.data[0] if resp_before.data else None
                 if not sample_row:
-                    raise ValueError(
-                        f"Unable to sample a row from non-empty table '{table}'"
-                    )
-
+                    logger.warning(f"Unable to sample row from '{table}'; skipping")
+                    errors[table] = "unable to sample row"
+                    continue
                 filter_column = next(iter(sample_row.keys()))
                 db.table(table).delete().not_.is_(filter_column, "null").execute()
-
             cleared[table] = count_before
             logger.info(f"Cleared {table}: {count_before} rows deleted")
-        except Exception as e:
-            logger.error(f"Failed to clear {table}: {e}")
-            raise
+        except Exception as table_err:
+            logger.error(f"Failed to clear {table}: {table_err}")
+            errors[table] = str(table_err)
 
-    logger.info(f"Database reset complete. Cleared tables: {', '.join(cleared.keys())}")
-    return {
+    logger.info(f"Database reset complete. Cleared: {', '.join(cleared.keys())}")
+    result = {
         "status": "reset",
         "cleared_tables": cleared,
         "total_rows_deleted": sum(cleared.values()),
     }
+    if errors:
+        result["errors"] = errors
+        logger.warning(f"Reset completed with errors on: {', '.join(errors.keys())}")
+    return result
 
 
 async def get_dev_stats():
