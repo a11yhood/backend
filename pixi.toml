@@ -132,6 +132,7 @@ anyio = ">=4.12.1,<5"
 pytest-asyncio = ">=1.3.0,<2"
 pydantic = ">=2.12.5,<3"
 postgresql = ">=18.3,<19"
+ruff = ">=0.15.10,<0.16"
 
 [pypi-dependencies]
 annotated-doc = ">=0.0.4, <0.0.5"
