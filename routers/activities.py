@@ -10,22 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from models.activities import UserActivityCreate, UserActivityResponse
 from services.auth import get_current_user
 from services.database import get_db
+from services.timestamps import normalize_timestamp_fields
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
-
-
-def _normalize_timestamp(value: object | None) -> str | None:
-    """Normalize a DB timestamp value to a canonical ISO 8601 UTC string."""
-    if value is None:
-        return None
-    if isinstance(value, str):
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        dt = dt if dt.tzinfo else dt.replace(tzinfo=UTC)
-        return dt.astimezone(UTC).isoformat()
-    if isinstance(value, datetime):
-        dt = value if value.tzinfo else value.replace(tzinfo=UTC)
-        return dt.astimezone(UTC).isoformat()
-    return None
 
 
 @router.post("", response_model=UserActivityResponse, status_code=201)
@@ -58,9 +45,7 @@ async def log_user_activity(
     if "activity_metadata" in result:
         result["metadata"] = result.pop("activity_metadata")
 
-    result["timestamp"] = _normalize_timestamp(result.get("timestamp"))
-
-    return result
+    return normalize_timestamp_fields(result)
 
 
 @router.get("", response_model=list[UserActivityResponse])
@@ -94,9 +79,7 @@ async def get_activities(
         if "activity_metadata" in activity:
             activity["metadata"] = activity.pop("activity_metadata")
 
-        activity["timestamp"] = _normalize_timestamp(activity.get("timestamp"))
-
-    return activities
+    return normalize_timestamp_fields(activities)
 
 
 @router.get("/{activity_id}", response_model=UserActivityResponse)
@@ -113,9 +96,8 @@ async def get_activity(
     activity = response.data[0]
     if "activity_metadata" in activity:
         activity["metadata"] = activity.pop("activity_metadata")
-    activity["timestamp"] = _normalize_timestamp(activity.get("timestamp"))
 
-    return activity
+    return normalize_timestamp_fields(activity)
 
 
 @router.post("/cleanup", response_model=dict)

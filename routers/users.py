@@ -8,6 +8,7 @@ Privacy: Public username lookup excludes email and preferences.
 import logging
 import os
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -16,6 +17,7 @@ from config import settings
 from services.auth import ensure_admin, get_current_user, get_current_user_optional
 from services.database import get_db
 from services.security_logger import log_role_change
+from services.timestamps import ApiTimestamp, OptionalApiTimestamp, normalize_timestamp_fields
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -64,10 +66,10 @@ class PublicUserAccountResponse(BaseModel):
     location: str | None = None
     website: str | None = None
     preferences: dict | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
-    joined_at: str | None = None
-    last_active: str | None = None
+    created_at: OptionalApiTimestamp = None
+    updated_at: OptionalApiTimestamp = None
+    joined_at: OptionalApiTimestamp = None
+    last_active: OptionalApiTimestamp = None
 
 
 class UserAccountResponse(PublicUserAccountResponse):
@@ -443,7 +445,7 @@ async def get_all_users(db=Depends(get_db), current_user: dict = Depends(get_cur
         raise HTTPException(status_code=403, detail="Admin access required")
 
     response = db.table("users").select("*").execute()
-    return response.data
+    return normalize_timestamp_fields(response.data or [])
 
 
 @router.get("/{username}/collections")
@@ -470,7 +472,7 @@ async def get_user_requests(
         .order("created_at", desc=True)
         .execute()
     )
-    return response.data
+    return normalize_timestamp_fields(response.data or [])
 
 
 @router.get("/{username}/stats")
@@ -519,4 +521,4 @@ async def get_owned_products(
     # Get the actual products
     products_response = db.table("products").select("*").in_("id", product_ids).execute()
 
-    return {"products": products_response.data or []}
+    return {"products": normalize_timestamp_fields(products_response.data or [])}

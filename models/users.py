@@ -8,6 +8,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr
 
+from services.timestamps import ApiTimestamp
+
 
 class UserBase(BaseModel):
     username: str
@@ -29,8 +31,8 @@ class UserResponse(UserBase):
     id: str
     products_owned: list[str] = []
     role: str = "user"
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiTimestamp
+    updated_at: ApiTimestamp
     username_display: str | None = None
 
     class Config:

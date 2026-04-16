@@ -6,6 +6,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from services.timestamps import ApiTimestamp, OptionalApiTimestamp
+
 
 class UserActivityCreate(BaseModel):
     """Request model for creating user activity"""
@@ -13,7 +15,7 @@ class UserActivityCreate(BaseModel):
     user_id: str
     type: str  # 'product_submit' | 'rating' | 'discussion' | 'tag'
     product_id: str | None = None
-    timestamp: datetime  # ISO 8601 string; Pydantic coerces and validates
+    timestamp: ApiTimestamp
     metadata: dict | None = None
 
 
@@ -24,6 +26,6 @@ class UserActivityResponse(BaseModel):
     user_id: str
     type: str
     product_id: str | None = None
-    timestamp: str  # ISO 8601 UTC datetime string
-    created_at: str | None = None
+    timestamp: ApiTimestamp
+    created_at: OptionalApiTimestamp = None
     metadata: dict | None = None

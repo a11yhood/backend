@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.timestamps import ApiTimestamp
+
 
 class RatingBase(BaseModel):
     product_id: str
@@ -19,7 +21,7 @@ class RatingUpdate(BaseModel):
 class RatingResponse(RatingBase):
     id: str
     user_id: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiTimestamp
+    updated_at: ApiTimestamp
 
     model_config = ConfigDict(from_attributes=True)

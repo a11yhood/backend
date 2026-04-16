@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from services.auth import get_current_user
 from services.database import get_db
 from services.sources import extract_domain
+from services.timestamps import ApiTimestamp, OptionalApiTimestamp
 from config import get_settings
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
@@ -37,9 +38,9 @@ class UserRequestResponse(BaseModel):
     product_id: str | None = None
     reason: str | None = None
     reviewed_by: str | None = None
-    reviewed_at: str | None = None
-    created_at: str
-    updated_at: str
+    reviewed_at: OptionalApiTimestamp = None
+    created_at: ApiTimestamp
+    updated_at: ApiTimestamp
 
 
 class UserRequestUpdate(BaseModel):

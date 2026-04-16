@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from models.product_urls import ProductUrlResponse
+from services.timestamps import ApiTimestamp, OptionalApiTimestamp
 
 
 class ProductBase(BaseModel):
@@ -15,7 +16,7 @@ class ProductBase(BaseModel):
     image_alt: str | None = None
     external_id: str | None = None  # ID from external source
     tags: list[str] | None = Field(default_factory=list)
-    source_last_updated: datetime | None = None  # Last updated timestamp from source platform
+    source_last_updated: OptionalApiTimestamp = None
     matched_search_terms: list[str] | None = Field(
         default_factory=list
     )  # Search terms/categories that matched
@@ -35,7 +36,7 @@ class ProductUpdate(BaseModel):
     image_alt: str | None = None
     external_id: str | None = None
     tags: list[str] | None = None
-    source_last_updated: datetime | None = None
+    source_last_updated: OptionalApiTimestamp = None
     matched_search_terms: list[str] | None = None
 
 
@@ -43,18 +44,18 @@ class ProductResponse(ProductBase):
     id: str
     slug: str
     created_by: str | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiTimestamp
+    updated_at: ApiTimestamp
     banned: bool | None = None
     banned_reason: str | None = None
     banned_by: str | None = None
-    banned_at: datetime | None = None
+    banned_at: OptionalApiTimestamp = None
     average_rating: float | None = None
     rating_count: int = 0
     display_rating: float | None = None
     source_rating: float | None = None
     source_rating_count: int | None = None
-    source_last_updated: datetime | None = None
+    source_last_updated: OptionalApiTimestamp = None
     computed_rating: float | None = (
         None  # Computed display rating (PostgreSQL trigger or manual in tests)
     )

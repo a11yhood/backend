@@ -14,25 +14,15 @@ from models.blog_posts import BlogPostCreate, BlogPostResponse, BlogPostUpdate
 from services.auth import ensure_admin, get_current_user, get_current_user_optional
 from services.database import get_db
 from services.sanitizer import sanitize_html
+from services.timestamps import normalize_timestamp_value
 
 router = APIRouter(prefix="/api/blog-posts", tags=["blog"])
 
 
 def _to_iso_utc(value: object | None) -> str | None:
     """Normalize any datetime value to a canonical ISO 8601 UTC string."""
-    if value is None:
-        return None
-    if isinstance(value, str):
-        try:
-            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            dt = dt if dt.tzinfo else dt.replace(tzinfo=UTC)
-        except ValueError:
-            return None
-        return dt.astimezone(UTC).isoformat()
-    if isinstance(value, datetime):
-        dt = value if value.tzinfo else value.replace(tzinfo=UTC)
-        return dt.astimezone(UTC).isoformat()
-    return None
+    normalized = normalize_timestamp_value(value)
+    return normalized if isinstance(normalized, str) else None
 
 
 def _slugify(text: str) -> str:

@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from services.timestamps import ApiTimestamp
+
 
 class SupportedSourceBase(BaseModel):
     domain: str = Field(..., min_length=1, max_length=255)
@@ -25,5 +27,5 @@ class SupportedSourceUpdate(BaseModel):
 
 class SupportedSourceResponse(SupportedSourceBase):
     id: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiTimestamp
+    updated_at: ApiTimestamp

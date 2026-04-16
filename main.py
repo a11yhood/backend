@@ -19,7 +19,13 @@ from services.scheduled_scrapers import get_scheduled_scraper_service
 app = FastAPI(
     title="a11yhood API",
     version="1.0.0",
-    description="API for a11yhood - Accessible Product Community"
+    description=(
+        "API for a11yhood - Accessible Product Community\n\n"
+        "Timestamp contract:\n"
+        "- All API timestamps are UTC ISO 8601 strings with a time component.\n"
+        "- Example: `2026-04-16T00:00:00+00:00`\n"
+        "- Date-only strings such as `2026-04-16` are not part of the public API contract."
+    )
 )
 
 import os

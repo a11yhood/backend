@@ -9,6 +9,15 @@ All API endpoints are relative to `/api`
 
 ## Response Format
 
+## Timestamp Contract
+
+All timestamp fields in the API use UTC ISO 8601 strings with a time component.
+
+- Example: `2026-04-16T00:00:00+00:00`
+- Applies to fields such as `created_at`, `updated_at`, `joined_at`, `last_active`, `timestamp`, `publish_date`, `published_at`, `reviewed_at`, and `source_last_updated`
+- Date-only strings such as `2026-04-16` are not part of the API contract
+- Clients should parse these values as RFC 3339 / ISO 8601 date-time strings, not Unix milliseconds
+
 ### Success Response
 
 ```json
@@ -67,8 +76,8 @@ GET /api/users?role=moderator
     "location": "San Francisco",
     "website": "https://example.com",
     "role": "user",
-    "joinedAt": 1704067200000,
-    "lastActive": 1704153600000,
+    "joinedAt": "2026-04-16T00:00:00+00:00",
+    "lastActive": "2026-04-16T12:34:56+00:00",
     "productsSubmitted": 5,
     "reviewsWritten": 12,
     "ratingsGiven": 34,
@@ -216,7 +225,7 @@ GET /api/users/:userId/activities?limit=50
     "userId": "12345",
     "type": "product_submit",
     "productId": "prod-1",
-    "timestamp": 1704153600000,
+    "timestamp": "2026-04-16T12:34:56+00:00",
     "metadata": { ... }
   }
 ]
@@ -1433,7 +1442,7 @@ GET /api/scraping-logs?limit=50
 [
   {
     "id": "log-1",
-    "timestamp": 1704153600000,
+    "timestamp": "2026-04-16T12:34:56+00:00",
     "status": "success",
     "totalProductsScraped": 45,
     "productsPerSource": {
@@ -1460,7 +1469,7 @@ POST /api/scraping-logs
 **Body:**
 ```json
 {
-  "timestamp": 1704153600000,
+  "timestamp": "2026-04-16T12:34:56+00:00",
   "status": "success",
   "totalProductsScraped": 45,
   "productsPerSource": {
@@ -1497,7 +1506,7 @@ POST /api/activities
   "userId": "12345",
   "type": "product_submit",
   "productId": "prod-1",
-  "timestamp": 1704153600000,
+  "timestamp": "2026-04-16T12:34:56+00:00",
   "metadata": {
     "action": "edit"
   }

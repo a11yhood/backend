@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.timestamps import ApiTimestamp
+
 
 class ScrapingLogBase(BaseModel):
     source: str
@@ -20,7 +22,7 @@ class ScrapingLogCreate(ScrapingLogBase):
 class ScrapingLogResponse(ScrapingLogBase):
     id: str
     user_id: str
-    created_at: datetime
+    created_at: ApiTimestamp
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,8 +51,8 @@ class OAuthConfigResponse(BaseModel):
     platform: str
     client_id: str
     redirect_uri: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiTimestamp
+    updated_at: ApiTimestamp
     # client_secret is intentionally excluded for security
 
     model_config = ConfigDict(from_attributes=True)

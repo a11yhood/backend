@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.timestamps import ApiTimestamp
+
 
 class CollectionBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -45,7 +47,7 @@ class CollectionResponse(CollectionBase):
     user_name: str
     product_ids: list[str] = Field(default_factory=list)
     product_slugs: list[str] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
+    created_at: ApiTimestamp
+    updated_at: ApiTimestamp
 
     model_config = ConfigDict(from_attributes=True)

@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.timestamps import ApiTimestamp, OptionalApiTimestamp
+
 
 class BlogPostBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
@@ -13,8 +15,8 @@ class BlogPostBase(BaseModel):
     tags: list[str] = Field(default_factory=list)
     featured: bool = False
     published: bool = False
-    publish_date: datetime | None = None
-    published_at: datetime | None = None
+    publish_date: OptionalApiTimestamp = None
+    published_at: OptionalApiTimestamp = None
     author_ids: list[str] | None = None
     author_names: list[str] | None = None
 
@@ -34,8 +36,8 @@ class BlogPostUpdate(BaseModel):
     tags: list[str] | None = None
     featured: bool | None = None
     published: bool | None = None
-    publish_date: datetime | None = None
-    published_at: datetime | None = None
+    publish_date: OptionalApiTimestamp = None
+    published_at: OptionalApiTimestamp = None
     author_id: str | None = None
     author_name: str | None = None
     author_ids: list[str] | None = None
@@ -46,9 +48,9 @@ class BlogPostResponse(BlogPostBase):
     id: str
     author_id: str
     author_name: str
-    created_at: str  # ISO 8601 UTC datetime string
-    updated_at: str  # ISO 8601 UTC datetime string
-    publish_date: str | None = None  # type: ignore[assignment]  # ISO 8601 UTC
-    published_at: str | None = None  # type: ignore[assignment]  # ISO 8601 UTC
+    created_at: ApiTimestamp
+    updated_at: ApiTimestamp
+    publish_date: OptionalApiTimestamp = None
+    published_at: OptionalApiTimestamp = None
 
     model_config = ConfigDict(from_attributes=True)
