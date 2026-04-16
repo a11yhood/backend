@@ -13,10 +13,10 @@
    - **Security**: Only works when `TEST_MODE=true`
    - **Fallback**: Still supports old `dev-token-<uuid>` format
 
-### 2. **Database Row Limits (20 per table)**
+### 2. **Database Row Limits (40 per table)**
    Prevents accidental mass-inserts from filling test DB:
    - **Limit applies to**: products, users, ratings, discussions, reviews, sources, collections, scraping_logs, oauth_configs
-   - **Configuration**: `DEV_MODE_MAX_ROWS_PER_TABLE=20` in config.py
+   - **Configuration**: `DEV_MODE_MAX_ROWS_PER_TABLE=40` in config.py
    - **Enforcement**: `services/dev_mode.py` → `enforce_dev_row_limits()`
    - **Checking**: `GET /api/dev/check-limits` endpoint
 
@@ -36,6 +36,8 @@
    ⚠️ **Clears all user data** (admin-only in TEST_MODE)
    - Returns how many rows deleted per table
    - Use when test DB is full or messy
+   - Faster reset path available via `migrations/test_only/20260415_dev_truncate_all_tables.sql`
+   - Test-only SQL overrides are documented in `migrations/test_only/README.md`
    - **Requires manual reseed afterward**: `pixi run dev-seed`
 
 ### 5. **Dev Monitoring Endpoints**
@@ -132,7 +134,7 @@ This guarantees that create/read/update/delete and cleanup run under the same id
 # .env.test
 TEST_MODE=true
 TEST_SCRAPER_LIMIT=5                        # Cap manual scraper runs
-DEV_MODE_MAX_ROWS_PER_TABLE=20              # Row limit per table
+DEV_MODE_MAX_ROWS_PER_TABLE=40              # Row limit per table
 ```
 
 ---

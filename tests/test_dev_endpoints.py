@@ -157,7 +157,7 @@ def test_reset_clears_tables(client, test_admin, test_product):
 def test_check_limits_ok_when_within_limit(client, test_admin):
     """check-limits returns 200 when all tables are within the configured limit."""
     response = client.get("/api/dev/check-limits", headers=_admin_headers(test_admin))
-    # After a clean seed the tables should be well under the 20-row default.
+    # After a clean seed the tables should be well under the 40-row default.
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"

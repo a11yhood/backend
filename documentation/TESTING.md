@@ -109,4 +109,9 @@ Apply this SQL once to the test Supabase instance:
 
 - `migrations/test_only/20260414_add_truncate_test_tables_rpc.sql`
 
+The dev reset endpoint supports a separate fast reset path via `dev_truncate_all_tables()`.
+Apply this SQL once to the test Supabase instance as well:
+
+- `migrations/test_only/20260415_dev_truncate_all_tables.sql`
+
 Without that RPC, cleanup falls back to slower per-table deletes.

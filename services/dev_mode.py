@@ -81,7 +81,8 @@ async def reset_database():
 
     db = get_db()
 
-    # Use the atomic TRUNCATE RPC function (migrations/20260415_dev_truncate_all_tables.sql).
+    # Use the atomic TRUNCATE RPC function
+    # (migrations/test_only/20260415_dev_truncate_all_tables.sql).
     # This lets Postgres handle FK ordering and is safe from partial-clear bugs.
     try:
         resp = db.rpc("dev_truncate_all_tables").execute()
@@ -96,7 +97,8 @@ async def reset_database():
         logger.warning(
             f"dev_truncate_all_tables RPC unavailable ({e}); "
             "falling back to table-by-table delete. "
-            "Apply migrations/20260415_dev_truncate_all_tables.sql to eliminate this path."
+            "Apply migrations/test_only/20260415_dev_truncate_all_tables.sql "
+            "to eliminate this path."
         )
 
     # Fallback: delete in FK dependency order (children before parents).

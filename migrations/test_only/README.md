@@ -4,6 +4,12 @@ These SQL files are **manual prerequisites** for test environments.
 
 They are intentionally **not** part of the normal migration chain and are **not** auto-applied by scripts.
 
+## ⚠️ CRITICAL: Never apply to production
+
+**These SQL files must ONLY be applied to test Supabase projects.**
+
+---
+
 ## When to run
 
 Run these in Supabase SQL Editor after creating/resetting a test database if Data API access fails with errors like:
@@ -25,3 +31,5 @@ Current files:
 
 - These are test-only operational fixes, not production schema migrations.
 - Keep SQL idempotent (`GRANT` statements are safe to rerun).
+- Apply these only to the test Supabase project, never production.
+- If you accidentally apply these to production, immediately run the cleanup migration: `20260416_remove_test_only_functions.sql`

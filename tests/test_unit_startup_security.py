@@ -25,7 +25,7 @@ class _Settings:
         self.TEST_MODE = test_mode
         self.SECRET_KEY = secret_key
         self.TEST_SCRAPER_LIMIT = 20
-        self.DEV_MODE_MAX_ROWS_PER_TABLE = 20
+        self.DEV_MODE_MAX_ROWS_PER_TABLE = 40
 
 
 class _NoopScheduler:
