@@ -39,6 +39,21 @@ jobs:
           pixi-version: v0.66.0
           post-cleanup: false
 
+      - name: Verify git setup for tests
+        run: |
+          command -v git >/dev/null 2>&1 || {
+            echo "::error::git is not installed on the runner."
+            exit 1
+          }
+          git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+            echo "::error::Repository metadata is unavailable; cannot run tests safely."
+            exit 1
+          }
+          git ls-files -z >/dev/null 2>&1 || {
+            echo "::error::git ls-files failed; test file discovery requires a valid git setup."
+            exit 1
+          }
+
       - name: Run unit tests
         run: |
           # Unit tests don't hit Supabase but conftest.py imports main at collection time,

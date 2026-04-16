@@ -732,15 +732,11 @@ def _iter_scannable_repo_files(extensions: set[str]) -> list[str]:
         )
         tracked = [p.decode("utf-8", errors="ignore") for p in result.stdout.split(b"\x00") if p]
         return [str(project_root / rel_path) for rel_path in tracked if any(rel_path.endswith(ext) for ext in extensions)]
-    except Exception:
-        # Fallback for environments without git available.
-        files_to_scan: list[str] = []
-        for root, dirs, files in os.walk(project_root):
-            dirs[:] = [d for d in dirs if d not in {".venv", ".pixi", "__pycache__", ".git", ".pytest_cache", ".ruff_cache"}]
-            for file in files:
-                if any(file.endswith(ext) for ext in extensions):
-                    files_to_scan.append(os.path.join(root, file))
-        return files_to_scan
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to enumerate tracked files with git ls-files. "
+            "Tests require a working git repository."
+        ) from exc
 
 
 def test_no_hardcoded_oauth_secrets_in_codebase():

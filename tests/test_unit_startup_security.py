@@ -37,22 +37,57 @@ class _NoopScheduler:
 
 
 def test_has_production_indicators_true_when_environment_is_production(monkeypatch):
-    settings = _Settings(environment="production")
+    settings = _Settings(
+        environment="development",
+        production_url="",
+        supabase_url="https://myproject.supabase.co",
+        test_mode=False,
+        secret_key="dev-secret-key-change-in-production",
+    )
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setattr(main, "load_settings_from_env", lambda: settings)
+    monkeypatch.setattr(main, "get_cors_origins", lambda: ["http://localhost:5173"])
+    monkeypatch.setattr(main, "get_scheduled_scraper_service", _NoopScheduler)
+    monkeypatch.setattr(main, "get_db", object)
 
-    assert main.has_production_indicators(settings) is True
+    with pytest.raises(RuntimeError, match="Default SECRET_KEY in production"):
+        asyncio.run(main.validate_security_configuration())
 
 
 def test_has_production_indicators_true_with_non_local_production_url(monkeypatch):
-    settings = _Settings(environment="development", production_url="https://a11yhood.org")
+    settings = _Settings(
+        environment="development",
+        production_url="https://a11yhood.org",
+        supabase_url="https://myproject.supabase.co",
+        test_mode=False,
+        secret_key="dev-secret-key-change-in-production",
+    )
+    monkeypatch.setattr(main, "load_settings_from_env", lambda: settings)
+    monkeypatch.setattr(main, "get_cors_origins", lambda: ["http://localhost:5173"])
+    monkeypatch.setattr(main, "get_scheduled_scraper_service", _NoopScheduler)
+    monkeypatch.setattr(main, "get_db", object)
 
-    assert main.has_production_indicators(settings) is True
+    with pytest.raises(RuntimeError, match="Default SECRET_KEY in production"):
+        asyncio.run(main.validate_security_configuration())
 
 
 def test_has_production_indicators_false_with_local_production_url(monkeypatch):
-    settings = _Settings(environment="development", production_url="http://localhost:8000")
-    monkeypatch.setenv("ENV_FILE", ".env.test")
+    settings = _Settings(
+        environment="development",
+        production_url="http://localhost:8000",
+        supabase_url="https://dummy.supabase.co",
+        test_mode=False,
+        secret_key="dev-secret-key-change-in-production",
+    )
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.setattr(main, "load_settings_from_env", lambda: settings)
+    monkeypatch.setattr(main, "get_cors_origins", lambda: ["http://localhost:5173"])
+    monkeypatch.setattr(main, "get_scheduled_scraper_service", _NoopScheduler)
+    monkeypatch.setattr(main, "get_db", object)
 
-    assert main.has_production_indicators(settings) is False
+    # Should not raise: localhost production URL is treated as development-like.
+    asyncio.run(main.validate_security_configuration())
 
 
 def test_validate_security_configuration_rejects_default_secret_in_production(monkeypatch):
@@ -63,6 +98,7 @@ def test_validate_security_configuration_rejects_default_secret_in_production(mo
         secret_key="dev-secret-key-change-in-production",
     )
     monkeypatch.setattr(main, "load_settings_from_env", lambda: settings)
+    monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setattr(main, "get_cors_origins", lambda: ["http://localhost:5173"])
     monkeypatch.setattr(main, "get_scheduled_scraper_service", _NoopScheduler)
     monkeypatch.setattr(main, "get_db", object)
