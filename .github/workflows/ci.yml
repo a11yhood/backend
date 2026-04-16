@@ -46,11 +46,11 @@ jobs:
           CI_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           if [ ! -f .env.test ]; then
-            cat > .env.test << 'EOF'
-            SECRET_KEY=test-secret-key-for-ci
-            TEST_MODE=true
-            ENVIRONMENT=development
-            EOF
+            {
+              echo "SECRET_KEY=test-secret-key-for-ci"
+              echo "TEST_MODE=true"
+              echo "ENVIRONMENT=development"
+            } > .env.test
 
             if [ -n "$CI_SUPABASE_URL" ] && [ -n "$CI_SUPABASE_KEY" ]; then
               {
