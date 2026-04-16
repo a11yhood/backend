@@ -46,8 +46,8 @@ jobs:
           CI_SUPABASE_ANON_KEY_TEST: ${{ secrets.SUPABASE_ANON_KEY_TEST }}
         run: |
           # Fail fast with clear guidance when required secrets are unavailable.
-          if [ -z "$SUPABASE_URL_TEST" ] || [ -z "$SUPABASE_KEY_TEST" ]; then
-            echo "::error::Missing Supabase CI secrets. Configure SUPABASE_URL and SUPABASE_KEY (or SUPABASE_URL_TEST and SUPABASE_KEY_TEST) as repository secrets."
+          if [ -z "$CI_SUPABASE_URL_TEST" ] || [ -z "$CI_SUPABASE_KEY_TEST" ]; then
+            echo "::error::Missing Supabase CI secrets. Configure SUPABASE_URL_TEST and SUPABASE_KEY_TEST as repository secrets."
             exit 1
           fi
 
@@ -55,9 +55,9 @@ jobs:
             echo "SECRET_KEY=test-secret-key-for-ci"
             echo "TEST_MODE=true"
             echo "ENVIRONMENT=development"
-            echo "SUPABASE_URL=$SUPABASE_URL_TEST"
-            echo "SUPABASE_KEY=$SUPABASE_KEY_TEST"
-            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY_TEST"
+            echo "SUPABASE_URL=$CI_SUPABASE_URL_TEST"
+            echo "SUPABASE_KEY=$CI_SUPABASE_KEY_TEST"
+            echo "SUPABASE_ANON_KEY=$CI_SUPABASE_ANON_KEY_TEST"
           } > .env.test
 
       - name: Run tests
