@@ -131,10 +131,10 @@ def test_invalid_json_rejected(client):
     assert response.status_code in [400, 422]
 
 
-def test_type_confusion_prevented(client):
-    """Verify that type confusion attacks are prevented by Pydantic validation"""
+def test_type_confusion_prevented(auth_client):
+    """Verify request body type confusion is rejected by validation (not auth)."""
     # Try to send wrong types for fields
-    response = client.post(
+    response = auth_client.post(
         "/api/products",
         json={
             "name": ["array", "instead", "of", "string"],  # Should be string
@@ -145,8 +145,8 @@ def test_type_confusion_prevented(client):
         },
     )
 
-    # Pydantic should reject with validation error (401 if no auth, 422 if validated)
-    assert response.status_code in [401, 422]
+    # Auth is valid, so a 422 confirms request/body validation actually executed.
+    assert response.status_code == 422
 
 
 # ============================================================================
@@ -161,6 +161,8 @@ def _iter_scannable_repo_files(extensions: set[str]) -> list[str]:
     local environments such as .venv/.pixi.
     """
     project_root = Path(__file__).resolve().parents[1]
+
+    # Prefer tracked files from git when available.
     try:
         result = subprocess.run(
             ["git", "ls-files", "-z"],
@@ -168,13 +170,52 @@ def _iter_scannable_repo_files(extensions: set[str]) -> list[str]:
             check=True,
             capture_output=True,
         )
-        tracked = [p.decode("utf-8", errors="ignore") for p in result.stdout.split(b"\x00") if p]
-        return [str(project_root / rel_path) for rel_path in tracked if any(rel_path.endswith(ext) for ext in extensions)]
-    except Exception as exc:
-        raise RuntimeError(
-            "Failed to enumerate tracked files with git ls-files. "
-            "Tests require a working git repository."
-        ) from exc
+        tracked = [
+            p.decode("utf-8", errors="ignore")
+            for p in result.stdout.split(b"\x00")
+            if p
+        ]
+        files = [
+            str(project_root / rel_path)
+            for rel_path in tracked
+            if any(rel_path.endswith(ext) for ext in extensions)
+        ]
+        if files:
+            return files
+    except Exception:
+        # Fall back to a filesystem walk when git metadata/tooling is unavailable
+        # (for example source distributions, CI artifact runs, or no git binary).
+        pass
+
+    excluded_dirs = {
+        ".git",
+        ".venv",
+        "venv",
+        ".pixi",
+        ".pytest_cache",
+        "__pycache__",
+        "node_modules",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".tox",
+        "dist",
+        "build",
+    }
+
+    files: list[str] = []
+    for root, dirs, filenames in os.walk(project_root):
+        # Prune non-source directories to keep scans fast and reduce false positives.
+        dirs[:] = [d for d in dirs if d not in excluded_dirs]
+
+        for filename in filenames:
+            if not any(filename.endswith(ext) for ext in extensions):
+                continue
+            files.append(str(Path(root) / filename))
+
+    if not files:
+        pytest.skip("No scannable source files found for secret scan")
+
+    return files
 
 
 def test_no_hardcoded_oauth_secrets_in_codebase():
