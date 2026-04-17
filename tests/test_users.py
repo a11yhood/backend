@@ -1,8 +1,9 @@
 """Test user account endpoints"""
 
-import pytest
 import uuid
 from datetime import datetime
+
+import pytest
 
 pytestmark = pytest.mark.integration
 

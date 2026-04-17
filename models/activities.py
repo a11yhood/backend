@@ -2,7 +2,6 @@
 User activity models for tracking user actions.
 """
 
-from datetime import datetime
 
 from pydantic import BaseModel
 

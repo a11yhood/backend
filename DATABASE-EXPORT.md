@@ -11,7 +11,7 @@ Tools for exporting a11yhood database in different formats for different use cas
 
 ## Scripts
 
-### 1. `export_full_database.py --mode public`
+### 1. `export_full_database.py --mode public` 
 Exports products + aggregated ratings + tags (no user data).
 
 **Includes:**

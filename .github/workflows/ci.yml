@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Pixi
+        uses: prefix-dev/setup-pixi@v0.9.5
+        with:
+          pixi-version: v0.66.0
+          post-cleanup: false
+
+      - name: Lint Python
+        run: pixi run lint-python
+
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Pixi
+        uses: prefix-dev/setup-pixi@v0.9.5
+        with:
+          pixi-version: v0.66.0
+          post-cleanup: false
+
+      - name: Verify git setup for tests
+        run: |
+          command -v git >/dev/null 2>&1 || {
+            echo "::error::git is not installed on the runner."
+            exit 1
+          }
+          git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+            echo "::error::Repository metadata is unavailable; cannot run tests safely."
+            exit 1
+          }
+          git ls-files -z >/dev/null 2>&1 || {
+            echo "::error::git ls-files failed; test file discovery requires a valid git setup."
+            exit 1
+          }
+
+      - name: Run unit tests
+        run: |
+          # Unit tests don't hit Supabase but conftest.py imports main at collection time,
+          # so .env.test must exist. Use placeholder values — no real DB calls are made.
+          {
+            echo "SECRET_KEY=test-secret-key-for-ci"
+            echo "TEST_MODE=true"
+            echo "ENVIRONMENT=development"
+            echo "SUPABASE_URL=https://placeholder.supabase.co"
+            echo "SUPABASE_KEY=placeholder-key"
+            echo "SUPABASE_ANON_KEY=placeholder-anon-key"
+          } > .env.test
+          pixi run pytest -m unit -q
+
+      - name: Create CI test env file
+        env:
+          CI_SUPABASE_URL_TEST: ${{ secrets.SUPABASE_URL_TEST }}
+          CI_SUPABASE_KEY_TEST: ${{ secrets.SUPABASE_KEY_TEST }}
+          CI_SUPABASE_ANON_KEY_TEST: ${{ secrets.SUPABASE_ANON_KEY_TEST }}
+        run: |
+          # Fail fast with clear guidance when required secrets are unavailable.
+          if [ -z "$CI_SUPABASE_URL_TEST" ] || [ -z "$CI_SUPABASE_KEY_TEST" ]; then
+            echo "::error::Missing Supabase CI secrets. Configure SUPABASE_URL_TEST and SUPABASE_KEY_TEST as repository secrets."
+            exit 1
+          fi
+
+          {
+            echo "SECRET_KEY=test-secret-key-for-ci"
+            echo "TEST_MODE=true"
+            echo "ENVIRONMENT=development"
+            echo "SUPABASE_URL=$CI_SUPABASE_URL_TEST"
+            echo "SUPABASE_KEY=$CI_SUPABASE_KEY_TEST"
+            echo "SUPABASE_ANON_KEY=$CI_SUPABASE_ANON_KEY_TEST"
+          } > .env.test
+
+      - name: Run integration smoke tests
+        run: pixi run pytest tests/test_main.py tests/test_auth_fixture_determinism.py tests/test_timestamp_serialization.py -q

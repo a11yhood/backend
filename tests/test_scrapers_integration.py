@@ -19,6 +19,7 @@ Run tests:
 import os
 
 import pytest
+
 from scrapers.github import GitHubScraper
 from scrapers.thingiverse import ThingiverseScraper
 

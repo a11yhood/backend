@@ -9,9 +9,11 @@ Covers:
 - /api/dev/check-limits: reports over-limit tables
 """
 
-import pytest
 from uuid import uuid4
+
+import pytest
 from fastapi.testclient import TestClient
+
 from routers import dev as dev_router
 
 pytestmark = pytest.mark.integration

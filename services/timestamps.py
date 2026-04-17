@@ -3,7 +3,6 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-
 TIMESTAMP_DESCRIPTION = (
     "UTC ISO 8601 timestamp with a time component. "
     "Example: 2026-04-16T00:00:00+00:00. "

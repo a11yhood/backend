@@ -201,12 +201,49 @@ Additional documentation in the `documentation/` folder:
 
 - **[LOCAL_TESTING.md](documentation/LOCAL_TESTING.md)** - Local development and testing guide
 - **[API_REFERENCE.md](documentation/API_REFERENCE.md)** - Detailed API endpoint reference
-- **[DEPLOYMENT_CURRENT.md](documentation/DEPLOYMENT_CURRENT.md)** - Production deployment guide
 - **[CODE_STANDARDS.md](documentation/CODE_STANDARDS.md)** - Coding standards and conventions
 - **[SECURITY_BEST_PRACTICES.md](documentation/SECURITY_BEST_PRACTICES.md)** - Security guidelines
 - **[ARCHITECTURE.md](documentation/ARCHITECTURE.md)** - System architecture and design
 
-For a complete index of all documentation, see [documentation/README.md](documentation/README.md).
+For additional documentation, use the guides listed above and browse the `documentation/` folder directly.
+
+## Developer Release Workflow (Tag-Based)
+
+This repository publishes release artifacts from tags, not from every merge to `main`.
+
+### What runs automatically
+
+- Pull request to `main`: validation/build checks run.
+- Push tag `v*`: Docker image publish workflow runs.
+- There is currently no repository workflow triggered by `db-v*` tags.
+
+### Day-to-day developer steps
+
+1. Open a PR to `main` and wait for checks to pass.
+2. Merge the PR.
+3. If you want to publish an app image, create and push an app tag:
+
+```bash
+git checkout main
+git pull
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+4. If you want to publish DB exports, create and push a DB tag:
+
+```bash
+git checkout main
+git pull
+git tag db-vX.Y.Z
+git push origin db-vX.Y.Z
+```
+
+### Notes
+
+- Use semantic versioning for both app and DB tags.
+- Cut tags from up-to-date `main` only.
+- Do not push release tags from feature branches.
 
 ## Testing
 

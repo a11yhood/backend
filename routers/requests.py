@@ -15,11 +15,11 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from config import get_settings
 from services.auth import get_current_user
 from services.database import get_db
 from services.sources import extract_domain
 from services.timestamps import ApiTimestamp, OptionalApiTimestamp
-from config import get_settings
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
@@ -240,7 +240,7 @@ def update_user_request(
     # Only admins can approve requests that grant the 'admin' role.
     if update.status == 'approved' and request_data.get('type') == 'admin' and user_role != 'admin':
         raise HTTPException(status_code=403, detail="Only admins can approve admin-role requests")
-    
+
     # Update the request
     now = datetime.now(UTC)
     update_data = {

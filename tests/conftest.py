@@ -1,5 +1,7 @@
 import logging
 import os
+import subprocess
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -159,9 +161,55 @@ from config import get_settings
 from database_adapter import DatabaseAdapter
 
 
+def _assert_git_setup() -> None:
+    """Fail fast when git is unavailable or repository metadata is inaccessible."""
+    project_root = Path(__file__).resolve().parents[1]
+    try:
+        subprocess.run(["git", "--version"], check=True, capture_output=True, text=True)
+        inside = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=project_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        if inside.stdout.strip() != "true":
+            raise RuntimeError("git rev-parse did not report an active work tree")
+        subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=project_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Git is not set up correctly for tests. "
+            "Ensure git is installed and this directory is a valid repository."
+        ) from exc
+
+
+@pytest.fixture(scope="session", autouse=True)
+def require_git_setup():
+    """Require a healthy git setup before any tests execute."""
+    _assert_git_setup()
+
+
+def _has_usable_supabase(settings) -> bool:
+    """Return True when Supabase credentials are present and not placeholders."""
+    url = settings.SUPABASE_URL or ""
+    key = settings.SUPABASE_KEY or ""
+
+    # Unit-only CI runs provide placeholder values so app import succeeds,
+    # but DB-dependent fixtures should still be skipped.
+    using_placeholder_url = "placeholder.supabase.co" in url
+
+    return bool(url and key and not using_placeholder_url)
+
+
 def _require_supabase(settings):
-    """Skip the test session if Supabase credentials are not configured."""
-    if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+    """Skip DB-dependent tests if Supabase credentials are not configured."""
+    if not _has_usable_supabase(settings):
         pytest.skip(
             "SUPABASE_URL and SUPABASE_KEY are required for tests. "
             "Copy .env.test.example to .env.test and fill in your test Supabase credentials."
@@ -178,6 +226,10 @@ def setup_test_database(test_settings):
     """
     if os.getenv("RUN_AGAINST_SERVER"):
         print("\n✓ Skipping test database reset (RUN_AGAINST_SERVER=1)")
+        return
+
+    if not _has_usable_supabase(test_settings):
+        print("\n✓ Skipping test database reset (Supabase not configured for this run)")
         return
 
     _require_supabase(test_settings)

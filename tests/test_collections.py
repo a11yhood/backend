@@ -4,6 +4,7 @@ Tests use real API calls via FastAPI TestClient, with test database setup via fi
 """
 
 import uuid
+
 import pytest
 
 pytestmark = pytest.mark.integration

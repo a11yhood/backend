@@ -4,7 +4,6 @@ Defines schemas for user CRUD operations with role management.
 Email validation enforced via EmailStr for security.
 """
 
-from datetime import datetime
 
 from pydantic import BaseModel, EmailStr
 

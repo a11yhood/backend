@@ -8,6 +8,7 @@ These tests focus on:
 - Role-based feature gating (admin-only scrapers, manager-only edits)
 """
 
+import os
 import time
 import uuid
 
@@ -731,20 +732,15 @@ def _iter_scannable_repo_files(extensions: set[str]) -> list[str]:
         )
         tracked = [p.decode("utf-8", errors="ignore") for p in result.stdout.split(b"\x00") if p]
         return [str(project_root / rel_path) for rel_path in tracked if any(rel_path.endswith(ext) for ext in extensions)]
-    except Exception:
-        # Fallback for environments without git available.
-        files_to_scan: list[str] = []
-        for root, dirs, files in os.walk(project_root):
-            dirs[:] = [d for d in dirs if d not in {".venv", ".pixi", "__pycache__", ".git", ".pytest_cache", ".ruff_cache"}]
-            for file in files:
-                if any(file.endswith(ext) for ext in extensions):
-                    files_to_scan.append(os.path.join(root, file))
-        return files_to_scan
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to enumerate tracked files with git ls-files. "
+            "Tests require a working git repository."
+        ) from exc
 
 
 def test_no_hardcoded_oauth_secrets_in_codebase():
     """Scan codebase for accidentally committed OAuth secrets"""
-    import os
     import re
     from pathlib import Path
 
@@ -816,7 +812,6 @@ def test_no_hardcoded_oauth_secrets_in_codebase():
 
 def test_no_database_passwords_in_code():
     """Verify database passwords are not hardcoded in source files"""
-    import os
     import re
 
     # Pattern for database connection strings with passwords
@@ -855,7 +850,6 @@ def test_no_database_passwords_in_code():
 
 def test_no_api_keys_in_comments():
     """Verify API keys are not exposed even in comments"""
-    import os
     import re
 
     found_issues = []
