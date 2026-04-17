@@ -7,17 +7,21 @@ import pytest
 from scrapers.github import GitHubScraper
 
 
-@pytest.mark.asyncio
-async def test_github_scraper_supports_url(clean_database):
+@pytest.mark.unit
+async def test_github_scraper_supports_url():
     """Test that GitHub scraper correctly identifies GitHub URLs"""
     url = "https://github.com/make4all/psst"
-    db = clean_database
 
-    github_scraper = GitHubScraper(db, access_token=None)
-    assert github_scraper.supports_url(url), "GitHub scraper should support GitHub URLs"
+    github_scraper = GitHubScraper(None, access_token=None)
+    try:
+        assert github_scraper.supports_url(url), "GitHub scraper should support GitHub URLs"
+    finally:
+        await github_scraper.close()
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.requires_oauth
 async def test_github_scraper_with_valid_url(clean_database):
     """Test scraping a valid GitHub repository URL"""
     url = "https://github.com/make4all/psst"

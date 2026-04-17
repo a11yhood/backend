@@ -52,7 +52,7 @@ class BaseScraper(ABC):
     def __init__(self, supabase_client, access_token: str | None = None):
         self.supabase = supabase_client
         self.access_token = access_token
-        self.client = httpx.AsyncClient()
+        self._http_client: httpx.AsyncClient | None = None  # created lazily on first use
         self.last_request_time = 0.0
         self._supported_source_cache: dict[str, str] | None = None
         # Test-mode session state
@@ -64,9 +64,26 @@ class BaseScraper(ABC):
         self._last_auth_error: str | None = None
         self._refresh_in_progress: bool = False
 
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """Return the HTTP client, creating a default one on first access."""
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient()
+        return self._http_client
+
+    @client.setter
+    def client(self, value: httpx.AsyncClient) -> None:
+        self._http_client = value
+
     async def close(self):
-        """Clean up resources"""
-        await self.client.aclose()
+        """Clean up resources.
+
+        Safe to call multiple times. Accessing ``client`` after closing will
+        lazily create a new instance (consistent with normal lazy init behavior).
+        """
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
 
     @abstractmethod
     async def scrape(self, test_mode: bool = False, test_limit: int = 5) -> dict[str, Any]:

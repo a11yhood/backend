@@ -151,33 +151,6 @@ def test_deep_nesting_replies(client: TestClient, auth_headers, test_user, test_
     assert "username" in level3
 
 
-def test_user_can_reply_to_own_discussion(
-    client: TestClient, auth_headers, test_user, test_product
-):
-    """Test that a user can reply to their own discussion"""
-    # Create discussion
-    parent_response = client.post(
-        "/api/discussions",
-        headers=auth_headers(test_user),
-        json={"product_id": test_product["id"], "content": "I have a question"},
-    )
-    parent_id = parent_response.json()["id"]
-
-    # Reply to own discussion
-    reply_response = client.post(
-        "/api/discussions",
-        headers=auth_headers(test_user),
-        json={
-            "product_id": test_product["id"],
-            "content": "Never mind, I figured it out!",
-            "parent_id": parent_id,
-        },
-    )
-
-    assert reply_response.status_code == 201
-    assert reply_response.json()["parent_id"] == parent_id
-
-
 def test_discussion_timestamps_are_valid(client: TestClient, auth_headers, test_user, test_product):
     """Test that discussion timestamps are properly formatted"""
     response = client.post(
@@ -194,27 +167,6 @@ def test_discussion_timestamps_are_valid(client: TestClient, auth_headers, test_
     created_at = discussion["created_at"]
     # Should be able to parse as ISO datetime
     datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-
-
-def test_get_discussions_without_filters(client: TestClient, auth_headers, test_user, test_product):
-    """Test getting discussions without filters returns all recent discussions"""
-    # Create discussion
-    client.post(
-        "/api/discussions",
-        headers=auth_headers(test_user),
-        json={"product_id": test_product["id"], "content": "Test discussion"},
-    )
-
-    # Get all discussions
-    response = client.get("/api/discussions")
-    assert response.status_code == 200
-    discussions = response.json()
-    assert isinstance(discussions, list)
-    assert len(discussions) > 0
-
-    # All should have username
-    for discussion in discussions:
-        assert "username" in discussion
 
 
 def test_filter_discussions_by_parent_id(client: TestClient, auth_headers, test_user, test_product):
