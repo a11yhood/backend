@@ -8,7 +8,8 @@ These tests focus on:
 - Data exposure prevention
 - Concurrency/race condition prevention
 
-Note: Utest_unit_security.py and do not require database state.
+Note: Unit-level security tests live in tests/test_unit_security.py and do not
+require database state.
 """
 
 import os
