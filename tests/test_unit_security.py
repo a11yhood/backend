@@ -90,17 +90,17 @@ def test_sensitive_headers_not_leaked(client):
 
 def test_rate_limit_on_root_endpoint(client):
     """Verify rate limiting prevents abuse on GET /"""
-    # The root endpoint has a 60/minute limit
-    # Make 65 requests to exceed it
+    # The root endpoint has a 60/minute limit.
+    # Make the minimum number of requests needed to exceed it.
     responses = []
-    for i in range(65):
+    for i in range(61):
         response = client.get("/")
         responses.append(response.status_code)
 
-    # At least some should be rate limited (429)
-    # Note: In test environment, rate limiting might not be fully active
-    # but we verify it doesn't crash
+    # Requests should either succeed before the limit is hit or be rejected
+    # with 429 once the limit is exceeded.
     assert all(status in [200, 429] for status in responses)
+    assert 429 in responses
 
 
 def test_health_check_no_rate_limit(client):
