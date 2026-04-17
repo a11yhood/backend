@@ -29,7 +29,6 @@ jobs:
   publish:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    environment: production-image
     permissions:
       contents: read
       packages: write
