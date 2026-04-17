@@ -34,6 +34,32 @@ def client(clean_database):
 
 
 @pytest.fixture
+def unit_client():
+    """Lightweight TestClient backed by a mock DB stub — no Supabase credentials needed.
+
+    Suitable for unit tests that exercise middleware, header validation, rate limiting,
+    or auth rejection logic without requiring real database state. Any token that is not
+    a dev-token will be rejected with 401 by the mock Supabase auth stub.
+    """
+    from unittest.mock import MagicMock
+
+    mock_auth = MagicMock()
+    mock_auth.get_user.side_effect = Exception("Invalid token (unit test mock)")
+
+    mock_supabase = MagicMock()
+    mock_supabase.auth = mock_auth
+
+    mock_db = MagicMock()
+    mock_db.supabase = mock_supabase
+
+    try:
+        app.dependency_overrides[get_db] = lambda: mock_db
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def auth_client(clean_database, test_user):
     """Test client authenticated as the seeded regular user via UUID dev token."""
     from main import app

@@ -8,12 +8,15 @@ from scrapers.github import GitHubScraper
 
 
 @pytest.mark.unit
-def test_github_scraper_supports_url():
+async def test_github_scraper_supports_url():
     """Test that GitHub scraper correctly identifies GitHub URLs"""
     url = "https://github.com/make4all/psst"
 
     github_scraper = GitHubScraper(None, access_token=None)
-    assert github_scraper.supports_url(url), "GitHub scraper should support GitHub URLs"
+    try:
+        assert github_scraper.supports_url(url), "GitHub scraper should support GitHub URLs"
+    finally:
+        await github_scraper.close()
 
 
 @pytest.mark.asyncio
