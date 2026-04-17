@@ -5,12 +5,26 @@ Uses Supabase for all environments; configure SUPABASE_URL/KEY in .env or .env.t
 
 from fastapi import HTTPException
 
-from config import settings
+from config import load_settings_from_env
 from database_adapter import DatabaseAdapter, set_supabase_auth_token
 
-# Initialize database adapter using Supabase (configured via .env / .env.test)
-db_adapter = DatabaseAdapter(settings)
-db_adapter.init()
+db_adapter: DatabaseAdapter | None = None
+
+
+def _get_db_adapter() -> DatabaseAdapter:
+    """Lazily construct the shared database adapter.
+
+    Unit-only runs may provide placeholder Supabase settings so imports succeed,
+    but should not pay the cost of creating a real client unless a test actually
+    needs database access.
+    """
+    global db_adapter
+
+    if db_adapter is None:
+        db_adapter = DatabaseAdapter(load_settings_from_env())
+        db_adapter.init()
+
+    return db_adapter
 
 
 def get_db():
@@ -23,7 +37,7 @@ def get_db():
             result = db.table('users').select('*').execute()
             return result.data
     """
-    return db_adapter
+    return _get_db_adapter()
 
 
 def verify_token(token: str, adapter: DatabaseAdapter | None = None):
@@ -32,7 +46,7 @@ def verify_token(token: str, adapter: DatabaseAdapter | None = None):
     Raises HTTPException 500 if Supabase isn't configured, 401 on auth failure.
     Returns the Supabase user object on success.
     """
-    db = adapter or db_adapter
+    db = adapter or _get_db_adapter()
     supabase_client = getattr(db, "supabase", None)
     if supabase_client is None:
         raise HTTPException(

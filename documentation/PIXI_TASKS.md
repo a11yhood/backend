@@ -33,8 +33,10 @@ pixi run seed-list             # List available seed scripts
 ### Testing
 
 ```bash
-pixi run test            # Run pytest test suite (uses .env.test)
-pixi run test-fresh      # Reset test DB, then run pytest
+pixi run test            # Run unit tests, then non-unit tests
+pixi run test-unit       # Run unit-only tests
+pixi run test-integration # Run non-unit tests (DB-backed tests reset per test)
+pixi run test-fresh      # Reset test DB snapshot, then run both paths
 ```
 
 ### Direct Server (No Docker)
@@ -149,19 +151,40 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
 ### Testing
 
 #### `pixi run test`
-- **Purpose**: Run the pytest test suite
+- **Purpose**: Run unit tests first, then non-unit tests
 - **Environment**: `.env.test` (Supabase test project)
-- **Database**: Uses test Supabase project for integration tests
+- **Database**:
+  - Unit phase avoids DB-backed fixtures entirely
+  - Non-unit phase uses per-test `clean_database` resets for DB-backed fixtures
 - **Use when**:
   - Validating code changes
   - Running CI/CD locally before pushing
   - Development workflow
 - **Notes**: 
-  - Runs against Supabase test project (not in-memory SQLite)
-  - Requires `SUPABASE_URL` and `SUPABASE_KEY` in `.env.test`
-  - CI/CD also runs this before merging
+  - Composes `pixi run test-unit` then `pixi run test-integration`
+  - Non-unit tests still require `SUPABASE_URL` and `SUPABASE_KEY` in `.env.test`
+  - CI/CD should prefer this command for full validation
+
+#### `pixi run test-unit`
+- **Purpose**: Run only tests marked `unit`
+- **Environment**: `.env.test`
+- **Database**: No DB reset path is needed for unit-only tests
+- **Use when**:
+  - Fast local feedback
+  - Verifying offline-safe/unit-only changes
+  - Running in restricted CI/firewalled environments
+
+#### `pixi run test-integration`
+- **Purpose**: Run all tests not marked `unit`
+- **Environment**: `.env.test`
+- **Database**: DB-backed fixtures reset and reseed per test via `clean_database`
+- **Use when**:
+  - Validating DB-backed API behavior
+  - Exercising seeded fixtures and authenticated flows
+  - Running the slower integration half of the suite
+
 #### `pixi run test-fresh`
-- **Purpose**: Reset test DB and run pytest in one command
+- **Purpose**: Restore the test DB snapshot, then run unit and non-unit tests
 - **Environment**: `.env.test`
 - **Use when**:
 -  - You need a clean test baseline before a full run

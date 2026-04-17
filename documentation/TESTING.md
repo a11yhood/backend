@@ -81,13 +81,19 @@ Backend tests should prefer deterministic UUID-based dev auth for identity-sensi
 Run only unit tests:
 
 ```bash
-pixi run pytest -m unit
+pixi run test-unit
 ```
 
 Run integration tests:
 
 ```bash
-pixi run pytest -m integration
+pixi run test-integration
+```
+
+Run the full suite as two phases:
+
+```bash
+pixi run test
 ```
 
 Skip slow tests:

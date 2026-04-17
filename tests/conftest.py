@@ -34,6 +34,34 @@ def client(clean_database):
 
 
 @pytest.fixture
+def unit_client(monkeypatch):
+    """Lightweight TestClient backed by a mock DB stub — no Supabase credentials needed.
+
+    Suitable for unit tests that exercise middleware, header validation, rate limiting,
+    or auth rejection logic without requiring real database state. Any token that is not
+    a dev-token will be rejected with 401 by the mock Supabase auth stub.
+    """
+    from unittest.mock import MagicMock
+
+    mock_auth = MagicMock()
+    mock_auth.get_user.side_effect = Exception("Invalid token (unit test mock)")
+
+    mock_supabase = MagicMock()
+    mock_supabase.auth = mock_auth
+
+    mock_db = MagicMock()
+    mock_db.supabase = mock_supabase
+
+    try:
+        monkeypatch.setenv("TEST_MODE", "true")
+        monkeypatch.setenv("PRODUCTION_URL", "")
+        app.dependency_overrides[get_db] = lambda: mock_db
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def auth_client(clean_database, test_user):
     """Test client authenticated as the seeded regular user via UUID dev token."""
     from main import app
@@ -216,28 +244,6 @@ def _require_supabase(settings):
         )
 
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_database(test_settings):
-    """
-    Session-scoped fixture that resets the test database once at the start of a run.
-
-    Ensures no stale data from a previous session interferes with the current one.
-    Skipped when RUN_AGAINST_SERVER=1 (running tests against a live server).
-    """
-    if os.getenv("RUN_AGAINST_SERVER"):
-        print("\n✓ Skipping test database reset (RUN_AGAINST_SERVER=1)")
-        return
-
-    if not _has_usable_supabase(test_settings):
-        print("\n✓ Skipping test database reset (Supabase not configured for this run)")
-        return
-
-    _require_supabase(test_settings)
-    test_db = DatabaseAdapter(test_settings)
-    _reset_and_assert_clean(test_db)
-    print("\n✓ Test database reset at session start")
-
-
 @pytest.fixture(scope="session")
 def test_settings():
     """Load test environment settings from ENV_FILE (defaults to .env.test)."""
@@ -340,13 +346,14 @@ def _seed_test_data(db):
     """
     from services.id_generator import normalize_to_snake_case
 
-    # Supported sources (needed for URL validation) — single bulk insert
+    # Supported sources (needed for URL validation) — idempotent bulk upsert.
+    # Some test databases may already keep the canonical source rows seeded.
     supported_sources = [
         {"domain": "ravelry.com", "name": "Ravelry"},
         {"domain": "github.com", "name": "Github"},
         {"domain": "thingiverse.com", "name": "Thingiverse"},
     ]
-    db.table("supported_sources").insert(supported_sources).execute()
+    db.table("supported_sources").upsert(supported_sources, on_conflict="domain").execute()
 
     # Scraper search terms — flatten to a list and bulk upsert in one call
     # (kept aligned with seed_scripts/seed_scraper_search_terms.py)
@@ -399,8 +406,8 @@ def _seed_test_data(db):
         on_conflict="platform,search_term",
     ).execute()
 
-    # Test users with fixed IDs (match DEV_USER_IDS in services/auth.py) — bulk insert
-    db.table("users").insert(list(TEST_USERS)).execute()
+    # Test users with fixed IDs (match DEV_USER_IDS in services/auth.py) — idempotent bulk upsert
+    db.table("users").upsert(list(TEST_USERS), on_conflict="id").execute()
 
     # Test products — normalise each row then bulk insert in one call
     products_to_insert = []
@@ -416,7 +423,7 @@ def _seed_test_data(db):
         if not p.get("description"):
             p["description"] = p.get("name", "Test product")
         products_to_insert.append(p)
-    db.table("products").insert(products_to_insert).execute()
+    db.table("products").upsert(products_to_insert, on_conflict="id").execute()
 
 
 @pytest.fixture
