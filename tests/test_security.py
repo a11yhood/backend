@@ -1,11 +1,14 @@
 """
-Security regression tests (negative paths, authorization, and privacy checks).
+Integration security tests (negative paths, authorization, and privacy checks).
 
 These tests focus on:
-- Auth required for protected endpoints
 - Ownership/role enforcement to prevent IDOR
 - Private collection access control
 - Role-based feature gating (admin-only scrapers, manager-only edits)
+- Data exposure prevention
+- Concurrency/race condition prevention
+
+Note: Utest_unit_security.py and do not require database state.
 """
 
 import os
@@ -57,19 +60,6 @@ def _sample_blog_payload(author_id: str, author_name: str, slug: str, published:
     }
 
 
-# ============================================================================
-# Authentication Tests
-# ============================================================================
-
-
-def test_create_product_requires_auth(client):
-    payload = _sample_product_payload()
-    response = client.post("/api/products", json=payload)
-    assert response.status_code == 401
-
-
-# ============================================================================
-# Ownership & IDOR Tests
 # ============================================================================
 
 
@@ -205,15 +195,6 @@ def test_scraper_trigger_requires_admin(client, test_user, test_moderator, auth_
         headers=auth_headers(test_moderator),
     )
     assert moderator.status_code == 403
-
-
-def test_admin_can_trigger_scraper(admin_client):
-    payload = {"source": "github", "test_mode": True, "test_limit": 1}
-
-    # Admin allowed
-    response = admin_client.post("/api/scrapers/trigger", json=payload)
-    # Should accept (202) or return job info (200)
-    assert response.status_code in [200, 202]
 
 
 # ============================================================================

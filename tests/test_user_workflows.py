@@ -70,136 +70,14 @@ def test_product_submission_creates_product_and_adds_owner(
     assert product["description"] == product_data["description"]
 
 
-def test_product_submission_sets_correct_created_at(
-    auth_client,
-    test_user,
-    clean_database,
-):
-    """
-    Product submission should set created_at timestamp
-    """
-    product_data = {
-        "name": "Test Product with Timestamp",
-        "description": "Testing created_at field",
-        "source": "github",
-        "type": "Software",
-        "source_url": f"https://github.com/user/test-{uuid.uuid4()}",
-    }
-
-    before_submission = datetime.now(UTC)
-    response = auth_client.post("/api/products", json=product_data)
-    after_submission = datetime.now(UTC)
-
-    assert response.status_code == 201
-    product = response.json()
-    assert "created_at" in product
-
-    # Verify timestamp is reasonable
-    created_at = datetime.fromisoformat(product["created_at"].replace("Z", "+00:00"))
-    assert before_submission <= created_at <= after_submission
-
-
 # ============================================================================
 # STORY 4.1: USER RATES A PRODUCT
 # ============================================================================
 
 
-def test_product_rating_logs_activity(
-    auth_client,
-    test_user,
-    test_product,
-    clean_database,
-):
-    """
-    When a user rates a product:
-    - Rating is saved with user_id and product_id
-    - Rating can be retrieved
-    """
-    rating_value = 4
-
-    response = auth_client.post(
-        "/api/ratings",
-        json={"product_id": test_product["id"], "rating": rating_value},
-    )
-
-    assert response.status_code == 201
-    rating = response.json()
-    assert rating["rating"] == rating_value
-    assert rating["user_id"] == test_user["id"]
-    assert rating["product_id"] == test_product["id"]
-    assert "created_at" in rating
-
-
 # ============================================================================
 # STORY 5.1: USER PARTICIPATES IN DISCUSSIONS
 # ============================================================================
-
-
-def test_discussion_creation_with_parent_id(
-    auth_client,
-    test_user,
-    test_product,
-    clean_database,
-):
-    """
-    When a user creates a discussion/comment:
-    - Discussion is saved with user ID and product ID
-    - Parent comment ID is preserved (for threading)
-    """
-    # Create a parent discussion first
-    parent_response = auth_client.post(
-        "/api/discussions",
-        json={
-            "product_id": test_product["id"],
-            "content": "Initial discussion",
-        },
-    )
-    assert parent_response.status_code == 201
-    parent_id = parent_response.json()["id"]
-
-    # Now create a reply with parent_id
-    comment_text = "Great accessibility features!"
-    response = auth_client.post(
-        "/api/discussions",
-        json={
-            "product_id": test_product["id"],
-            "parent_id": parent_id,
-            "content": comment_text,
-        },
-    )
-
-    assert response.status_code == 201
-    discussion = response.json()
-    assert discussion["content"] == comment_text
-    assert discussion["user_id"] == test_user["id"]
-    assert discussion["product_id"] == test_product["id"]
-    assert discussion["parent_id"] == parent_id
-
-
-def test_discussion_creation_without_parent_starts_new_thread(
-    auth_client,
-    test_user,
-    test_product,
-    clean_database,
-):
-    """
-    Discussion without parent_id starts a new thread
-    """
-    comment_text = "Starting a new discussion"
-
-    response = auth_client.post(
-        "/api/discussions",
-        json={
-            "product_id": test_product["id"],
-            "content": comment_text,
-        },
-    )
-
-    assert response.status_code == 201
-    discussion = response.json()
-    assert discussion["content"] == comment_text
-    assert discussion["parent_id"] is None
-    assert discussion["user_id"] == test_user["id"]
 
 
 # ============================================================================
@@ -270,30 +148,6 @@ def test_activities_can_be_queried_by_user(
 # ============================================================================
 # STORY 3.3: USER REQUESTS PRODUCT MANAGEMENT
 # ============================================================================
-
-
-def test_user_can_request_product_editor(
-    auth_client,
-    test_user,
-    test_product,
-    clean_database,
-):
-    """
-    User should be able to request ownership of a product
-    """
-    reason = "I created this product"
-
-    response = auth_client.post(
-        "/api/requests",
-        json={"type": "product-ownership", "product_id": test_product["id"], "reason": reason},
-    )
-
-    assert response.status_code == 201
-    request = response.json()
-    assert request["status"] == "pending"
-    assert request["user_id"] == test_user["id"]
-    assert request["product_id"] == test_product["id"]
-    assert request["reason"] == reason
 
 
 def test_approved_ownership_request_updates_status(

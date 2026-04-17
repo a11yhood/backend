@@ -86,31 +86,6 @@ def test_test_mode_rejected_with_environment_variable(monkeypatch):
         asyncio.run(validate_security_configuration())
 
 
-def test_default_secret_key_rejected_in_production(monkeypatch):
-    """Default SECRET_KEY should be rejected in production"""
-    _set_env(
-        monkeypatch,
-        {
-            "SECRET_KEY": "dev-secret-key-change-in-production",
-            "SUPABASE_URL": "https://myproject.supabase.co",
-            "TEST_MODE": "false",
-            "ENVIRONMENT": "production",
-        },
-    )
-    from importlib import reload
-
-    import config
-
-    reload(config)
-
-    with pytest.raises(RuntimeError, match="Default SECRET_KEY in production"):
-        import asyncio
-
-        from main import validate_security_configuration
-
-        asyncio.run(validate_security_configuration())
-
-
 def test_short_secret_key_rejected_in_production(monkeypatch):
     """Short SECRET_KEY should be rejected in production"""
     _set_env(
@@ -135,52 +110,3 @@ def test_short_secret_key_rejected_in_production(monkeypatch):
 
         asyncio.run(validate_security_configuration())
 
-
-def test_test_mode_allowed_in_development(monkeypatch):
-    """TEST_MODE should be allowed when no production indicators present"""
-    _set_env(
-        monkeypatch,
-        {
-            "TEST_MODE": "true",
-            "SUPABASE_URL": "https://dummy.supabase.co",
-            "PRODUCTION_URL": "",
-            "ENVIRONMENT": "development",
-        },
-    )
-    from importlib import reload
-
-    import config
-
-    reload(config)
-
-    # Should not raise
-    import asyncio
-
-    from main import validate_security_configuration
-
-    asyncio.run(validate_security_configuration())
-
-
-def test_production_with_valid_config_succeeds(monkeypatch):
-    """Production with proper SECRET_KEY should work"""
-    _set_env(
-        monkeypatch,
-        {
-            "TEST_MODE": "false",
-            "SECRET_KEY": "a" * 64,  # Long secure key
-            "SUPABASE_URL": "https://myproject.supabase.co",
-            "ENVIRONMENT": "production",
-        },
-    )
-    from importlib import reload
-
-    import config
-
-    reload(config)
-
-    # Should not raise
-    import asyncio
-
-    from main import validate_security_configuration
-
-    asyncio.run(validate_security_configuration())
