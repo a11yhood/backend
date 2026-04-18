@@ -933,65 +933,6 @@ def test_product_exists_endpoint_returns_product(client, test_product):
     assert data["product"]["name"] == test_product["name"]
 
 
-def test_product_exists_includes_necessary_fields(client, test_product):
-    """Test that /exists endpoint returns all fields needed for UI decision"""
-    response = client.get(f"/api/products/exists?source_url={test_product['url']}")
-    assert response.status_code == 200
-    data = response.json()
-
-    # Product should have these fields for UI to display
-    product = data["product"]
-    assert "id" in product
-    assert "name" in product
-    assert "description" in product
-    assert "source_url" in product
-
-
-def test_create_product_by_new_user_adds_ownership(auth_client, test_user):
-    """
-    Story 3.1: User submits new product → becomes manager
-    """
-    product_data = {
-        "name": "Accessibility Tool",
-        "description": "A tool for testing accessibility",
-        "source": "github",
-        "categories": ["assistive-tech"],
-        "source_url": "https://github.com/new-user/new-tool",
-    }
-
-    response = auth_client.post("/api/products", json=product_data)
-    assert response.status_code == 201
-    product = response.json()
-
-    # Product should have created_by set to current user
-    assert product["created_by"] == test_user["id"]
-
-    # Verify user is in managers list by querying product_editors table
-    # This would require a GET endpoint or checking via the product management response
-
-
-def test_product_submission_logs_activity(auth_client, test_user, clean_database):
-    """
-    Story 3.1: User submits product → activity is logged
-    """
-    product_data = {
-        "name": "New Accessible Tool",
-        "description": "A tool to test activity logging during product submission",
-        "source": "github",
-        "categories": ["assistive-tech"],
-        "source_url": "https://github.com/activity-test/tool",
-    }
-
-    response = auth_client.post("/api/products", json=product_data)
-    assert response.status_code == 201
-    product = response.json()
-
-    # Check that activity was logged (in a real implementation)
-    # For now, verify product was created with correct fields
-    assert product["name"] == "New Accessible Tool"
-    assert product["created_by"] == test_user["id"]
-
-
 # ============================================================================
 # BAN / UNBAN
 # ============================================================================

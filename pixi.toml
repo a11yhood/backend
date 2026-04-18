@@ -9,9 +9,23 @@ version = "0.1.0"
 test = {features = ["test", "default"] }
 db = {features = ["db"] }
 
+[feature.test.tasks.test-unit]
+description = "run the unit test suite without test DB reset"
+cmd = "pytest -m unit"
+
+[feature.test.tasks.test-unit.env]
+ENV_FILE = ".env.test"
+
+[feature.test.tasks.test-integration]
+description = "run the non-unit test suite with test DB reset enabled"
+cmd = "pytest -m 'not unit'"
+
+[feature.test.tasks.test-integration.env]
+ENV_FILE = ".env.test"
+
 [feature.test.tasks.test]
-description = "run the test suite"
-cmd = "pytest"
+description = "run unit tests, then non-unit tests"
+cmd = "pixi run test-unit && pixi run test-integration"
 
 [feature.test.tasks.test.env]
 ENV_FILE = ".env.test"
@@ -21,8 +35,8 @@ description = "Reset the Supabase-backed test database from the checked-in seed 
 cmd = "./scripts/reset-test-db.sh --env-file .env.test"
 
 [tasks.test-fresh]
-description = "Reset the test database, then run pytest"
-cmd = "./scripts/reset-test-db.sh --env-file .env.test && pytest"
+description = "Reset the test database snapshot, then run unit and non-unit tests"
+cmd = "./scripts/reset-test-db.sh --env-file .env.test && pixi run test"
 
 [tasks.test-fresh.env]
 ENV_FILE = ".env.test"

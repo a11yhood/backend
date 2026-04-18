@@ -101,17 +101,21 @@ pixi run seed-list
 ## Running Tests
 
 ```bash
-# Full suite (uses .env.test)
+# Full suite as two phases (uses .env.test)
 pixi run test
 
-# Fresh DB + tests
+# Unit-only fast path
+pixi run test-unit
+
+# Non-unit / DB-backed path (per-test reset via clean_database)
+pixi run test-integration
+
+# Fresh DB snapshot + full suite
 pixi run test-fresh
 
-# Single file
-pixi run test -- tests/test_collections.py -v
-
-# Single test
-pixi run test -- tests/test_collections.py::TestGetCollectionDetails::test_get_collection_details_includes_product_slugs -v
+# Single file / single test selection
+pixi run pytest tests/test_collections.py -v
+pixi run pytest tests/test_collections.py::TestGetCollectionDetails::test_get_collection_details_includes_product_slugs -v
 ```
 
 ## Scraper Testing (Simplified)

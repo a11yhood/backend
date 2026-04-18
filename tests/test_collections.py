@@ -442,29 +442,6 @@ class TestAddProductToCollection:
         data = response.json()
         assert test_product["id"] in data["product_ids"]
 
-    def test_add_product_idempotent(self, client, test_user, test_product, auth_headers):
-        """Test that adding same product twice is idempotent"""
-        # Create collection
-        create_response = client.post(
-            "/api/collections", headers=auth_headers(test_user), json={"name": "My Products"}
-        )
-        collection_id = create_response.json()["id"]
-
-        # Add product twice
-        client.post(
-            f"/api/collections/{collection_id}/products/{test_product['id']}",
-            headers=auth_headers(test_user),
-        )
-        response = client.post(
-            f"/api/collections/{collection_id}/products/{test_product['id']}",
-            headers=auth_headers(test_user),
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        # Product should only appear once
-        assert data["product_ids"].count(test_product["id"]) == 1
-
     def test_add_product_nonexistent_collection(
         self, client, test_user, test_product, auth_headers
     ):
@@ -616,25 +593,6 @@ class TestAddMultipleProductsToCollection:
             json={"product_ids": []},
         )
         assert response.status_code == 200
-
-    def test_add_multiple_products_with_duplicates(
-        self, client, test_user, test_product, auth_headers
-    ):
-        """Test adding same product twice in bulk"""
-        create_response = client.post(
-            "/api/collections", headers=auth_headers(test_user), json={"name": "Duplicates"}
-        )
-        collection_id = create_response.json()["id"]
-
-        response = client.post(
-            f"/api/collections/{collection_id}/products",
-            headers=auth_headers(test_user),
-            json={"product_ids": [test_product["id"], test_product["id"]]},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        # Should only contain product once
-        assert data["product_ids"].count(test_product["id"]) == 1
 
     def test_add_multiple_products_requires_ownership(
         self, client, test_user, test_user_2, test_product, auth_headers

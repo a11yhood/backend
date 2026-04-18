@@ -4,7 +4,7 @@ import pytest
 
 from scrapers.ravelry import RavelryScraper
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.unit
 
 
 def test_create_product_dict_uses_pattern_attributes_for_tags():
