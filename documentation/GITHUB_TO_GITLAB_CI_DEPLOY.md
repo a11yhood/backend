@@ -71,6 +71,60 @@ Configured in [.gitlab-ci.yml](../.gitlab-ci.yml):
   - Copies prod env file and executes `docker compose --profile production up -d --build`.
   - Publishes environment URL `https://a11yhood.cs.washington.edu`.
 
+## Day-to-Day Development Workflow
+
+All changes should flow through GitHub. Never commit the same fix separately on GitLab.
+
+**Step 1 — Start from an up-to-date `main`:**
+
+```bash
+git checkout main
+git fetch github gitlab
+git rebase github/main
+```
+
+**Step 2 — Create a feature branch, do work, commit:**
+
+```bash
+git checkout -b your-feature-branch
+# ... make changes ...
+git add -p
+git commit -m "your message"
+```
+
+**Step 3 — Push to GitHub and open a PR:**
+
+```bash
+git push github your-feature-branch
+# Open a PR on GitHub and merge it through normal review.
+```
+
+**Step 4 — After the PR merges, sync local `main` from GitHub:**
+
+```bash
+git checkout main
+git fetch github
+git rebase github/main
+```
+
+**Step 5 — Propagate to GitLab to trigger CI:**
+
+```bash
+git push gitlab main
+```
+
+This triggers the `deploy_test` job on GitLab automatically.
+
+**Edge case — moving already-existing commits to a branch:**
+
+If you find yourself needing to move commits that were applied to `main` directly (e.g. during the setup session that created this document), cherry-pick only those specific commits onto the correct feature branch rather than committing the same changes again:
+
+```bash
+git checkout your-feature-branch
+git cherry-pick <commit-sha> [<commit-sha> ...]
+git push gitlab your-feature-branch
+```
+
 ## Suggested Release Flow
 
 1. Merge reviewed work into `main` on GitHub.
