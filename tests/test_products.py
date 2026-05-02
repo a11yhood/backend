@@ -67,7 +67,7 @@ def test_count_products_with_filters(client, clean_database, test_product):
                 "description": "Thingiverse fabrication tool",
                 "source": "Thingiverse",
                 "type": "Fabrication",
-                "url": "https://www.thingiverse.com/thing:spoon",
+                "source_url": "https://www.thingiverse.com/thing:spoon",
             },
             {
                 "id": p2_id,
@@ -75,7 +75,7 @@ def test_count_products_with_filters(client, clean_database, test_product):
                 "description": "Github software tool",
                 "source": "Github",
                 "type": "Tool",
-                "url": "https://github.com/example/tool",
+                "source_url": "https://github.com/example/tool",
             },
             {
                 "id": p3_id,
@@ -83,7 +83,7 @@ def test_count_products_with_filters(client, clean_database, test_product):
                 "description": "Ravelry knit",
                 "source": "Ravelry",
                 "type": "Knitting",
-                "url": "https://www.ravelry.com/patterns/library/knit",
+                "source_url": "https://www.ravelry.com/patterns/library/knit",
             },
         ],
     )
@@ -108,14 +108,14 @@ def test_count_products_with_type_filter(client, clean_database):
                 "name": "3D Model",
                 "source": "Thingiverse",
                 "type": "Fabrication",
-                "url": "https://www.thingiverse.com/thing:1",
+                "source_url": "https://www.thingiverse.com/thing:1",
             },
             {
                 "id": p2_id,
                 "name": "Software Tool",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/tool",
+                "source_url": "https://github.com/example/tool",
             },
         ],
     )
@@ -141,14 +141,14 @@ def test_count_products_with_tag_filter(client, clean_database):
                 "name": "Tagged Product",
                 "source": "Thingiverse",
                 "type": "Fabrication",
-                "url": "https://www.thingiverse.com/thing:tagged",
+                "source_url": "https://www.thingiverse.com/thing:tagged",
             },
             {
                 "id": p2_id,
                 "name": "Untagged Product",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/untagged",
+                "source_url": "https://github.com/example/untagged",
             },
         ],
     )
@@ -178,14 +178,14 @@ def test_count_products_with_search(client, clean_database):
                 "name": "Voice Control Software",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/voice",
+                "source_url": "https://github.com/example/voice",
             },
             {
                 "id": p2_id,
                 "name": "3D Printed Cup",
                 "source": "Thingiverse",
                 "type": "Fabrication",
-                "url": "https://www.thingiverse.com/thing:cup",
+                "source_url": "https://www.thingiverse.com/thing:cup",
             },
         ],
     )
@@ -210,7 +210,7 @@ def test_get_products_with_filters(client, clean_database, test_product):
                 "description": "Thingiverse fabrication tool",
                 "source": "Thingiverse",
                 "type": "Fabrication",
-                "url": "https://www.thingiverse.com/thing:spoon",
+                "source_url": "https://www.thingiverse.com/thing:spoon",
             },
             {
                 "id": p2_id,
@@ -218,7 +218,7 @@ def test_get_products_with_filters(client, clean_database, test_product):
                 "description": "Github software tool",
                 "source": "Github",
                 "type": "Tool",
-                "url": "https://github.com/example/tool",
+                "source_url": "https://github.com/example/tool",
             },
             {
                 "id": p3_id,
@@ -226,7 +226,7 @@ def test_get_products_with_filters(client, clean_database, test_product):
                 "description": "Ravelry knit",
                 "source": "Ravelry",
                 "type": "Knitting",
-                "url": "https://www.ravelry.com/patterns/library/knit",
+                "source_url": "https://www.ravelry.com/patterns/library/knit",
             },
         ],
     )
@@ -262,7 +262,7 @@ def test_get_products_filtered_by_tags(client, clean_database):
                 "description": "Assistive device",
                 "source": "Thingiverse",
                 "type": "Fabrication",
-                "url": "https://www.thingiverse.com/thing:cup",
+                "source_url": "https://www.thingiverse.com/thing:cup",
             },
             {
                 "id": other_product_id,
@@ -270,7 +270,7 @@ def test_get_products_filtered_by_tags(client, clean_database):
                 "description": "No tag match",
                 "source": "Github",
                 "type": "Tool",
-                "url": "https://github.com/example/unrelated",
+                "source_url": "https://github.com/example/unrelated",
             },
         ],
     )
@@ -303,7 +303,7 @@ def test_get_products_supports_multiple_source_params(client, clean_database):
                 "description": "MultiSource filter",
                 "source": "Thingiverse",
                 "type": "Fabrication",
-                "url": "https://www.thingiverse.com/thing:multisource1",
+                "source_url": "https://www.thingiverse.com/thing:multisource1",
             },
             {
                 "id": p2_id,
@@ -311,7 +311,7 @@ def test_get_products_supports_multiple_source_params(client, clean_database):
                 "description": "MultiSource filter",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/multisource2",
+                "source_url": "https://github.com/example/multisource2",
             },
             {
                 "id": p3_id,
@@ -319,7 +319,7 @@ def test_get_products_supports_multiple_source_params(client, clean_database):
                 "description": "MultiSource filter",
                 "source": "Ravelry",
                 "type": "Knitting",
-                "url": "https://www.ravelry.com/patterns/library/multisource3",
+                "source_url": "https://www.ravelry.com/patterns/library/multisource3",
             },
         ],
     )
@@ -348,7 +348,7 @@ def test_get_products_filters_by_min_display_rating(client, clean_database, test
                 "type": "Software",
                 "source_rating": 4.5,
                 "computed_rating": 4.5,  # Set computed_rating for test
-                "url": "https://github.com/example/rating-high",
+                "source_url": "https://github.com/example/rating-high",
                 "created_by": test_user["id"],
             },
             {
@@ -359,7 +359,7 @@ def test_get_products_filters_by_min_display_rating(client, clean_database, test
                 "type": "Software",
                 "source_rating": 2.0,
                 "computed_rating": 2.0,  # Will be updated after ratings inserted
-                "url": "https://github.com/example/rating-mixed",
+                "source_url": "https://github.com/example/rating-mixed",
                 "created_by": test_user["id"],
             },
             {
@@ -368,7 +368,7 @@ def test_get_products_filters_by_min_display_rating(client, clean_database, test
                 "description": "RatingCase",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/rating-user",
+                "source_url": "https://github.com/example/rating-user",
                 "created_by": test_user["id"],
             },
         ],
@@ -414,7 +414,7 @@ def test_get_products_filters_by_max_age(client, clean_database, test_user):
                 "description": "Product updated 10 days ago",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/old",
+                "source_url": "https://github.com/example/old",
                 "created_by": test_user["id"],
                 "source_last_updated": old_time,
             },
@@ -432,7 +432,7 @@ def test_get_products_filters_by_max_age(client, clean_database, test_user):
                 "description": "Product updated 2 days ago",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/recent",
+                "source_url": "https://github.com/example/recent",
                 "created_by": test_user["id"],
                 "source_last_updated": recent_time,
             },
@@ -477,7 +477,7 @@ def test_count_products_respects_max_age(client, clean_database, test_user):
                 "name": "Old Product",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/old-count",
+                "source_url": "https://github.com/example/old-count",
                 "created_by": test_user["id"],
                 "source_last_updated": old_time,
             },
@@ -486,7 +486,7 @@ def test_count_products_respects_max_age(client, clean_database, test_user):
                 "name": "Recent Product",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/recent-count",
+                "source_url": "https://github.com/example/recent-count",
                 "created_by": test_user["id"],
                 "source_last_updated": recent_time,
             },
@@ -522,7 +522,7 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
                 "type": "Software",
                 "source_rating": 4.2,
                 "computed_rating": 4.2,  # Set computed_rating for test (no trigger in SQLite)
-                "url": "https://github.com/example/rating-count-high",
+                "source_url": "https://github.com/example/rating-count-high",
                 "created_by": test_user["id"],
             },
             {
@@ -533,7 +533,7 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
                 "type": "Software",
                 "source_rating": 3.0,
                 "computed_rating": 3.0,  # Set computed_rating for test (no trigger in SQLite)
-                "url": "https://github.com/example/rating-count-low",
+                "source_url": "https://github.com/example/rating-count-low",
                 "created_by": test_user["id"],
             },
             {
@@ -542,7 +542,7 @@ def test_count_products_respects_min_rating(client, clean_database, test_user):
                 "description": "RatingCount",
                 "source": "Github",
                 "type": "Software",
-                "url": "https://github.com/example/rating-count-user",
+                "source_url": "https://github.com/example/rating-count-user",
                 "created_by": test_user["id"],
             },
         ],
@@ -580,7 +580,7 @@ def test_products_pagination_with_filters(client, clean_database, test_user):
                 "description": "Pagination check",
                 "source": "Github",
                 "type": "Software",
-                "url": f"https://github.com/example/pagetest-{idx}",
+                "source_url": f"https://github.com/example/pagetest-{idx}",
                 "created_by": test_user["id"],
                 "created_at": created_at,
             }
@@ -614,7 +614,7 @@ def test_sort_by_rating_uses_recency_as_secondary_sort(client, clean_database, t
                 "source": "Github",
                 "type": "Software",
                 "computed_rating": 4.0,
-                "url": "https://github.com/example/sort-rating-older",
+                "source_url": "https://github.com/example/sort-rating-older",
                 "created_by": test_user["id"],
                 "created_at": base_time,
             },
@@ -625,7 +625,7 @@ def test_sort_by_rating_uses_recency_as_secondary_sort(client, clean_database, t
                 "source": "Github",
                 "type": "Software",
                 "computed_rating": 4.0,
-                "url": "https://github.com/example/sort-rating-newer",
+                "source_url": "https://github.com/example/sort-rating-newer",
                 "created_by": test_user["id"],
                 "created_at": base_time + timedelta(minutes=5),
             },
@@ -736,19 +736,19 @@ def test_bulk_delete_by_source_query_param(admin_client, clean_database):
                 "id": p1_id,
                 "name": "Bulk A",
                 "source": source_name,
-                "url": f"https://example.com/{p1_id}",
+                "source_url": f"https://example.com/{p1_id}",
             },
             {
                 "id": p2_id,
                 "name": "Bulk B",
                 "source": source_name,
-                "url": f"https://example.com/{p2_id}",
+                "source_url": f"https://example.com/{p2_id}",
             },
             {
                 "id": keep_id,
                 "name": "Keep",
                 "source": "Other",
-                "url": f"https://example.com/{keep_id}",
+                "source_url": f"https://example.com/{keep_id}",
             },
         ],
     )
@@ -777,13 +777,13 @@ def test_bulk_delete_accepts_json_body(admin_client, clean_database):
                 "id": ids[0],
                 "name": "JSON A",
                 "source": source_name,
-                "url": f"https://example.com/{ids[0]}",
+                "source_url": f"https://example.com/{ids[0]}",
             },
             {
                 "id": ids[1],
                 "name": "JSON B",
                 "source": source_name,
-                "url": f"https://example.com/{ids[1]}",
+                "source_url": f"https://example.com/{ids[1]}",
             },
         ],
     )
@@ -803,7 +803,7 @@ def test_bulk_delete_by_product_ids_dedupes(admin_client, clean_database):
                     "id": pid,
                     "name": f"Target {pid[:8]}",
                     "source": "DedupSource",
-                    "url": f"https://example.com/{pid}",
+                    "source_url": f"https://example.com/{pid}",
                 }
             ],
         )
@@ -834,21 +834,21 @@ def test_bulk_delete_uses_search_filters(admin_client, clean_database):
                 "name": "Alpha Screen Reader",
                 "source": source_name,
                 "type": "Software",
-                "url": f"https://example.com/{matching_ids[0]}",
+                "source_url": f"https://example.com/{matching_ids[0]}",
             },
             {
                 "id": matching_ids[1],
                 "name": "Alpha Magnifier",
                 "source": source_name,
                 "type": "Software",
-                "url": f"https://example.com/{matching_ids[1]}",
+                "source_url": f"https://example.com/{matching_ids[1]}",
             },
             {
                 "id": keep_id,
                 "name": "Beta Keyboard",
                 "source": source_name,
                 "type": "Hardware",
-                "url": f"https://example.com/{keep_id}",
+                "source_url": f"https://example.com/{keep_id}",
             },
         ],
     )
@@ -881,7 +881,7 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
                 "source": source_name,
                 "type": "Software",
                 "source_rating": 4.5,
-                "url": f"https://example.com/{delete_id}",
+                "source_url": f"https://example.com/{delete_id}",
             },
             {
                 "id": keep_id,
@@ -889,7 +889,7 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
                 "source": source_name,
                 "type": "Software",
                 "source_rating": 2.0,
-                "url": f"https://example.com/{keep_id}",
+                "source_url": f"https://example.com/{keep_id}",
             },
         ],
     )
@@ -925,7 +925,7 @@ def test_product_exists_endpoint_returns_false_for_new_url(client):
 
 def test_product_exists_endpoint_returns_product(client, test_product):
     """Test that /exists endpoint returns existing product"""
-    response = client.get(f"/api/products/exists?source_url={test_product['url']}")
+    response = client.get(f"/api/products/exists?source_url={test_product['source_url']}")
     assert response.status_code == 200
     data = response.json()
     assert data["exists"] is True
@@ -1005,7 +1005,7 @@ def test_reject_create_when_existing_product_is_banned(auth_client, clean_databa
         "name": "Attempted Recreate",
         "description": "Trying to recreate banned product",
         "source": "github",
-        "source_url": test_product["url"],
+        "source_url": test_product["source_url"],
     }
 
     resp = auth_client.post("/api/products", json=payload)

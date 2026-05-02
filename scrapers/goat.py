@@ -320,9 +320,13 @@ class GOATScraper(BaseScraper):
 
                     # Check if product already exists
                     product_url = (
-                        product_payload.get("url") or f"https://www.librarything.com/work/{work_id}"
+                        product_payload.get("source_url") or f"https://www.librarything.com/work/{work_id}"
                     )
-                    existing = await self._product_exists(product_url)
+                    existing = await self._product_exists(
+                        product_url,
+                        external_id=product_payload.get("external_id"),
+                        source=product_payload.get("source"),
+                    )
 
                     if existing:
                         print(f"[LibraryThing] Updating existing product: {existing.get('id')}")
@@ -424,7 +428,7 @@ class GOATScraper(BaseScraper):
             "name": title,
             "description": description,
             "source": "GOAT",
-            "url": source_url or work_data.get("url"),  # Use 'url' not 'source_url'
+            "source_url": source_url or work_data.get("url"),  # Use 'source_url' for DB column
             "image": work_data.get("image_url"),  # Use 'image' not 'image_url'
             "type": "Book",
             "external_id": work_data.get("work_id"),

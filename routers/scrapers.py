@@ -209,13 +209,13 @@ async def load_url(
         return v.endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"))
 
     # First, check if product already exists in database
-    existing = db.table("products").select("*").eq("url", url).limit(1).execute()
+    existing = db.table("products").select("*").eq("source_url", url).limit(1).execute()
     if existing.data:
         product = existing.data[0]
         # Normalize fields for API response
         product["image_url"] = product.get("image")
         product["external_id"] = product.get("external_id")
-        product["sourceUrl"] = product.get("url")
+        product["sourceUrl"] = product.get("source_url")
 
         # Attach tags
         pt_rows = get_product_tag_rows(db, [product["id"]])
@@ -415,7 +415,7 @@ async def load_url(
     db_data = {
         "name": scraped_data.get("name"),
         "description": scraped_data.get("description"),
-        "url": url,
+        "source_url": url,
         "image": scraped_data.get("image")
         or scraped_data.get("imageUrl")
         or scraped_data.get("image_url"),
@@ -429,7 +429,7 @@ async def load_url(
     db_insert = {k: v for k, v in db_data.items() if v is not None}
     # Ensure slug exists for Supabase; SQLite adapter also handles slugs but this keeps parity
     if "slug" not in db_insert or not db_insert.get("slug"):
-        base = db_insert.get("name") or db_insert.get("url") or "product"
+        base = db_insert.get("name") or db_insert.get("source_url") or "product"
         db_insert["slug"] = normalize_to_snake_case(base) or "product"
 
     response = db.table("products").insert(db_insert).execute()
@@ -441,7 +441,7 @@ async def load_url(
     saved_product = response.data[0]
     saved_product["image_url"] = saved_product.get("image")
     saved_product["external_id"] = saved_product.get("external_id")
-    saved_product["sourceUrl"] = saved_product.get("url")
+    saved_product["sourceUrl"] = saved_product.get("source_url")
 
     # Create tag relationships if provided
     if scraped_data.get("tags"):

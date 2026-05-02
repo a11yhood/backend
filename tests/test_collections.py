@@ -555,7 +555,7 @@ class TestAddMultipleProductsToCollection:
             "description": "Another test product",
             "source": "github",
             "type": "Other",
-            "url": f"https://github.com/example/second-{uuid.uuid4().hex[:8]}",
+            "source_url": f"https://github.com/example/second-{uuid.uuid4().hex[:8]}",
             "slug": f"second-product-{uuid.uuid4().hex[:8]}",
             "created_by": test_user["id"],
         }

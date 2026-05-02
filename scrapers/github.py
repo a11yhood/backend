@@ -133,7 +133,11 @@ class GitHubScraper(BaseScraper):
                         # Track which search term matched this repo
                         repo["_matched_search_term"] = term
 
-                        existing = await self._product_exists(repo["html_url"])
+                        existing = await self._product_exists(
+                            repo["html_url"],
+                            external_id=str(repo["id"]),
+                            source=self.get_source_name(),
+                        )
 
                         if existing:
                             result = await self._update_product(existing["id"], repo)
@@ -281,7 +285,7 @@ class GitHubScraper(BaseScraper):
         return {
             "name": repo["name"],
             "description": repo.get("description", ""),
-            "url": repo["html_url"],
+            "source_url": repo["html_url"],
             "image": repo["owner"].get("avatar_url"),
             "source": "github",
             "type": "Software",

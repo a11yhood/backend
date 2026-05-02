@@ -361,25 +361,59 @@ class BaseScraper(ABC):
 
         return result
 
-    async def _product_exists(self, url: str) -> dict[str, Any] | None:
+    async def _product_exists(
+        self, url: str, external_id: str | None = None, source: str | None = None
+    ) -> dict[str, Any] | None:
         """
-        Check if a product already exists in the database by URL.
-        URLs are normalized before lookup to prevent duplicate inserts.
+        Check if a product already exists in the database.
+
+        Deduplication priority:
+        1. source + external_id (when both are provided) — most stable identity
+        2. source_url (normalized) — fallback when no external_id
 
         Args:
             url: The product URL to check
+            external_id: Optional external identifier from the source platform
+            source: Optional source name (required for external_id lookup)
 
         Returns:
             Existing product dict if found, None otherwise
         """
+        # 1. Try external_id + source match first (most reliable)
+        if external_id and source:
+            try:
+                result = (
+                    self.supabase.table("products")
+                    .select("*")
+                    .eq("source", source)
+                    .eq("external_id", external_id)
+                    .limit(1)
+                    .execute()
+                )
+                if result.data:
+                    print(
+                        f"[BaseScraper] Found existing product via external_id={external_id} source={source}"
+                    )
+                    return result.data[0]
+            except Exception as e:
+                print(f"[BaseScraper] external_id lookup failed: {e}")
+
+        # 2. Fall back to source_url lookup
         normalized = self._normalize_url(url)
         try:
-            result = self.supabase.table("products").select("*").eq("url", normalized).execute()
+            result = (
+                self.supabase.table("products")
+                .select("*")
+                .eq("source_url", normalized)
+                .limit(1)
+                .execute()
+            )
             return result.data[0] if result.data else None
         except Exception as e:
-            if "column products.url does not exist" in str(e):
+            if "column products.source_url does not exist" in str(e):
                 print(
-                    "[BaseScraper] products.url column missing in DB; add it or scrape URL matching will be disabled."
+                    "[BaseScraper] products.source_url column missing in DB; "
+                    "run the 20260418_migrate_url_to_source_url migration."
                 )
                 return None
             raise
@@ -434,7 +468,7 @@ class BaseScraper(ABC):
         - If the product URL host matches a supported_sources.domain, replace the source with that row's name.
         - If no match, keep the existing source to avoid breaking inserts.
         """
-        url = product_data.get("url")
+        url = product_data.get("source_url")
         if not url:
             return product_data
 
@@ -478,7 +512,7 @@ class BaseScraper(ABC):
                 slug = self._generate_unique_slug(slug)
             return {**product_data, "slug": slug}
 
-        base = product_data.get("name") or product_data.get("url") or "product"
+        base = product_data.get("name") or product_data.get("source_url") or "product"
         slug = (
             self._generate_unique_slug(base)
             if ensure_unique
@@ -592,7 +626,7 @@ class BaseScraper(ABC):
                 product_data = self._ensure_slug(product_data)
             # Don't update immutable fields
             product_data.pop("source", None)
-            product_data.pop("url", None)
+            product_data.pop("source_url", None)
             product_data.pop("external_id", None)
             product_data.pop("scraped_at", None)  # Keep original scrape time
             product_data.pop("slug", None)  # Never update slug on existing product
@@ -781,13 +815,13 @@ class ScraperUtilities:
         Returns:
             Dict with 'to_add' and 'to_update' lists
         """
-        existing_urls = {p["url"]: p for p in existing_products if "url" in p}
+        existing_urls = {p["source_url"]: p for p in existing_products if "source_url" in p}
 
         to_add = []
         to_update = []
 
         for scraped in scraped_products:
-            url = scraped.get("url")
+            url = scraped.get("source_url")
             if not url:
                 continue
 

@@ -957,8 +957,6 @@ async def get_products(
         # Normalize fields for API clients
         if "image" in item:
             item["image_url"] = item.get("image")
-        if "url" in item:
-            item["source_url"] = item.get("url")
         # Ensure canonical source display names using supported_sources (use pre-fetched map)
         if "source" in item and item.get("source"):
             source_key = str(item.get("source")).strip().lower()
@@ -1056,21 +1054,17 @@ async def product_exists(
     Used by scrapers and frontend to avoid duplicate submissions.
     Returns {exists: bool, product: ProductResponse | null}.
     """
-    response = db.table("products").select("*").eq("url", source_url).limit(1).execute()
+    response = db.table("products").select("*").eq("source_url", source_url).limit(1).execute()
     if response.data:
         item = response.data[0]
         if item.get("banned"):
             normalized = _normalize_product(item, db)
-            normalized.pop("url", None)
             return {"exists": True, "product": normalized, "banned": True}
         # Normalize fields
         item["tags"] = item.get("tags") or []
         item["stars"] = item.get("source_rating_count") or 0
         if "image" in item:
             item["image_url"] = item.get("image")
-        if "url" in item:
-            item["source_url"] = item.get("url")
-            item.pop("url", None)
         # Add editor_ids from relationship table
         owners_response = (
             db.table("product_editors").select("user_id").eq("product_id", item["id"]).execute()
@@ -1112,8 +1106,6 @@ async def get_product(
     # Normalize fields for API clients
     if "image" in result:
         result["image_url"] = result.get("image")
-    if "url" in result:
-        result["source_url"] = result.get("url")
     attach_rating_fields(db, result)
 
     return result
@@ -1144,8 +1136,6 @@ async def get_product_by_slug(
     result["stars"] = result.get("source_rating_count") or 0
     if "image" in result:
         result["image_url"] = result.get("image")
-    if "url" in result:
-        result["source_url"] = result.get("url")
     attach_rating_fields(db, result)
 
     return result
@@ -1226,8 +1216,6 @@ def _normalize_product(product: dict, db) -> dict:
         product["image_url"] = product.get("image")
     if "image_alt" in product:
         product["image_alt"] = product.get("image_alt")
-    if "url" in product:
-        product["source_url"] = product.get("url")
     attach_rating_fields(db, product)
     return product
 
@@ -1271,7 +1259,7 @@ async def create_product(
     db_data = {
         "name": product.name,
         "description": product.description,
-        "url": source_url,
+        "source_url": source_url,
         "image": str(product.image_url) if product.image_url else None,
         "image_alt": product.image_alt,
         "source": determined_source,  # Auto-assigned, not from user input
@@ -1283,100 +1271,127 @@ async def create_product(
     # Enrich metadata from source scrapers (best-effort)
     await _enrich_manual_product_metadata(db, determined_source, source_url, product, db_data)
 
-    # Upsert behavior: If URL provided and product exists, update instead of creating.
+    # Upsert behavior: resolve existing product by external_id first, then source_url.
     # This prevents duplicate products from scrapers while allowing manual updates.
-    if db_data.get("url"):
-        existing = db.table("products").select("*").eq("url", db_data["url"]).limit(1).execute()
-        if existing.data:
-            existing_product = existing.data[0]
-            if existing_product.get("banned"):
-                raise HTTPException(
-                    status_code=403, detail="Product is banned and cannot be resubmitted"
-                )
-            # Build update data, excluding immutable fields like created_by
-            update_data = {
-                k: v
-                for k, v in db_data.items()
-                if k
-                in {
-                    "name",
-                    "description",
-                    "url",
-                    "image",
-                    "image_alt",
-                    "source",
-                    "type",
-                    "external_id",
-                    "source_last_updated",
-                }
-                and v is not None
+    existing_product = None
+    # 1. Try external_id + source match first (most stable identity)
+    if db_data.get("external_id") and db_data.get("source"):
+        ext_resp = (
+            db.table("products")
+            .select("*")
+            .eq("source", db_data["source"])
+            .eq("external_id", db_data["external_id"])
+            .limit(1)
+            .execute()
+        )
+        if ext_resp.data:
+            existing_product = ext_resp.data[0]
+            logger = logging.getLogger(__name__)
+            logger.debug(
+                "[Dedupe] Matched product by external_id=%s", db_data["external_id"]
+            )
+    # 2. Fall back to source_url match
+    if not existing_product and db_data.get("source_url"):
+        url_resp = (
+            db.table("products")
+            .select("*")
+            .eq("source_url", db_data["source_url"])
+            .limit(1)
+            .execute()
+        )
+        if url_resp.data:
+            existing_product = url_resp.data[0]
+            logger = logging.getLogger(__name__)
+            logger.debug("[Dedupe] Matched product by source_url")
+
+    if existing_product:
+        if existing_product.get("banned"):
+            raise HTTPException(
+                status_code=403, detail="Product is banned and cannot be resubmitted"
+            )
+        # Build update data, excluding immutable fields like created_by
+        update_data = {
+            k: v
+            for k, v in db_data.items()
+            if k
+            in {
+                "name",
+                "description",
+                "source_url",
+                "image",
+                "image_alt",
+                "source",
+                "type",
+                "external_id",
+                "source_last_updated",
             }
+            and v is not None
+        }
 
-            # Ensure legacy rows get a slug assigned
-            if not existing_product.get("slug"):
-                update_data["slug"] = generate_id_with_uniqueness_check(
-                    product.name, db, "products", column="slug"
+        # Ensure legacy rows get a slug assigned
+        if not existing_product.get("slug"):
+            update_data["slug"] = generate_id_with_uniqueness_check(
+                product.name, db, "products", column="slug"
+            )
+        updated = (
+            db.table("products").update(update_data).eq("id", existing_product["id"]).execute()
+        )
+        result = updated.data[0] if updated.data else existing_product
+        product_id = result["id"]
+        # Normalize fields for API response
+        result["image_url"] = result.get("image")
+        result["external_id"] = result.get("external_id")
+
+        # Add current user as owner if not already one
+        existing_owner = (
+            db.table("product_editors")
+            .select("*")
+            .eq("product_id", product_id)
+            .eq("user_id", current_user["id"])
+            .execute()
+        )
+        if not existing_owner.data:
+            import uuid
+
+            owner_data = {
+                "id": str(uuid.uuid4()),
+                "product_id": product_id,
+                "user_id": current_user["id"],
+            }
+            db.table("product_editors").insert(owner_data).execute()
+
+        # Add editor_ids to response
+        owners_response = (
+            db.table("product_editors").select("user_id").eq("product_id", product_id).execute()
+        )
+        result["editor_ids"] = (
+            [owner["user_id"] for owner in owners_response.data] if owners_response.data else []
+        )
+
+        # Update tag relationships if provided
+        if product.tags is not None:
+            try:
+                set_product_tags(db, result["id"], product.tags)
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    f"[Tags] Failed to set tags for duplicate product {result['id']}: {e}"
                 )
-            updated = (
-                db.table("products").update(update_data).eq("id", existing_product["id"]).execute()
-            )
-            result = updated.data[0] if updated.data else existing_product
-            product_id = result["id"]
-            # Normalize fields for API response
-            result["source_url"] = result.get("url")
-            result["image_url"] = result.get("image")
-            result["external_id"] = result.get("external_id")
-
-            # Add current user as owner if not already one
-            existing_owner = (
-                db.table("product_editors")
-                .select("*")
-                .eq("product_id", product_id)
-                .eq("user_id", current_user["id"])
-                .execute()
-            )
-            if not existing_owner.data:
-                import uuid
-
-                owner_data = {
-                    "id": str(uuid.uuid4()),
-                    "product_id": product_id,
-                    "user_id": current_user["id"],
-                }
-                db.table("product_editors").insert(owner_data).execute()
-
-            # Add editor_ids to response
-            owners_response = (
-                db.table("product_editors").select("user_id").eq("product_id", product_id).execute()
-            )
-            result["editor_ids"] = (
-                [owner["user_id"] for owner in owners_response.data] if owners_response.data else []
-            )
-
-            # Update tag relationships if provided
-            if product.tags is not None:
-                try:
-                    set_product_tags(db, result["id"], product.tags)
-                except Exception as e:
-                    logger = logging.getLogger(__name__)
-                    logger.error(
-                        f"[Tags] Failed to set tags for duplicate product {result['id']}: {e}"
-                    )
-                    result["tags"] = []
-            else:
-                # Attach tags for response
-                try:
-                    pt_rows = get_product_tag_rows(db, [result["id"]])
-                    tag_ids = [row["tag_id"] for row in pt_rows] if pt_rows else []
-                    tags_map = get_tags_map(db, tag_ids) if tag_ids else {}
-                    result["tags"] = [tags_map[tid] for tid in tag_ids if tid in tags_map]
-                except Exception as e:
-                    logger = logging.getLogger(__name__)
-                    logger.error(
-                        f"[Tags] Failed to fetch tags for duplicate product {result['id']}: {e}"
-                    )
-                    result["tags"] = []
-            return result
+                result["tags"] = []
+        else:
+            # Attach tags for response
+            try:
+                pt_rows = get_product_tag_rows(db, [result["id"]])
+                tag_ids = [row["tag_id"] for row in pt_rows] if pt_rows else []
+                tags_map = get_tags_map(db, tag_ids) if tag_ids else {}
+                result["tags"] = [tags_map[tid] for tid in tag_ids if tid in tags_map]
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    f"[Tags] Failed to fetch tags for duplicate product {result['id']}: {e}"
+                )
+                result["tags"] = []
+        return result
 
     # Generate human-readable slug for URLs (unique per product)
     slug = generate_id_with_uniqueness_check(product.name, db, "products", column="slug")
@@ -1392,7 +1407,6 @@ async def create_product(
     # Map database response back to API response format
     result = response.data[0]
     product_id = result["id"]
-    result["source_url"] = result.get("url")
     result["image_url"] = result.get("image")
     result["external_id"] = result.get("external_id")
 
@@ -1485,7 +1499,7 @@ async def update_product(
     if "description" in product_data:
         db_data["description"] = product_data["description"]
     if "source_url" in product_data and product.source_url is not None:
-        db_data["url"] = str(product.source_url)
+        db_data["source_url"] = str(product.source_url)
     if "image_url" in product_data and product.image_url is not None:
         db_data["image"] = str(product.image_url)
     if "image_alt" in product_data:
@@ -1599,7 +1613,7 @@ async def patch_product(
     if "description" in product_data:
         db_data["description"] = product_data["description"]
     if "source_url" in product_data and product.source_url is not None:
-        db_data["url"] = str(product.source_url)
+        db_data["source_url"] = str(product.source_url)
     if "image_url" in product_data and product.image_url is not None:
         db_data["image"] = str(product.image_url)
     if "image_alt" in product_data:

@@ -182,7 +182,7 @@ def test_check_limits_returns_400_when_exceeded(client, test_admin, clean_databa
             "description": "Synthetic row for dev limit integration test",
             "source": "github",
             "type": "Software",
-            "url": f"https://github.com/test/overflow-{uuid4()}",
+            "source_url": f"https://github.com/test/overflow-{uuid4()}",
             "slug": f"overflow-{uuid4()}",
             "created_by": admin_id,
         }

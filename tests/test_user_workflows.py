@@ -28,7 +28,7 @@ def test_product_data():
         "name": "Test Accessible Product",
         "source": "github",
         "type": "Software",
-        "url": f"https://github.com/user/product-{uuid.uuid4()}",
+        "source_url": f"https://github.com/user/product-{uuid.uuid4()}",
         "image": None,
         "description": "A test product for integration testing",
     }
@@ -218,7 +218,7 @@ def test_product_exists_endpoint_for_existing_product(
             "name": "Existing Accessible Product",
             "source": "github",
             "type": "Software",
-            "url": test_url,
+            "source_url": test_url,
             "description": "Product that exists",
             "created_by": test_user["id"],
         }
@@ -291,7 +291,7 @@ def test_product_submission_existing_product_workflow(
             "name": "Existing Accessible Tool",
             "source": "github",
             "type": "Software",
-            "url": test_url,
+            "source_url": test_url,
             "description": "Already in database",
             "created_by": test_user_2["id"],
         }

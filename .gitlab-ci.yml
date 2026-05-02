@@ -1,0 +1,67 @@
+stages:
+  - validate
+  - build
+  - deploy
+
+# ---------------------------------------------------------------------------
+# validate: check compose config renders cleanly (runs on test runner)
+# ---------------------------------------------------------------------------
+validate:compose:
+  stage: validate
+  tags:
+    - lab-docker-test
+  script:
+    - docker compose config > /dev/null
+  only:
+    - branches
+    - tags
+
+# ---------------------------------------------------------------------------
+# build: prove the image builds (runs on test runner)
+# ---------------------------------------------------------------------------
+build:image:
+  stage: build
+  tags:
+    - lab-docker-test
+  script:
+    - docker build -t a11yhood-backend:$CI_COMMIT_SHORT_SHA .
+  only:
+    - branches
+    - tags
+
+# ---------------------------------------------------------------------------
+# deploy_test: auto-deploy on every push to main
+# Runner executes directly on the test host (no SSH hop needed).
+# ---------------------------------------------------------------------------
+deploy_test:
+  stage: deploy
+  before_script:
+    - cp "$ENV_TEST_FILE" .env.test
+  script:
+    - docker compose up -d --build
+  environment:
+    name: test
+    url: https://a11yhood-test.cs.washington.edu
+  tags:
+    - lab-docker-test
+  only:
+    - main
+
+# ---------------------------------------------------------------------------
+# deploy_prod: manual gate, runs only on release tags (vX.Y.Z)
+# Runner executes directly on the prod host (no SSH hop needed).
+# ---------------------------------------------------------------------------
+deploy_prod:
+  stage: deploy
+  before_script:
+    - cp "$ENV_PROD_FILE" .env
+  script:
+    - docker compose --profile production up -d --build
+  environment:
+    name: prod
+    url: https://a11yhood.cs.washington.edu
+  tags:
+    - lab-docker-prod
+  when: manual
+  only:
+    - tags

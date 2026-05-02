@@ -174,7 +174,7 @@
     name TEXT NOT NULL,
     type TEXT,
     source TEXT NOT NULL,
-    url TEXT,
+    source_url TEXT,
     external_id TEXT,
     external_data JSONB,
     description TEXT DEFAULT '',
@@ -195,11 +195,22 @@
     computed_rating NUMERIC(3,2),
     matched_search_terms JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-    -- Ensure uniqueness for scraped products
-    UNIQUE(source, external_id)
+    updated_at TIMESTAMPTZ DEFAULT NOW()
   );
+
+  -- Primary identity: source + external_id (when external_id is present)
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_products_source_external_id
+      ON public.products (source, external_id)
+      WHERE external_id IS NOT NULL;
+
+  -- Secondary identity: source + source_url (when external_id is absent)
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_products_source_source_url
+      ON public.products (source, source_url)
+      WHERE external_id IS NULL AND source_url IS NOT NULL;
+
+  -- General lookup index on source_url
+  CREATE INDEX IF NOT EXISTS idx_products_source_url_lookup
+      ON public.products (source_url);
 
   -- PRODUCT MANAGERS TABLE (for legacy ownership tracking)
   -- Table for product editors/managers who can modify products.

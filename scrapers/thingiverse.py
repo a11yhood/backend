@@ -170,7 +170,11 @@ class ThingiverseScraper(BaseScraper):
                         thing_details.get("public_url")
                         or f"https://www.thingiverse.com/thing:{thing['id']}"
                     )
-                    existing = await self._product_exists(url)
+                    existing = await self._product_exists(
+                        url,
+                        external_id=str(thing["id"]),
+                        source=self.get_source_name(),
+                    )
                     print(f"[Thingiverse] Exists? {bool(existing)} url={url}")
 
                     # Count this processed item for test-mode limiting
@@ -431,7 +435,7 @@ class ThingiverseScraper(BaseScraper):
         return {
             "name": thing["name"],
             "description": thing.get("description", ""),
-            "url": url,
+            "source_url": url,
             "image": image,
             "source": "Thingiverse",
             "type": product_type,

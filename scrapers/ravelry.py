@@ -142,7 +142,11 @@ class RavelryScraper(BaseScraper):
                         url = (
                             f"https://www.ravelry.com/patterns/library/{full_pattern['permalink']}"
                         )
-                        existing = await self._product_exists(url)
+                        existing = await self._product_exists(
+                            url,
+                            external_id=str(full_pattern["id"]),
+                            source=self.get_source_name(),
+                        )
 
                         if existing:
                             result = await self._update_product(existing["id"], full_pattern)
@@ -421,7 +425,7 @@ class RavelryScraper(BaseScraper):
         return {
             "name": pattern["name"],
             "description": description,
-            "url": pattern_url,
+            "source_url": pattern_url,
             "image": image,
             "source": "Ravelry",
             "type": product_type,

@@ -66,8 +66,8 @@ async def test_github_scraper_real_data(clean_database, test_settings, test_admi
         # Verify product structure and required fields
         product = products.data[0]
         assert product["name"], "Product must have a name"
-        assert product["url"], "Product must have a URL"
-        assert product["url"].startswith("https://github.com/"), (
+        assert product["source_url"], "Product must have a source URL"
+        assert product["source_url"].startswith("https://github.com/"), (
             "GitHub URLs should start with https://github.com/"
         )
         assert product["category"] == "Software", (
@@ -167,8 +167,8 @@ async def test_thingiverse_scraper_real_data(
         # Verify product structure
         product = products.data[0]
         assert product["name"], "Product must have a name"
-        assert product["url"], "Product must have a URL"
-        assert product["url"].startswith("https://www.thingiverse.com/thing:"), (
+        assert product["source_url"], "Product must have a source URL"
+        assert product["source_url"].startswith("https://www.thingiverse.com/thing:"), (
             "Thingiverse URLs should match pattern"
         )
         assert product["category"] == "Fabrication", (
@@ -177,7 +177,7 @@ async def test_thingiverse_scraper_real_data(
         assert product["source"] == "scraped-thingiverse"
 
         print(f"\n✓ Successfully scraped {len(products.data)} Thingiverse models")
-        print(f"  Sample: {product['name']} - {product['url']}")
+        print(f"  Sample: {product['name']} - {product['source_url']}")
 
     finally:
         await scraper.close()

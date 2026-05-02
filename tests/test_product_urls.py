@@ -79,7 +79,7 @@ def test_product(clean_database, test_user):
                 "type": "Software",
                 "source": "github",
                 "slug": f"test-product-{uuid.uuid4().hex[:8]}",
-                "url": f"https://github.com/test/product-{uuid.uuid4().hex[:8]}",
+                "source_url": f"https://github.com/test/product-{uuid.uuid4().hex[:8]}",
                 "description": "A test product",
                 "created_by": test_user["id"],
             }

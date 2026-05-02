@@ -9,7 +9,7 @@ os.environ.setdefault("ENV_FILE", ".env.test")
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(os.environ["ENV_FILE"])
+    load_dotenv(os.environ["ENV_FILE"], override=True)
 except Exception as exc:
     # Optional .env loading for tests; ignore if unavailable but log for diagnostics.
     logger.debug("Failed to load test ENV_FILE %r: %s", os.environ.get("ENV_FILE"), exc)
@@ -25,8 +25,9 @@ from .test_data import TEST_PRODUCTS, TEST_USERS
 
 
 @pytest.fixture
-def client(clean_database):
+def client(clean_database, monkeypatch):
     """Test client backed by the test Supabase instance. Auth via Authorization headers."""
+    monkeypatch.setenv("TEST_MODE", "true")
     app.dependency_overrides[get_db] = lambda: clean_database
     client = TestClient(app)
     yield client
@@ -413,9 +414,6 @@ def _seed_test_data(db):
     products_to_insert = []
     for product in TEST_PRODUCTS:
         p = dict(product)
-        # Map source_url -> url (Supabase schema uses 'url')
-        if "source_url" in p:
-            p["url"] = p.pop("source_url")
         # Products require a slug (NOT NULL UNIQUE in Supabase)
         if not p.get("slug"):
             p["slug"] = normalize_to_snake_case(p.get("name", "product"))
@@ -488,7 +486,7 @@ def test_product(clean_database, test_user):
         "description": "A test product for testing",
         "source": "github",
         "type": "Software",
-        "url": f"https://github.com/test/test-product-{uuid4()}",
+        "source_url": f"https://github.com/test/test-product-{uuid4()}",
         "slug": f"test-product-{uuid4()}",
         "created_by": test_user["id"],
     }
