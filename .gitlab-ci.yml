@@ -10,6 +10,14 @@ validate:compose:
   stage: validate
   tags:
     - lab-docker-test
+  before_script:
+    - |
+      if [ -n "$ENV_TEST_FILE" ] && [ -f "$ENV_TEST_FILE" ]; then
+        cp "$ENV_TEST_FILE" .env.test
+      else
+        echo "ENV_TEST_FILE not available; creating placeholder .env.test for compose validation"
+        touch .env.test
+      fi
   script:
     - docker compose config > /dev/null
   only:
