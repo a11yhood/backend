@@ -198,7 +198,7 @@ watchfiles==1.1.1
     # via uvicorn
 webencodings==0.5.1
     # via bleach
-websockets==16.0
+websockets==15.0.1
     # via
     #   realtime
     #   uvicorn
