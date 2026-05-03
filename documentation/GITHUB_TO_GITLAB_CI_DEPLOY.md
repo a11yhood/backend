@@ -28,9 +28,6 @@ Why this is recommended:
 Set up or normalize remotes:
 
 ```bash
-# If you currently use `github`, rename it to `origin`
-git remote rename github origin
-
 # Ensure origin points to GitHub
 git remote set-url origin git@github.com:a11yhood/backend.git
 
