@@ -45,16 +45,19 @@ git remote -v
 If you are not using GitLab pull mirroring, push to GitLab explicitly:
 
 ```bash
-git push gitlab main
+git push gitlab main --force-with-lease
 git push gitlab --tags
 ```
+
+Note: GitLab `main` must have **"Allowed to force push"** enabled because commits always flow one-way from GitHub to GitLab and the GitLab history will be rewritten to match GitHub.
+Enable it in GitLab → Settings → Repository → Protected Branches → `main` → Allow force push.
 
 ## Magit + CLI Working Model
 
 Use one simple rule: push branches/PR work to `origin`, then sync `main` and tags to `gitlab` after merge.
 
 - Day-to-day branch pushes: default to `origin`.
-- Post-merge deployment sync: explicitly push `main` and tags to `gitlab`.
+- Post-merge deployment sync: force-push `main` and tags to `gitlab`.
 
 Equivalent CLI commands:
 
@@ -65,10 +68,10 @@ git push origin <feature-branch>
 # after PR merge to main
 git checkout main
 git pull origin main
-git push gitlab main
+git push gitlab main --force-with-lease
 ```
 
-In Magit, this stays easy because `remote.pushDefault=origin` keeps the default push target as GitHub while still allowing one-off pushes to `gitlab` from the push popup.
+In Magit, this stays easy because `remote.pushDefault=origin` keeps the default push target as GitHub while still allowing one-off pushes to `gitlab` from the push popup (`P` → select `gitlab` remote → add `--force-with-lease` flag).
 
 ## Required GitLab CI Variables
 
@@ -113,7 +116,7 @@ Configured in [.gitlab-ci.yml](../.gitlab-ci.yml):
 
 1. Merge reviewed work into `main` on GitHub.
 2. Sync local `main` from GitHub.
-3. Push `main` to GitLab (`git push gitlab main`) and confirm `deploy_test` succeeds.
+3. Force-push `main` to GitLab and confirm `deploy_test` succeeds.
 4. Create an annotated release tag from `main`.
 5. Push the tag to both remotes.
 6. Open the GitLab tag pipeline and manually trigger `deploy_prod`.
@@ -124,7 +127,7 @@ Example:
 git checkout main
 git pull origin main
 
-git push gitlab main
+git push gitlab main --force-with-lease
 
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
