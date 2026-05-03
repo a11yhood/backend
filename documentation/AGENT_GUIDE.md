@@ -15,12 +15,18 @@ Read this first when operating on the repo. It summarizes conventions, helper ut
 - **Deploy (external server):** Runs the same production settings on the external host; use Supabase service role keys and real OAuth. Do not seed here.
 
 ## Git Workflow
-- **NEVER run `git commit` commands** - the user will handle all commits themselves
+- **NEVER run `git commit` or `git push`, create PRs, or perform history-rewrite git actions** unless the user explicitly asks in that turn
+- Explicit permission required: wait for a direct user instruction like "commit now" or "push now" before running either command
 - You may suggest commit messages or explain what should be committed
 - You may run `git add` to stage files when appropriate
 - You may run `git status` or `git diff` to check changes
 - Focus on making changes and letting the user review and commit them
 - Final fixes merge into the main branch; open PRs targeting main unless told otherwise.
+
+### Pre-commit / Pre-push Safety Checklist (Agent)
+- Before any `git commit`: show staged files and ask for explicit confirmation
+- Before any `git push`: show target remote/branch and ask for explicit confirmation
+- If a commit/push happens accidentally: stop, notify the user immediately, and ask whether they prefer revert commit or reset+force-push
 
 ## Code Commenting Guidelines
 Keep code readable first through clear names and small functions. Use comments to clarify intent or context that code alone cannot convey.
