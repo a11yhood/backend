@@ -14,23 +14,64 @@ Important: deployment jobs run on host-specific GitLab runners, not over SSH fro
 
 ## Git Remote Setup
 
-This repo is expected to have both remotes:
+Recommended naming for this repo:
 
-- `github`: `git@github.com:a11yhood/backend.git`
-- `gitlab`: `git@gitlab.cs.washington.edu:a11yhood/backend.git`
+- `origin` -> `git@github.com:a11yhood/backend.git` (primary remote)
+- `gitlab` -> `git@gitlab.cs.washington.edu:a11yhood/backend.git` (deployment remote)
 
-Verify:
+Why this is recommended:
+
+- Most tools (including Magit defaults) assume `origin` exists.
+- GitHub remains the source of truth.
+- GitLab pushes stay explicit and predictable.
+
+Set up or normalize remotes:
 
 ```bash
+# If you currently use `github`, rename it to `origin`
+git remote rename github origin
+
+# Ensure origin points to GitHub
+git remote set-url origin git@github.com:a11yhood/backend.git
+
+# Add gitlab once (ignore if it already exists)
+git remote add gitlab git@gitlab.cs.washington.edu:a11yhood/backend.git
+
+# Branch defaults for CLI + Magit
+git config branch.main.remote origin
+git config branch.main.merge refs/heads/main
+git config remote.pushDefault origin
+
 git remote -v
 ```
 
-If you are not using GitLab pull mirroring, push branches and tags explicitly:
+If you are not using GitLab pull mirroring, push to GitLab explicitly:
 
 ```bash
-git push gitlab --all
+git push gitlab main
 git push gitlab --tags
 ```
+
+## Magit + CLI Working Model
+
+Use one simple rule: push branches/PR work to `origin`, then sync `main` and tags to `gitlab` after merge.
+
+- Day-to-day branch pushes: default to `origin`.
+- Post-merge deployment sync: explicitly push `main` and tags to `gitlab`.
+
+Equivalent CLI commands:
+
+```bash
+# feature branch / PR flow
+git push origin <feature-branch>
+
+# after PR merge to main
+git checkout main
+git pull origin main
+git push gitlab main
+```
+
+In Magit, this stays easy because `remote.pushDefault=origin` keeps the default push target as GitHub while still allowing one-off pushes to `gitlab` from the push popup.
 
 ## Required GitLab CI Variables
 
@@ -74,10 +115,52 @@ Configured in [.gitlab-ci.yml](../.gitlab-ci.yml):
 ## Suggested Release Flow
 
 1. Merge reviewed work into `main` on GitHub.
-2. Ensure `main` is available in GitLab (mirror or `git push gitlab main`).
-3. Confirm `deploy_test` succeeds in GitLab.
-4. Create and push a release tag, for example `vX.Y.Z`.
-5. Open the GitLab tag pipeline and manually trigger `deploy_prod`.
+2. Sync local `main` from GitHub.
+3. Push `main` to GitLab (`git push gitlab main`) and confirm `deploy_test` succeeds.
+4. Create an annotated release tag from `main`.
+5. Push the tag to both remotes.
+6. Open the GitLab tag pipeline and manually trigger `deploy_prod`.
+
+Example:
+
+```bash
+git checkout main
+git pull origin main
+
+git push gitlab main
+
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+git push gitlab vX.Y.Z
+```
+
+### Updating a Tag (Before and After Push)
+
+Only move tags when necessary (for example, wrong commit or wrong version contents).
+
+Before the tag is pushed anywhere:
+
+```bash
+git tag -d vX.Y.Z
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+```
+
+After the tag was already pushed:
+
+```bash
+# Recreate locally at the correct commit (run from desired commit)
+git tag -fa vX.Y.Z -m "Release vX.Y.Z"
+
+# Replace on GitHub
+git push origin :refs/tags/vX.Y.Z
+git push origin vX.Y.Z
+
+# Replace on GitLab
+git push gitlab :refs/tags/vX.Y.Z
+git push gitlab vX.Y.Z
+```
+
+If tag protection blocks delete/recreate, use a new tag instead (for example `vX.Y.Z+fix1` or `vX.Y.(Z+1)`).
 
 ## Local Verification Before CI
 
