@@ -63,8 +63,10 @@ deploy_prod:
   stage: deploy
   before_script:
     - cp "$ENV_PROD_FILE" .env
+  variables:
+    ENV_FILE: .env
   script:
-    - docker compose --profile production up -d --build
+    - docker compose --profile production up -d --build backend-prod
   environment:
     name: prod
     url: https://a11yhood.cs.washington.edu
