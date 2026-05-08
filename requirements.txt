@@ -131,7 +131,7 @@ python-dotenv==1.2.2
     #   backend (pyproject.toml)
     #   pydantic-settings
     #   uvicorn
-python-multipart==0.0.26
+python-multipart==0.0.27
     # via backend (pyproject.toml)
 pyyaml==6.0.3
     # via uvicorn
