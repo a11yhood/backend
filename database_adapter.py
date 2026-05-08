@@ -8,6 +8,11 @@ Configure SUPABASE_URL/SUPABASE_KEY in .env (production) or .env.test (test inst
 import logging
 from contextvars import ContextVar
 
+from supabase import create_client
+from supabase.lib.client_options import SyncClientOptions
+
+from config import get_settings
+
 logger = logging.getLogger(__name__)
 
 # Per-request Supabase JWT for RLS-aware queries
@@ -117,10 +122,6 @@ class DatabaseAdapter:
     }
 
     def __init__(self, settings=None):
-        from config import get_settings
-        from supabase import create_client
-        from supabase.lib.client_options import SyncClientOptions
-
         self.settings = settings or get_settings()
         self._request_auth_token = None
         self.backend = "supabase"  # Always Supabase
