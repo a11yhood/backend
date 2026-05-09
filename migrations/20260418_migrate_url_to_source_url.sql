@@ -11,24 +11,49 @@
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS source_url TEXT;
 
 -- Step 2: Backfill source_url from url for any remaining NULL rows
-UPDATE public.products
-SET source_url = url
-WHERE source_url IS NULL AND url IS NOT NULL;
+DO $$
+BEGIN
+        IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                    AND table_name = 'products'
+                    AND column_name = 'url'
+        ) THEN
+                UPDATE public.products
+                SET source_url = url
+                WHERE source_url IS NULL
+                    AND url IS NOT NULL;
+        END IF;
+END;
+$$;
 
 -- Step 3: Preserve old url values in product_urls for rows where url differs from source_url.
 -- Only for products where created_by is set (required FK on product_urls.created_by).
-INSERT INTO public.product_urls (id, product_id, url, created_by)
-SELECT
-    gen_random_uuid(),
-    p.id,
-    p.url,
-    p.created_by
-FROM public.products p
-WHERE p.url IS NOT NULL
-  AND p.source_url IS NOT NULL
-  AND p.url <> p.source_url
-  AND p.created_by IS NOT NULL
-ON CONFLICT DO NOTHING;
+DO $$
+BEGIN
+        IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                    AND table_name = 'products'
+                    AND column_name = 'url'
+        ) THEN
+                INSERT INTO public.product_urls (id, product_id, url, created_by)
+                SELECT
+                        gen_random_uuid(),
+                        p.id,
+                        p.url,
+                        p.created_by
+                FROM public.products p
+                WHERE p.url IS NOT NULL
+                    AND p.source_url IS NOT NULL
+                    AND p.url <> p.source_url
+                    AND p.created_by IS NOT NULL
+                ON CONFLICT DO NOTHING;
+        END IF;
+END;
+$$;
 
 -- Step 4: Drop old url-related indexes before removing the column
 DROP INDEX IF EXISTS public.products_url_idx;

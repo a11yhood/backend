@@ -170,7 +170,9 @@
   -- ============================================================================
   CREATE TABLE images (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    canonical_url TEXT UNIQUE NOT NULL,
+    canonical_url TEXT,
+    canonical_key TEXT UNIQUE NOT NULL,
+    image_data_base64 TEXT,
     source_kind TEXT NOT NULL DEFAULT 'external' CHECK (source_kind IN ('external', 'uploaded')),
     mime_type TEXT,
     byte_size INTEGER,

@@ -66,6 +66,9 @@ supabase/
 # Misc
 .devcontainer/
 
+# Local database backups
+backups/
+
 # Local helper scripts (not tracked)
 deploy-prod-image.sh
 # pixi environments

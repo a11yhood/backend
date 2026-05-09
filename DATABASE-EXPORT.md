@@ -94,6 +94,52 @@ supabase db push < supabase/data.sql
 
 ---
 
+## Operational Backup (pg_dump)
+
+Use this before destructive or high-risk production database changes (for example: schema hotfixes, large data migrations, one-time cleanup scripts).
+
+### Recommended: pooler connection details from Supabase Dashboard
+
+1. In Supabase, open the project and copy connection details from **Shared Pooler** (or the pooler variant that works on your network).
+2. Export connection values as libpq environment variables:
+
+```bash
+export PGHOST='aws-1-us-east-1.pooler.supabase.com'
+export PGPORT='5432'
+export PGDATABASE='postgres'
+export PGUSER='postgres.<project-ref>'
+export PGPASSWORD='YOUR_DB_PASSWORD'
+export PGSSLMODE='require'
+```
+
+3. Verify connectivity:
+
+```bash
+psql -c "select 1;"
+```
+
+4. Create the backup:
+
+```bash
+mkdir -p backups
+pg_dump --format=custom --file backups/prod-pre-hotfix.dump
+```
+
+5. (Optional) Validate the dump file exists and has non-zero size:
+
+```bash
+ls -lh backups/prod-pre-hotfix.dump
+```
+
+### Notes
+
+- Prefer env vars over a single connection URI when troubleshooting host/credential parsing issues.
+- If `pg_dump` shows host translation errors, verify you copied the exact host shown in Supabase connection settings.
+- Dedicated poolers may require specific network compatibility; if resolution/connectivity fails, use the compatible shared/session pooler details from the dashboard.
+- Keep dumps private. Do not commit files under `backups/` to git.
+
+---
+
 ## GitHub Actions Integration
 
 These scripts are designed to be called from `.github/workflows/db-release.yml`:
