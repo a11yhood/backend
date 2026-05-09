@@ -21,10 +21,15 @@ from models.products import ProductCreate, ProductResponse, ProductUpdate
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db
 from services.id_generator import generate_id_with_uniqueness_check
-from services.image_references import get_or_create_image_id
+from services.image_references import get_or_create_image_id, resolve_image_value
 from services.sources import extract_domain, find_source_for_domain
 
 router = APIRouter(prefix="/api/products", tags=["products"])
+
+
+def _attach_product_image_url(product: dict, db) -> None:
+    """Populate image_url from images table via FK."""
+    product["image_url"] = resolve_image_value(db, product.get("image_id"))
 
 
 def _normalize_list(values: Iterable[str] | str | None) -> list[str]:
@@ -956,8 +961,7 @@ async def get_products(
             item["rating_count"] = 0
 
         # Normalize fields for API clients
-        if "image" in item:
-            item["image_url"] = item.get("image")
+        _attach_product_image_url(item, db)
         # Ensure canonical source display names using supported_sources (use pre-fetched map)
         if "source" in item and item.get("source"):
             source_key = str(item.get("source")).strip().lower()
@@ -1064,8 +1068,7 @@ async def product_exists(
         # Normalize fields
         item["tags"] = item.get("tags") or []
         item["stars"] = item.get("source_rating_count") or 0
-        if "image" in item:
-            item["image_url"] = item.get("image")
+        _attach_product_image_url(item, db)
         # Add editor_ids from relationship table
         owners_response = (
             db.table("product_editors").select("user_id").eq("product_id", item["id"]).execute()
@@ -1105,8 +1108,7 @@ async def get_product(
     # Add top-level stars derived from source_rating_count
     result["stars"] = result.get("source_rating_count") or 0
     # Normalize fields for API clients
-    if "image" in result:
-        result["image_url"] = result.get("image")
+    _attach_product_image_url(result, db)
     attach_rating_fields(db, result)
 
     return result
@@ -1135,8 +1137,7 @@ async def get_product_by_slug(
     tags_map = get_tags_map(db, tag_ids) if tag_ids else {}
     result["tags"] = [tags_map[tid] for tid in tag_ids if tid in tags_map]
     result["stars"] = result.get("source_rating_count") or 0
-    if "image" in result:
-        result["image_url"] = result.get("image")
+    _attach_product_image_url(result, db)
     attach_rating_fields(db, result)
 
     return result
@@ -1213,8 +1214,7 @@ def _normalize_product(product: dict, db) -> dict:
     product["tags"] = [tags_map[tid] for tid in tag_ids if tid in tags_map]
 
     product["stars"] = product.get("source_rating_count") or 0
-    if "image" in product:
-        product["image_url"] = product.get("image")
+    _attach_product_image_url(product, db)
     if "image_alt" in product:
         product["image_alt"] = product.get("image_alt")
     attach_rating_fields(db, product)
@@ -1277,6 +1277,7 @@ async def create_product(
         db,
         db_data.get("image"),
         created_by=current_user.get("id"),
+        alt_text=product.image_alt,
     )
 
     # Upsert behavior: resolve existing product by external_id first, then source_url.
@@ -1347,7 +1348,7 @@ async def create_product(
         result = updated.data[0] if updated.data else existing_product
         product_id = result["id"]
         # Normalize fields for API response
-        result["image_url"] = result.get("image")
+        _attach_product_image_url(result, db)
         result["external_id"] = result.get("external_id")
 
         # Add current user as owner if not already one
@@ -1415,7 +1416,7 @@ async def create_product(
     # Map database response back to API response format
     result = response.data[0]
     product_id = result["id"]
-    result["image_url"] = result.get("image")
+    _attach_product_image_url(result, db)
     result["external_id"] = result.get("external_id")
 
     # Add creator as product manager
@@ -1509,10 +1510,9 @@ async def update_product(
     if "source_url" in product_data and product.source_url is not None:
         db_data["source_url"] = str(product.source_url)
     if "image_url" in product_data and product.image_url is not None:
-        db_data["image"] = str(product.image_url)
         db_data["image_id"] = get_or_create_image_id(
             db,
-            db_data["image"],
+            str(product.image_url),
             created_by=current_user.get("id"),
         )
     if "image_alt" in product_data:
@@ -1549,7 +1549,7 @@ async def update_product(
 
     # Map database response back to API format
     result = response.data[0]
-    result["image_url"] = result.get("image")
+    _attach_product_image_url(result, db)
     result["external_id"] = result.get("external_id")
 
     # Attach editor_ids
@@ -1628,11 +1628,11 @@ async def patch_product(
     if "source_url" in product_data and product.source_url is not None:
         db_data["source_url"] = str(product.source_url)
     if "image_url" in product_data and product.image_url is not None:
-        db_data["image"] = str(product.image_url)
         db_data["image_id"] = get_or_create_image_id(
             db,
-            db_data["image"],
+            str(product.image_url),
             created_by=current_user.get("id"),
+            alt_text=product_data.get("image_alt"),
         )
     if "image_alt" in product_data:
         db_data["image_alt"] = product.image_alt
@@ -1678,7 +1678,7 @@ async def patch_product(
             raise HTTPException(status_code=500, detail=f"Failed to update product tags: {str(e)}")
 
     # Map database response back to API format
-    result["image_url"] = result.get("image")
+    _attach_product_image_url(result, db)
     result["external_id"] = result.get("external_id")
 
     # Attach editor_ids
