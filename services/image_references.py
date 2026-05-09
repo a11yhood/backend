@@ -6,7 +6,9 @@ returning URL strings, while also maintaining normalized references in
 """
 
 import hashlib
+import logging
 
+logger = logging.getLogger(__name__)
 _capability_cache: dict[tuple[str, str], bool] = {}
 
 
@@ -166,6 +168,57 @@ def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None
     return None
 
 
+def sync_image_alt_if_missing(db, image_id: str | None, alt_text: str | None) -> None:
+    """Populate images.default_alt when the image exists and does not already have alt text."""
+    if not image_id or alt_text is None:
+        return
+
+    alt = str(alt_text).strip()
+    if not alt:
+        return
+
+    try:
+        existing = db.table("images").select("default_alt").eq("id", image_id).limit(1).execute()
+        if not existing.data or existing.data[0].get("default_alt"):
+            return
+        db.table("images").update({"default_alt": alt}).eq("id", image_id).execute()
+    except Exception:
+        logger.debug("Ignoring alt-text sync failure for image_id=%s", image_id, exc_info=True)
+
+
+def resolve_image_metadata(db, image_id: str | None) -> dict[str, str | None]:
+    """Resolve the displayable URL and default alt text for an image row."""
+    if not image_id:
+        return {"image_url": None, "image_alt": None}
+
+    try:
+        response = (
+            db.table("images")
+            .select("canonical_url, image_data_base64, mime_type, source_kind, default_alt")
+            .eq("id", image_id)
+            .limit(1)
+            .execute()
+        )
+        row = response.data[0] if response.data else None
+        if not row:
+            return {"image_url": None, "image_alt": None}
+
+        image_url = None
+        source_kind = str(row.get("source_kind") or "").strip().lower()
+        image_payload = str(row.get("image_data_base64") or "").strip()
+        if source_kind == "uploaded" and image_payload:
+            mime_type = str(row.get("mime_type") or "image/png").strip() or "image/png"
+            image_url = f"data:{mime_type};base64,{image_payload}"
+        else:
+            canonical_url = str(row.get("canonical_url") or "").strip()
+            if canonical_url:
+                image_url = canonical_url
+
+        return {"image_url": image_url, "image_alt": row.get("default_alt")}
+    except Exception:
+        return {"image_url": None, "image_alt": None}
+
+
 def resolve_image_value(db, image_id: str | None) -> str | None:
     """Resolve displayable image src from an image row in the images table.
 
@@ -174,31 +227,4 @@ def resolve_image_value(db, image_id: str | None) -> str | None:
     - canonical_url for external images
     - None if image_id is missing or image row not found
     """
-    if not image_id:
-        return None
-
-    try:
-        response = (
-            db.table("images")
-            .select("canonical_url, image_data_base64, mime_type, source_kind")
-            .eq("id", image_id)
-            .limit(1)
-            .execute()
-        )
-        row = response.data[0] if response.data else None
-        if not row:
-            return None
-
-        source_kind = str(row.get("source_kind") or "").strip().lower()
-        image_payload = str(row.get("image_data_base64") or "").strip()
-        if source_kind == "uploaded" and image_payload:
-            mime_type = str(row.get("mime_type") or "image/png").strip() or "image/png"
-            return f"data:{mime_type};base64,{image_payload}"
-
-        canonical_url = str(row.get("canonical_url") or "").strip()
-        if canonical_url:
-            return canonical_url
-    except Exception:
-        return None
-
-    return None
+    return resolve_image_metadata(db, image_id)["image_url"]

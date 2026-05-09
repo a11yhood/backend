@@ -21,15 +21,21 @@ from models.products import ProductCreate, ProductResponse, ProductUpdate
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db
 from services.id_generator import generate_id_with_uniqueness_check
-from services.image_references import get_or_create_image_id, resolve_image_value
+from services.image_references import (
+    get_or_create_image_id,
+    resolve_image_metadata,
+)
 from services.sources import extract_domain, find_source_for_domain
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
 def _attach_product_image_url(product: dict, db) -> None:
-    """Populate image_url from images table via FK."""
-    product["image_url"] = resolve_image_value(db, product.get("image_id"))
+    """Populate image_url and image_alt from images table via FK."""
+    image_metadata = resolve_image_metadata(db, product.get("image_id"))
+    product["image_url"] = image_metadata["image_url"]
+    if not product.get("image_alt"):
+        product["image_alt"] = image_metadata["image_alt"]
 
 
 def _normalize_list(values: Iterable[str] | str | None) -> list[str]:
@@ -1215,8 +1221,6 @@ def _normalize_product(product: dict, db) -> dict:
 
     product["stars"] = product.get("source_rating_count") or 0
     _attach_product_image_url(product, db)
-    if "image_alt" in product:
-        product["image_alt"] = product.get("image_alt")
     attach_rating_fields(db, product)
     return product
 
@@ -1257,11 +1261,12 @@ async def create_product(
         )
 
     # Map Pydantic model fields to database columns (use attributes to avoid alias issues)
+    image_url = str(product.image_url) if product.image_url else None
     db_data = {
         "name": product.name,
         "description": product.description,
         "source_url": source_url,
-        "image": str(product.image_url) if product.image_url else None,
+        "image": image_url,
         "image_alt": product.image_alt,
         "source": determined_source,  # Auto-assigned, not from user input
         "type": product.type or "Other",
@@ -1275,7 +1280,7 @@ async def create_product(
     # Maintain normalized image reference without changing API payload shape.
     db_data["image_id"] = get_or_create_image_id(
         db,
-        db_data.get("image"),
+        image_url,
         created_by=current_user.get("id"),
         alt_text=product.image_alt,
     )
@@ -1509,14 +1514,17 @@ async def update_product(
         db_data["description"] = product_data["description"]
     if "source_url" in product_data and product.source_url is not None:
         db_data["source_url"] = str(product.source_url)
-    if "image_url" in product_data and product.image_url is not None:
-        db_data["image_id"] = get_or_create_image_id(
-            db,
-            str(product.image_url),
-            created_by=current_user.get("id"),
-        )
     if "image_alt" in product_data:
         db_data["image_alt"] = product.image_alt
+    if "image_url" in product_data and product.image_url is not None:
+        image_url = str(product.image_url)
+        db_data["image"] = image_url
+        db_data["image_id"] = get_or_create_image_id(
+            db,
+            image_url,
+            created_by=current_user.get("id"),
+            alt_text=product_data.get("image_alt"),
+        )
     if "source" in product_data:
         db_data["source"] = (
             _canonicalize_source_value_db(db, product_data["source"]) or product_data["source"]
@@ -1627,15 +1635,17 @@ async def patch_product(
         db_data["description"] = product_data["description"]
     if "source_url" in product_data and product.source_url is not None:
         db_data["source_url"] = str(product.source_url)
+    if "image_alt" in product_data:
+        db_data["image_alt"] = product.image_alt
     if "image_url" in product_data and product.image_url is not None:
+        image_url = str(product.image_url)
+        db_data["image"] = image_url
         db_data["image_id"] = get_or_create_image_id(
             db,
-            str(product.image_url),
+            image_url,
             created_by=current_user.get("id"),
             alt_text=product_data.get("image_alt"),
         )
-    if "image_alt" in product_data:
-        db_data["image_alt"] = product.image_alt
     if "source" in product_data:
         db_data["source"] = (
             _canonicalize_source_value_db(db, product_data["source"]) or product_data["source"]
@@ -1661,6 +1671,7 @@ async def patch_product(
             if not response.data:
                 raise HTTPException(status_code=404, detail="Product not found")
             result = response.data[0]
+
     except HTTPException:
         raise
     except Exception as e:

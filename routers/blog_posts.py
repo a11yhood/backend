@@ -13,7 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from models.blog_posts import BlogPostCreate, BlogPostResponse, BlogPostUpdate
 from services.auth import ensure_admin, get_current_user, get_current_user_optional
 from services.database import get_db
-from services.image_references import get_or_create_image_id, resolve_image_value
+from services.image_references import (
+    get_or_create_image_id,
+    resolve_image_metadata,
+)
 from services.sanitizer import sanitize_html
 from services.timestamps import normalize_timestamp_value
 
@@ -176,7 +179,10 @@ def _normalize_post(record: dict, db=None) -> dict:
 
     # Ensure header_image is always a valid src for clients.
     if db is not None:
-        resolved_header = resolve_image_value(db, post.get("header_image_id"))
+        image_metadata = resolve_image_metadata(db, post.get("header_image_id"))
+        resolved_header = image_metadata["image_url"]
+        if not post.get("header_image_alt"):
+            post["header_image_alt"] = image_metadata["image_alt"]
     else:
         resolved_header = post.get("header_image")
     post["header_image"] = _normalize_image_string(resolved_header)
@@ -296,8 +302,8 @@ async def create_blog_post(
         "content": sanitized_content,
         "excerpt": payload.excerpt,
         "header_image": normalized_image,
-        "header_image_id": header_image_id,
         "header_image_alt": payload.header_image_alt,
+        "header_image_id": header_image_id,
         "author_id": payload.author_id,
         "author_name": payload.author_name,
         "author_ids": author_ids,
@@ -346,14 +352,15 @@ async def update_blog_post(
         update_data["content"] = sanitize_html(normalized)
     if updates.excerpt is not None:
         update_data["excerpt"] = updates.excerpt
+    if updates.header_image_alt is not None:
+        update_data["header_image_alt"] = updates.header_image_alt
     if updates.header_image is not None:
         normalized_image = _normalize_image_string(updates.header_image)
         _validate_image_size(normalized_image)
+        update_data["header_image"] = normalized_image
         update_data["header_image_id"] = get_or_create_image_id(
             db, normalized_image, created_by=current_user.get("id"), alt_text=updates.header_image_alt
         )
-    if updates.header_image_alt is not None:
-        update_data["header_image_alt"] = updates.header_image_alt
     if updates.tags is not None:
         update_data["tags"] = updates.tags
     if updates.featured is not None:

@@ -279,9 +279,7 @@ async def delete_product_image(
     if not existing.data:
         raise HTTPException(status_code=404, detail="Product not found.")
 
-    db.table("products").update({"image_id": None, "image_alt": None}).eq(
-        "id", product_id
-    ).execute()
+    db.table("products").update({"image_id": None}).eq("id", product_id).execute()
 
     logger.info(
         "Image deleted from product %s by user %s",
@@ -318,9 +316,7 @@ async def delete_blog_post_image(
     if not existing.data:
         raise HTTPException(status_code=404, detail="Blog post not found.")
 
-    db.table("blog_posts").update(
-        {"header_image_id": None, "header_image_alt": None}
-    ).eq("id", post_id).execute()
+    db.table("blog_posts").update({"header_image_id": None}).eq("id", post_id).execute()
 
     logger.info(
         "Image deleted from blog post %s by user %s",

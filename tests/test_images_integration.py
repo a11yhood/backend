@@ -54,10 +54,11 @@ def test_delete_product_image_clears_image_fields(client, clean_database, test_u
     )
     assert product_response.status_code == 201
     product_id = product_response.json()["id"]
+    assert product_response.json()["image_alt"] == "product alt"
 
-    before = clean_database.table("products").select("image,image_alt,image_id").eq("id", product_id).execute()
+    before = clean_database.table("products").select("image_id").eq("id", product_id).execute()
     assert before.data
-    assert before.data[0]["image"] is not None
+    assert before.data[0]["image_id"] is not None
 
     delete_response = client.delete(
         f"/api/images/product/{product_id}",
@@ -65,11 +66,10 @@ def test_delete_product_image_clears_image_fields(client, clean_database, test_u
     )
     assert delete_response.status_code == 204
 
-    after = clean_database.table("products").select("image,image_alt,image_id").eq("id", product_id).execute()
+    after = clean_database.table("products").select("image_id").eq("id", product_id).execute()
     assert after.data
-    # Both FK and alt should be cleared; legacy image column is preserved
+    # Only the FK is cleared; the shared image row remains intact.
     assert after.data[0]["image_id"] is None
-    assert after.data[0]["image_alt"] is None
 
 
 def test_delete_blog_post_image_clears_image_fields(client, clean_database, test_admin, auth_headers):
@@ -90,15 +90,16 @@ def test_delete_blog_post_image_clears_image_fields(client, clean_database, test
     )
     assert create_response.status_code == 201
     post_id = create_response.json()["id"]
+    assert create_response.json()["header_image_alt"] == "blog alt"
 
     before = (
         clean_database.table("blog_posts")
-        .select("header_image,header_image_alt,header_image_id")
+        .select("header_image_id")
         .eq("id", post_id)
         .execute()
     )
     assert before.data
-    assert before.data[0]["header_image"] is not None
+    assert before.data[0]["header_image_id"] is not None
 
     delete_response = client.delete(
         f"/api/images/blog-post/{post_id}",
@@ -108,11 +109,10 @@ def test_delete_blog_post_image_clears_image_fields(client, clean_database, test
 
     after = (
         clean_database.table("blog_posts")
-        .select("header_image,header_image_alt,header_image_id")
+        .select("header_image_id")
         .eq("id", post_id)
         .execute()
     )
     assert after.data
-    # Both FK and alt should be cleared; legacy header_image column is preserved
+    # Only the FK is cleared; the shared image row remains intact.
     assert after.data[0]["header_image_id"] is None
-    assert after.data[0]["header_image_alt"] is None
