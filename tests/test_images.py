@@ -521,10 +521,10 @@ class TestDeleteProductImage:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_db, None)
-        # Verify the update was called with NULL image fields
+        # Verify the update was called with NULL image_id and image_alt fields
         db_mock.table.assert_any_call("products")
         update_call = db_mock.table.return_value.update
-        update_call.assert_called_with({"image": None, "image_alt": None, "image_id": None})
+        update_call.assert_called_with({"image_id": None, "image_alt": None})
 
 
 # ---------------------------------------------------------------------------
@@ -594,5 +594,5 @@ class TestDeleteBlogPostImage:
         db_mock.table.assert_any_call("blog_posts")
         update_call = db_mock.table.return_value.update
         update_call.assert_called_with(
-            {"header_image": None, "header_image_alt": None, "header_image_id": None}
+            {"header_image_id": None, "header_image_alt": None}
         )

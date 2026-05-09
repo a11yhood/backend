@@ -260,7 +260,7 @@ async def delete_product_image(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ) -> Response:
-    """Remove the image from a product (sets ``image`` and ``image_alt`` to NULL).
+    """Remove the image from a product (sets ``image_id`` to NULL).
 
     **Permissions:** Moderator or Admin only.
 
@@ -279,7 +279,7 @@ async def delete_product_image(
     if not existing.data:
         raise HTTPException(status_code=404, detail="Product not found.")
 
-    db.table("products").update({"image": None, "image_alt": None, "image_id": None}).eq(
+    db.table("products").update({"image_id": None, "image_alt": None}).eq(
         "id", product_id
     ).execute()
 
@@ -299,8 +299,7 @@ async def delete_blog_post_image(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ) -> Response:
-    """Remove the header image from a blog post (sets ``header_image`` and
-    ``header_image_alt`` to NULL).
+    """Remove the header image from a blog post (sets ``header_image_id`` to NULL).
 
     **Permissions:** Moderator or Admin only.
 
@@ -320,7 +319,7 @@ async def delete_blog_post_image(
         raise HTTPException(status_code=404, detail="Blog post not found.")
 
     db.table("blog_posts").update(
-        {"header_image": None, "header_image_alt": None, "header_image_id": None}
+        {"header_image_id": None, "header_image_alt": None}
     ).eq("id", post_id).execute()
 
     logger.info(

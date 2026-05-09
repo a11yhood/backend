@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from models.blog_posts import BlogPostCreate, BlogPostResponse, BlogPostUpdate
 from services.auth import ensure_admin, get_current_user, get_current_user_optional
 from services.database import get_db
-from services.image_references import get_or_create_image_id
+from services.image_references import get_or_create_image_id, resolve_image_value
 from services.sanitizer import sanitize_html
 from services.timestamps import normalize_timestamp_value
 
@@ -158,7 +158,7 @@ def _normalize_content_images(content: str | None) -> str | None:
     return html_normalized
 
 
-def _normalize_post(record: dict) -> dict:
+def _normalize_post(record: dict, db=None) -> dict:
     if not record:
         return record
 
@@ -174,8 +174,12 @@ def _normalize_post(record: dict) -> dict:
     for field in ["created_at", "updated_at", "published_at", "publish_date"]:
         post[field] = _to_iso_utc(post.get(field))
 
-    # Ensure header_image is always a valid src for clients
-    post["header_image"] = _normalize_image_string(post.get("header_image"))
+    # Ensure header_image is always a valid src for clients.
+    if db is not None:
+        resolved_header = resolve_image_value(db, post.get("header_image_id"))
+    else:
+        resolved_header = post.get("header_image")
+    post["header_image"] = _normalize_image_string(resolved_header)
 
     return post
 
@@ -215,7 +219,7 @@ async def list_blog_posts(
     query = query.range(offset, offset + limit - 1)
 
     db_resp = query.execute()
-    posts = [_normalize_post(p) for p in (db_resp.data or [])]
+    posts = [_normalize_post(p, db) for p in (db_resp.data or [])]
     # Cache for 5 minutes for public listing
     if response is not None and not include_unpublished:
         response.headers["Cache-Control"] = "public, max-age=300"
@@ -232,7 +236,7 @@ async def get_blog_post(
     if not response.data:
         raise HTTPException(status_code=404, detail="Blog post not found")
 
-    post = _normalize_post(response.data[0])
+    post = _normalize_post(response.data[0], db)
     if not post.get("published") and not (current_user and current_user.get("role") == "admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
 
@@ -249,7 +253,7 @@ async def get_blog_post_by_slug(
     if not response.data:
         raise HTTPException(status_code=404, detail="Blog post not found")
 
-    post = _normalize_post(response.data[0])
+    post = _normalize_post(response.data[0], db)
     if not post.get("published") and not (current_user and current_user.get("role") == "admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
 
@@ -277,7 +281,9 @@ async def create_blog_post(
 
     normalized_image = _normalize_image_string(payload.header_image)
     _validate_image_size(normalized_image)
-    header_image_id = get_or_create_image_id(db, normalized_image, created_by=current_user.get("id"))
+    header_image_id = get_or_create_image_id(
+        db, normalized_image, created_by=current_user.get("id"), alt_text=payload.header_image_alt
+    )
 
     normalized_content = _normalize_content_images(payload.content)
 
@@ -309,7 +315,7 @@ async def create_blog_post(
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to create blog post")
 
-    return _normalize_post(response.data[0])
+    return _normalize_post(response.data[0], db)
 
 
 @router.patch("/{post_id}", response_model=BlogPostResponse)
@@ -343,9 +349,8 @@ async def update_blog_post(
     if updates.header_image is not None:
         normalized_image = _normalize_image_string(updates.header_image)
         _validate_image_size(normalized_image)
-        update_data["header_image"] = normalized_image
         update_data["header_image_id"] = get_or_create_image_id(
-            db, normalized_image, created_by=current_user.get("id")
+            db, normalized_image, created_by=current_user.get("id"), alt_text=updates.header_image_alt
         )
     if updates.header_image_alt is not None:
         update_data["header_image_alt"] = updates.header_image_alt
@@ -379,7 +384,7 @@ async def update_blog_post(
     if not updated.data:
         raise HTTPException(status_code=400, detail="Failed to update blog post")
 
-    return _normalize_post(updated.data[0])
+    return _normalize_post(updated.data[0], db)
 
 
 @router.delete("/{post_id}")

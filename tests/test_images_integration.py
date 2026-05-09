@@ -67,9 +67,9 @@ def test_delete_product_image_clears_image_fields(client, clean_database, test_u
 
     after = clean_database.table("products").select("image,image_alt,image_id").eq("id", product_id).execute()
     assert after.data
-    assert after.data[0]["image"] is None
-    assert after.data[0]["image_alt"] is None
+    # Both FK and alt should be cleared; legacy image column is preserved
     assert after.data[0]["image_id"] is None
+    assert after.data[0]["image_alt"] is None
 
 
 def test_delete_blog_post_image_clears_image_fields(client, clean_database, test_admin, auth_headers):
@@ -113,6 +113,6 @@ def test_delete_blog_post_image_clears_image_fields(client, clean_database, test
         .execute()
     )
     assert after.data
-    assert after.data[0]["header_image"] is None
-    assert after.data[0]["header_image_alt"] is None
+    # Both FK and alt should be cleared; legacy header_image column is preserved
     assert after.data[0]["header_image_id"] is None
+    assert after.data[0]["header_image_alt"] is None

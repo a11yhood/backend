@@ -73,12 +73,14 @@ def _canonical_key_for_value(src: str) -> str:
     return f"external:{digest}"
 
 
-def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None = None) -> str | None:
+def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None = None, alt_text: str | None = None) -> str | None:
     """Return image ID for a canonical URL, creating a row if missing.
 
     This function does not download/copy external images. For external URLs,
     it stores the URL as a reference only.
-    """
+
+    If alt_text is provided and the image doesn't have default_alt set,
+    it will be synced to images.default_alt."""
     if not canonical_url:
         return None
 
@@ -87,12 +89,20 @@ def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None
         return None
 
     has_canonical_key = _probe_select(db, "images", "canonical_key")
+    image_id = None
 
     if has_canonical_key:
         canonical_key = _canonical_key_for_value(src)
-        existing = db.table("images").select("id").eq("canonical_key", canonical_key).limit(1).execute()
+        existing = db.table("images").select("id, default_alt").eq("canonical_key", canonical_key).limit(1).execute()
         if existing.data:
-            return existing.data[0].get("id")
+            image_id = existing.data[0].get("id")
+            # Sync alt text if provided and image doesn't have it
+            if alt_text and not existing.data[0].get("default_alt"):
+                try:
+                    db.table("images").update({"default_alt": str(alt_text).strip()}).eq("id", image_id).execute()
+                except Exception:
+                    pass  # Best effort; don't fail if alt sync fails
+            return image_id
 
         payload = {
             "canonical_key": canonical_key,
@@ -111,6 +121,8 @@ def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None
 
         if created_by:
             payload["created_by"] = created_by
+        if alt_text:
+            payload["default_alt"] = str(alt_text).strip()
 
         inserted = db.table("images").insert(payload).execute()
         if inserted.data:
@@ -122,9 +134,16 @@ def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None
 
         return None
 
-    existing = db.table("images").select("id").eq("canonical_url", src).limit(1).execute()
+    existing = db.table("images").select("id, default_alt").eq("canonical_url", src).limit(1).execute()
     if existing.data:
-        return existing.data[0].get("id")
+        image_id = existing.data[0].get("id")
+        # Sync alt text if provided and image doesn't have it
+        if alt_text and not existing.data[0].get("default_alt"):
+            try:
+                db.table("images").update({"default_alt": str(alt_text).strip()}).eq("id", image_id).execute()
+            except Exception:
+                pass  # Best effort; don't fail if alt sync fails
+        return image_id
 
     payload = {
         "canonical_url": src,
@@ -132,6 +151,8 @@ def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None
     }
     if created_by:
         payload["created_by"] = created_by
+    if alt_text:
+        payload["default_alt"] = str(alt_text).strip()
 
     inserted = db.table("images").insert(payload).execute()
     if inserted.data:
@@ -141,5 +162,43 @@ def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None
     fallback = db.table("images").select("id").eq("canonical_url", src).limit(1).execute()
     if fallback.data:
         return fallback.data[0].get("id")
+
+    return None
+
+
+def resolve_image_value(db, image_id: str | None) -> str | None:
+    """Resolve displayable image src from an image row in the images table.
+
+    Returns:
+    - data:{mime_type};base64,{payload} for uploaded images
+    - canonical_url for external images
+    - None if image_id is missing or image row not found
+    """
+    if not image_id:
+        return None
+
+    try:
+        response = (
+            db.table("images")
+            .select("canonical_url, image_data_base64, mime_type, source_kind")
+            .eq("id", image_id)
+            .limit(1)
+            .execute()
+        )
+        row = response.data[0] if response.data else None
+        if not row:
+            return None
+
+        source_kind = str(row.get("source_kind") or "").strip().lower()
+        image_payload = str(row.get("image_data_base64") or "").strip()
+        if source_kind == "uploaded" and image_payload:
+            mime_type = str(row.get("mime_type") or "image/png").strip() or "image/png"
+            return f"data:{mime_type};base64,{image_payload}"
+
+        canonical_url = str(row.get("canonical_url") or "").strip()
+        if canonical_url:
+            return canonical_url
+    except Exception:
+        return None
 
     return None
