@@ -78,10 +78,9 @@ def get_or_create_image_id(db, canonical_url: str | None, created_by: str | None
 
     This function does not download/copy external images. For external URLs,
     it stores the URL as a reference only.
-    
-    If alt_text is provided and the image doesn't have default_alt set, 
-    it will be synced to images.default_alt.
-    """
+
+    If alt_text is provided and the image doesn't have default_alt set,
+    it will be synced to images.default_alt."""
     if not canonical_url:
         return None
 
