@@ -15,9 +15,9 @@ from pydantic import BaseModel
 from config import load_settings_from_env
 from services.auth import VALID_DEV_ROLES, ensure_admin, get_current_user
 from services.database import get_db
-from services.dev_mode import enforce_dev_row_limits, get_dev_stats, reset_database
+from services.dev_mode import enforce_dev_row_limits, get_dev_stats, reset_database, _assert_safe_test_environment, verify_test_token
 
-router = APIRouter(prefix="/api/dev", tags=["dev"])
+router = APIRouter(prefix="/api/dev", tags=["dev"], dependencies=[Depends(verify_test_token)])
 
 
 class DevTestAuthLoginRequest(BaseModel):
@@ -224,3 +224,28 @@ async def test_auth_login(
         },
         created=created,
     )
+
+@router.get("/assert-test-environment")
+async def assert_test_environment():
+    """
+    Returns confirmation that this server is a verified test environment.
+    The frontend test harness calls this before running any destructive
+    operations. If this returns anything other than a 200, the test
+    suite should abort immediately.
+    """
+    settings = load_settings_from_env()
+
+    try:
+        _assert_safe_test_environment(settings)
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+
+    return {
+        "environment": settings.ENVIRONMENT or "development",
+        "test_mode": settings.TEST_MODE,
+        "allow_test_data_mutation": settings.ALLOW_TEST_DATA_MUTATION,
+        "safe_to_reset": True
+    }

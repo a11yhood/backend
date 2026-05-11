@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""  # service_role key for backend
     SUPABASE_ANON_KEY: str = ""  # anon/public key
-    SUPABASE_POSTGREST_TIMEOUT: int = 180
 
     # CORS - strict allowlist for security
     # Dev: Uses Vite proxy (https://localhost:5173 -> http://localhost:8000)
@@ -42,6 +41,11 @@ class Settings(BaseSettings):
     # Test mode settings
     TEST_MODE: bool = False
     TEST_SCRAPER_LIMIT: int = 5
+
+    # Test data mutation settings
+    ALLOW_TEST_DATA_MUTATION: bool = False
+    ALLOWED_TEST_PROJECT_REFS: str = ""  # Comma-separated Supabase project refs
+    ALLOWED_TEST_DB_NAMES: str = ""      # Comma-separated database names (usually "postgres")
 
     # Dev mode features
     DEV_MODE_MAX_ROWS_PER_TABLE: int = 40  # Max rows per table in dev mode

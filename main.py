@@ -6,8 +6,9 @@ All endpoints are organized by domain in routers/ and use database_adapter for d
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from slowapi import _rate_limit_exceeded_handler
+from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from config import load_settings_from_env, settings
 from routers import (
@@ -16,7 +17,6 @@ from routers import (
     collections,
     dev,
     discussions,
-    images,
     product_urls,
     products,
     ratings,
@@ -27,7 +27,6 @@ from routers import (
 )
 from services.auth import get_current_user
 from services.database import get_db
-from services.limiter import limiter
 from services.scheduled_scrapers import get_scheduled_scraper_service
 
 app = FastAPI(
@@ -51,6 +50,7 @@ logging.basicConfig(
 )
 
 # Setup rate limiter
+limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -139,6 +139,10 @@ async def validate_security_configuration():
             "   - Mock user accounts will be available\n"
             "   - NEVER enable TEST_MODE in production!\n"
         )
+    
+    if local_settings.TEST_MODE and local_settings.ALLOW_TEST_DATA_MUTATION:
+        from services.dev_mode import assert_test_environment_on_startup
+        assert_test_environment_on_startup(local_settings)
 
     if local_settings.SECRET_KEY == "dev-secret-key-change-in-production" and not is_production:
         logger.warning(
@@ -402,7 +406,6 @@ app.include_router(product_urls.router)
 app.include_router(collections.router)
 app.include_router(blog_posts.router)
 app.include_router(sources.router)
-app.include_router(images.router)
 if settings.TEST_MODE:
     app.include_router(dev.router)
 

@@ -10,6 +10,7 @@ import logging
 
 from config import load_settings_from_env
 from services.database import get_db
+from fastapi import Header, HTTPException, status
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +76,12 @@ async def reset_database():
     Returns:
         Dict with reset status and cleared row counts
     """
+
     settings = load_settings_from_env()
+    #Check if Test Data Mutation is properly enable
     if not settings.TEST_MODE:
         raise PermissionError("Database reset only available in dev mode")
+    _assert_safe_test_environment(settings)
 
     db = get_db()
 
@@ -182,3 +186,106 @@ async def get_dev_stats():
             stats["tables"][table] = {"error": str(e)}
 
     return stats
+
+def verify_test_token(
+    x_test_run_token: str | None = Header(default=None, alias="X-Test-Run-Token")
+) -> None:
+    """
+    FastAPI dependency that verifies the X-Test-Run-Token header.
+    Applied to every endpoint in the dev router.
+    """
+    settings = load_settings_from_env()
+    expected_token = settings.DEV_TEST_AUTH_SECRET
+
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DEV_TEST_AUTH_SECRET is not configured. Set it in your .env file."
+        )
+
+    if x_test_run_token != expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid X-Test-Run-Token header."
+        )
+
+def _assert_safe_test_environment(settings) -> None:
+    """
+    Accepts settings as a parameter so the caller controls
+    which settings instance is used. Never reassigns settings
+    inside this function.
+    """
+    if not settings.ALLOW_TEST_DATA_MUTATION:
+        raise PermissionError(
+            "Destructive test operations are disabled.\n"
+            "Set ALLOW_TEST_DATA_MUTATION=true in your .env file."
+        )
+
+    allowed_refs = [
+        r.strip()
+        for r in settings.ALLOWED_TEST_PROJECT_REFS.split(",")
+        if r.strip()
+    ]
+    live_ref = _get_live_project_ref()
+
+    if live_ref not in allowed_refs:
+        raise PermissionError(
+            f"Connected Supabase project '{live_ref}' is not on the test allowlist.\n"
+            f"Allowed refs: {allowed_refs}\n"
+            "Add this project ref to ALLOWED_TEST_PROJECT_REFS in your .env file."
+        )
+
+
+def assert_test_environment_on_startup(settings) -> None:
+    """
+    Called once at startup when TEST_MODE is true.
+    Crashes the process if the connected database is not a verified
+    test database, preventing the server from ever accepting requests
+    in a dangerous state.
+    """
+    try:
+        _assert_safe_test_environment(settings)
+        logger.info(
+            "Test environment verified. Destructive dev routes are active.\n"
+            f"  ALLOW_TEST_DATA_MUTATION : true\n"
+            f"  Connected project ref    : {_get_live_project_ref()}\n"
+        )
+    except PermissionError as e:
+        raise RuntimeError(
+            f"\n{'='*60}\n"
+            f"STARTUP BLOCKED: Dev routes are enabled but the database\n"
+            f"identity check failed.\n\n"
+            f"{e}\n"
+            f"{'='*60}\n"
+        )
+def _get_live_project_ref() -> str:
+    """
+    Extract the Supabase project ref from the live connection URL.
+    The project ref is the subdomain of the Supabase URL.
+
+    Example:
+        https://abcdefghijklmnop.supabase.co -> abcdefghijklmnop
+    """
+    settings = load_settings_from_env()
+    url = settings.SUPABASE_URL
+
+    if not url:
+        raise RuntimeError(
+            "SUPABASE_URL is not configured. Cannot verify project identity."
+        )
+
+    try:
+        # Strip protocol, take the subdomain before the first dot
+        host = url.replace("https://", "").replace("http://", "")
+        project_ref = host.split(".")[0]
+
+        if not project_ref:
+            raise ValueError("Could not parse project ref from URL")
+
+        return project_ref
+
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to extract project ref from SUPABASE_URL '{url}': {e}\n"
+            "Expected format: https://your-project-ref.supabase.co"
+        )
