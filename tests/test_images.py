@@ -4,10 +4,8 @@ These tests override the ``get_current_user`` and ``get_db`` FastAPI dependencie
 directly so that no real database calls or Supabase credentials are needed.
 """
 
-import base64
 import io
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
