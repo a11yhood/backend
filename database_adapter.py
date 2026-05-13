@@ -156,14 +156,40 @@ class DatabaseAdapter:
 
         Uses the service-role key, which bypasses RLS.
         """
+        def _get_leftovers() -> dict[str, int]:
+            leftovers: dict[str, int] = {}
+            for table in self._TEST_TABLES_ORDER:
+                try:
+                    resp = self.supabase.table(table).select("*", count="exact").limit(1).execute()
+                    count = resp.count or 0
+                    if count:
+                        leftovers[table] = count
+                except Exception as exc:
+                    logger.warning("Failed to count rows for table '%s' during cleanup: %s", table, exc)
+            return leftovers
+
+        used_rpc = False
         try:
             self.supabase.rpc("truncate_test_tables").execute()
-            return
+            used_rpc = True
         except Exception as exc:
             logger.debug(
                 "truncate_test_tables RPC unavailable, falling back to per-table DELETE: %s",
                 exc,
             )
+
+        leftovers_after_rpc = _get_leftovers()
+        if not leftovers_after_rpc:
+            return
+
+        if used_rpc:
+            detail = ", ".join(f"{name}={count}" for name, count in leftovers_after_rpc.items())
+            logger.warning(
+                "truncate_test_tables RPC completed but left residual rows; "
+                "falling back to per-table DELETE: %s",
+                detail,
+            )
+
         for table in self._TEST_TABLES_ORDER:
             try:
                 column, lower_bound = self._TEST_TABLE_FILTERS.get(
@@ -173,6 +199,11 @@ class DatabaseAdapter:
                 self.supabase.table(table).delete().gte(column, lower_bound).execute()
             except Exception as exc:
                 logger.warning("Failed to cleanup table '%s': %s", table, exc)
+
+        leftovers_after_delete = _get_leftovers()
+        if leftovers_after_delete:
+            detail = ", ".join(f"{name}={count}" for name, count in leftovers_after_delete.items())
+            logger.warning("Cleanup completed with remaining rows: %s", detail)
 
     def table(self, table_name: str):
         """Return the Supabase table query builder for *table_name*.

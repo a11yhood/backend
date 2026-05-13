@@ -2,19 +2,37 @@
 
 import base64
 import io
+import struct
 import uuid
+import zlib
 
 import pytest
 
 pytestmark = pytest.mark.integration
 
-# Minimal valid 1x1 PNG bytes
-_PNG_1PX = (
-    b"\x89PNG\r\n\x1a\n"
-    b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
-    b"\x00\x00\x00\x0cIDAT\x08\x1dc\xf8\xcf\xc0\x00\x00\x03\x01\x01\x00\xc9\xfe\x92\xef"
-    b"\x00\x00\x00\x00IEND\xaeB`\x82"
-)
+def _make_png_bytes(width: int = 1, height: int = 1) -> bytes:
+    """Return a minimal valid PNG file of the given dimensions."""
+
+    def _chunk(tag: bytes, data: bytes) -> bytes:
+        chunk = struct.pack(">I", len(data)) + tag + data
+        return chunk + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr = _chunk(
+        b"IHDR",
+        struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0),
+    )
+
+    raw_rows = b""
+    for _ in range(height):
+        raw_rows += b"\x00" + b"\xFF\x00\x00" * width
+
+    idat = _chunk(b"IDAT", zlib.compress(raw_rows))
+    iend = _chunk(b"IEND", b"")
+    return signature + ihdr + idat + iend
+
+
+_PNG_1PX = _make_png_bytes(1, 1)
 
 
 def test_image_upload_admin_success(client, test_admin, auth_headers):

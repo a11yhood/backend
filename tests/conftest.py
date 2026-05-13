@@ -1,6 +1,7 @@
 import logging
 import os
 import subprocess
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -260,15 +261,37 @@ def test_db(test_settings):
 
 
 def _table_row_count(db, table_name: str) -> int:
-    """Return exact row count for a table using Supabase count metadata."""
-    resp = db.table(table_name).select("*", count="exact").limit(1).execute()
-    return resp.count or 0
+    """Return exact row count for a table using Supabase count metadata.
+
+    Retries transient network/read-timeout failures to reduce flaky integration
+    failures from occasional Supabase HTTP timeouts.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            resp = db.table(table_name).select("*", count="exact").limit(1).execute()
+            return resp.count or 0
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 3:
+                break
+            logger.warning(
+                "Transient table count failure for '%s' (attempt %d/3): %s",
+                table_name,
+                attempt,
+                exc,
+            )
+            time.sleep(0.25 * attempt)
+
+    raise last_exc
 
 
 def _reset_and_assert_clean(db):
-    """Reset tables and fail loudly if any key table still has rows."""
-    db.cleanup()
+    """Reset tables and fail loudly if any key table still has rows.
 
+    Retries the full reset-and-verify flow once to tolerate transient
+    Supabase timeouts under heavy integration-test load.
+    """
     tables_must_be_empty = [
         "products",
         "images",
@@ -286,17 +309,31 @@ def _reset_and_assert_clean(db):
         "collection_products",
     ]
 
-    leftovers = {}
-    for table in tables_must_be_empty:
-        count = _table_row_count(db, table)
-        if count != 0:
-            leftovers[table] = count
+    last_exc: Exception | None = None
+    for attempt in range(1, 3):
+        try:
+            db.cleanup()
 
-    if leftovers:
-        detail = ", ".join(f"{name}={count}" for name, count in leftovers.items())
-        raise RuntimeError(
-            "Test DB reset failed: tables still contain rows after cleanup: " + detail
-        )
+            leftovers = {}
+            for table in tables_must_be_empty:
+                count = _table_row_count(db, table)
+                if count != 0:
+                    leftovers[table] = count
+
+            if leftovers:
+                detail = ", ".join(f"{name}={count}" for name, count in leftovers.items())
+                raise RuntimeError(
+                    "Test DB reset failed: tables still contain rows after cleanup: " + detail
+                )
+            return
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 2:
+                break
+            logger.warning("Retrying test DB reset after transient failure (attempt %d/2): %s", attempt, exc)
+            time.sleep(0.5)
+
+    raise last_exc
 
 
 def _assert_seed_baseline(db):
