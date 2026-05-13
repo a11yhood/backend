@@ -6,6 +6,7 @@ Uses Thingiverse API with OAuth authentication
 import math
 from datetime import datetime
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 
@@ -343,8 +344,23 @@ class ThingiverseScraper(BaseScraper):
     def _is_image_url(self, url: str | None) -> bool:
         if not url:
             return False
-        url_lower = url.lower()
-        return url_lower.endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"))
+
+        image_exts = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".avif")
+
+        parsed = urlparse(str(url).strip())
+        path = unquote((parsed.path or "").lower())
+        if path.endswith(image_exts):
+            return True
+
+        # Thingiverse resize URLs often carry the real CDN image in a nested `url` query param.
+        query = parse_qs(parsed.query)
+        nested_urls = query.get("url", [])
+        for nested in nested_urls:
+            nested_path = unquote(urlparse(nested).path.lower())
+            if nested_path.endswith(image_exts):
+                return True
+
+        return False
 
     def _create_product_dict(self, thing: dict[str, Any]) -> dict[str, Any]:
         """Convert Thingiverse thing data to product dict"""

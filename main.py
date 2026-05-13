@@ -3,9 +3,13 @@
 Sets up FastAPI app with CORS middleware and routes for the accessible product community.
 All endpoints are organized by domain in routers/ and use database_adapter for dual DB support.
 """
+import uuid
+
 from fastapi import Depends, FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -233,7 +237,12 @@ if not any(isinstance(m, type) and issubclass(m, type) and
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     """Add security headers to all responses."""
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    request.state.request_id = request_id
+
     response = await call_next(request)
+
+    response.headers["X-Request-ID"] = request_id
 
     # Prevent MIME type sniffing
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -282,6 +291,54 @@ async def add_security_headers(request: Request, call_next):
         "geolocation=(), microphone=(), camera=()"
     )
 
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_request_validation_error(request: Request, exc: RequestValidationError):
+    """Log and return structured request validation failures (HTTP 422)."""
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    errors = exc.errors()
+
+    first_error = errors[0] if errors else {}
+    first_loc = ".".join(str(part) for part in first_error.get("loc", []))
+    first_msg = first_error.get("msg", "Validation error")
+    detail_message = (
+        f"{first_loc}: {first_msg}" if first_loc else str(first_msg or "Validation error")
+    )
+
+    # For multipart uploads, capture actual form field names to diagnose field-name mismatches.
+    form_field_names: list[str] | None = None
+    content_type_header = request.headers.get("content-type", "")
+    if "multipart/form-data" in content_type_header or "application/x-www-form-urlencoded" in content_type_header:
+        try:
+            form = await request.form()
+            form_field_names = list(form.keys())
+        except Exception:
+            form_field_names = ["<error reading form>"]
+
+    logger.warning(
+        "Request validation failed: %s %s request_id=%s content_type=%s content_length=%s"
+        " form_fields=%s errors=%s",
+        request.method,
+        request.url.path,
+        request_id,
+        request.headers.get("content-type"),
+        request.headers.get("content-length"),
+        form_field_names,
+        errors,
+    )
+
+    response = JSONResponse(
+        status_code=422,
+        content={
+            "detail": detail_message,
+            "message": detail_message,
+            "errors": errors,
+            "request_id": request_id,
+        },
+    )
+    response.headers["X-Request-ID"] = request_id
     return response
 
 # Trusted hosts (prevent host header injection)
