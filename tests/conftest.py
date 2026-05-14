@@ -335,7 +335,9 @@ def _reset_and_assert_clean(db):
             logger.warning("Retrying test DB reset after transient failure (attempt %d/2): %s", attempt, exc)
             time.sleep(0.5)
 
-    raise last_exc
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Test DB reset failed without a captured exception.")
 
 
 def _assert_seed_baseline(db):
