@@ -149,6 +149,30 @@ while IFS= read -r migration_file; do
   fi
 done < <(find "$MIGRATIONS_DIR" -maxdepth 1 -type f -name "*.sql" | sort)
 
+# Apply test_only migrations when targeting the test env file (.env.test).
+# These include e.g. the truncate_test_tables() RPC used by DatabaseAdapter.cleanup().
+# They are intentionally NOT tracked in schema_migrations (idempotent, test-only).
+if [[ "$ENV_FILE" == ".env.test" && -d "${MIGRATIONS_DIR}/test_only" ]]; then
+  echo
+  echo "Applying test_only migrations (not tracked)..."
+  test_applied=0
+  test_failed=0
+  while IFS= read -r migration_file; do
+    filename="$(basename "$migration_file")"
+    echo "- APPLY (test_only) $filename"
+    if psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$migration_file" >/dev/null; then
+      test_applied=$((test_applied + 1))
+    else
+      echo "  FAILED $filename" >&2
+      test_failed=$((test_failed + 1))
+    fi
+  done < <(find "${MIGRATIONS_DIR}/test_only" -maxdepth 1 -type f -name "*.sql" | sort)
+  echo "Test-only migration summary: applied=${test_applied} failed=${test_failed}"
+  if [[ $test_failed -gt 0 ]]; then
+    exit 1
+  fi
+fi
+
 echo
 echo "Migration summary: applied=$applied skipped=$skipped failed=$failed"
 

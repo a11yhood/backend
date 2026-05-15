@@ -63,35 +63,38 @@ def _enable_test_mode(monkeypatch):
 
 def test_rejects_dev_tokens_when_not_in_test_mode(monkeypatch):
     monkeypatch.setattr(auth, "load_settings_from_env", lambda: _FakeSettings(False))
+    db = _FakeDB(_FakeUsersTable())
 
     with pytest.raises(HTTPException, match="Dev tokens only in TEST_MODE") as exc:
         import asyncio
 
-        asyncio.run(auth.parse_dev_token(authorization="Bearer dev-token-user", x_dev_role=None))
+        asyncio.run(auth.parse_dev_token(authorization="Bearer dev-token-user", x_dev_role=None, db=db))
 
     assert exc.value.status_code == 401
 
 
 def test_rejects_when_headers_missing(monkeypatch):
     _enable_test_mode(monkeypatch)
-    monkeypatch.setattr(auth, "get_db", lambda: _FakeDB(_FakeUsersTable()))
+    db = _FakeDB(_FakeUsersTable())
+    monkeypatch.setattr(auth, "get_db", lambda: db)
 
     with pytest.raises(HTTPException, match="No authorization header") as exc:
         import asyncio
 
-        asyncio.run(auth.parse_dev_token(authorization=None, x_dev_role=None))
+        asyncio.run(auth.parse_dev_token(authorization=None, x_dev_role=None, db=db))
 
     assert exc.value.status_code == 401
 
 
 def test_rejects_invalid_token_format(monkeypatch):
     _enable_test_mode(monkeypatch)
-    monkeypatch.setattr(auth, "get_db", lambda: _FakeDB(_FakeUsersTable()))
+    db = _FakeDB(_FakeUsersTable())
+    monkeypatch.setattr(auth, "get_db", lambda: db)
 
     with pytest.raises(HTTPException, match="Invalid dev token format") as exc:
         import asyncio
 
-        asyncio.run(auth.parse_dev_token(authorization="Bearer not-a-dev-token", x_dev_role=None))
+        asyncio.run(auth.parse_dev_token(authorization="Bearer not-a-dev-token", x_dev_role=None, db=db))
 
     assert exc.value.status_code == 401
 
@@ -105,16 +108,17 @@ def test_uuid_token_resolves_exact_seeded_user(monkeypatch):
         "email": "user@example.com",
         "role": "user",
     }
+    db = _FakeDB(_FakeUsersTable(users_by_id={user_id: seeded_user}))
     monkeypatch.setattr(
         auth,
         "get_db",
-        lambda: _FakeDB(_FakeUsersTable(users_by_id={user_id: seeded_user})),
+        lambda: db,
     )
 
     import asyncio
 
     result = asyncio.run(
-        auth.parse_dev_token(authorization=f"Bearer dev-token-{user_id}", x_dev_role=None)
+        auth.parse_dev_token(authorization=f"Bearer dev-token-{user_id}", x_dev_role=None, db=db)
     )
 
     assert result["id"] == user_id
@@ -126,13 +130,14 @@ def test_uuid_token_resolves_exact_seeded_user(monkeypatch):
 def test_uuid_token_returns_404_when_user_missing(monkeypatch):
     _enable_test_mode(monkeypatch)
     missing_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    monkeypatch.setattr(auth, "get_db", lambda: _FakeDB(_FakeUsersTable()))
+    db = _FakeDB(_FakeUsersTable())
+    monkeypatch.setattr(auth, "get_db", lambda: db)
 
     with pytest.raises(HTTPException, match="Dev user not found") as exc:
         import asyncio
 
         asyncio.run(
-            auth.parse_dev_token(authorization=f"Bearer dev-token-{missing_id}", x_dev_role=None)
+            auth.parse_dev_token(authorization=f"Bearer dev-token-{missing_id}", x_dev_role=None, db=db)
         )
 
     assert exc.value.status_code == 404
@@ -141,12 +146,13 @@ def test_uuid_token_returns_404_when_user_missing(monkeypatch):
 def test_role_token_creates_dev_user_when_missing(monkeypatch):
     _enable_test_mode(monkeypatch)
     users_table = _FakeUsersTable(users_by_username={})
-    monkeypatch.setattr(auth, "get_db", lambda: _FakeDB(users_table))
+    db = _FakeDB(users_table)
+    monkeypatch.setattr(auth, "get_db", lambda: db)
 
     import asyncio
 
     result = asyncio.run(
-        auth.parse_dev_token(authorization="Bearer dev-token-admin", x_dev_role=None)
+        auth.parse_dev_token(authorization="Bearer dev-token-admin", x_dev_role=None, db=db)
     )
 
     assert result["username"] == "dev_admin"
@@ -165,7 +171,8 @@ def test_x_dev_role_takes_priority_over_authorization_header(monkeypatch):
         "role": "moderator",
     }
     users_table = _FakeUsersTable(users_by_username={"dev_moderator": existing})
-    monkeypatch.setattr(auth, "get_db", lambda: _FakeDB(users_table))
+    db = _FakeDB(users_table)
+    monkeypatch.setattr(auth, "get_db", lambda: db)
 
     import asyncio
 
@@ -173,6 +180,7 @@ def test_x_dev_role_takes_priority_over_authorization_header(monkeypatch):
         auth.parse_dev_token(
             authorization="Bearer dev-token-admin",
             x_dev_role="moderator",
+            db=db,
         )
     )
 

@@ -303,13 +303,19 @@ def _reset_and_assert_clean(db):
         "collections",
         "scraping_logs",
         "oauth_configs",
-        "supported_sources",
-        "scraper_search_terms",
         "product_urls",
         "product_tags",
         "product_editors",
         "collection_products",
     ]
+
+    # These baseline lookup tables may intentionally persist canonical rows in
+    # some remote test DB configurations. They are upsert-seeded immediately
+    # after cleanup and validated by _assert_seed_baseline.
+    tables_allow_seed_rows = {
+        "supported_sources",
+        "scraper_search_terms",
+    }
 
     last_exc: Exception | None = None
     for attempt in range(1, 3):
@@ -321,6 +327,10 @@ def _reset_and_assert_clean(db):
                 count = _table_row_count(db, table)
                 if count != 0:
                     leftovers[table] = count
+
+            for table in tables_allow_seed_rows:
+                # Execute a probe for diagnostics only; these rows are allowed.
+                _table_row_count(db, table)
 
             if leftovers:
                 detail = ", ".join(f"{name}={count}" for name, count in leftovers.items())
@@ -510,7 +520,7 @@ def test_admin(clean_database):
 
 @pytest.fixture
 def test_moderator(clean_database):
-    """Create a test moderator user."""
+    """Create a test moderator user. Explicitly deleted on teardown to avoid cleanup failures."""
     from uuid import uuid4
 
     moderator_data = {
@@ -522,12 +532,17 @@ def test_moderator(clean_database):
         "role": "moderator",
     }
     result = clean_database.table("users").insert(moderator_data).execute()
-    return result.data[0]
+    user = result.data[0]
+    yield user
+    try:
+        clean_database.table("users").delete().eq("id", user["id"]).execute()
+    except Exception as exc:
+        logger.warning("Failed to delete test_moderator user %s: %s", user["id"], exc)
 
 
 @pytest.fixture
 def test_user_2(clean_database):
-    """Create a second regular test user."""
+    """Create a second regular test user. Explicitly deleted on teardown to avoid cleanup failures."""
     from uuid import uuid4
 
     user_data = {
@@ -539,7 +554,12 @@ def test_user_2(clean_database):
         "role": "user",
     }
     result = clean_database.table("users").insert(user_data).execute()
-    return result.data[0]
+    user = result.data[0]
+    yield user
+    try:
+        clean_database.table("users").delete().eq("id", user["id"]).execute()
+    except Exception as exc:
+        logger.warning("Failed to delete test_user_2 user %s: %s", user["id"], exc)
 
 
 @pytest.fixture

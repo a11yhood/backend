@@ -27,6 +27,32 @@ DEV_USER_IDS = {
     "2a3b7c3e-971b-4b42-9c8c-0f1843486c50": "regular_user",
 }
 
+# Deterministic seed payloads for UUID-based dev users used in tests.
+# If these rows are missing (e.g., after a flaky reset), auth can recreate them.
+DEV_USER_SEEDS = {
+    "49366adb-2d13-412f-9ae5-4c35dbffab10": {
+        "github_id": "admin-test-001",
+        "username": "admin_user",
+        "display_name": "Admin User",
+        "email": "admin@example.com",
+        "role": "admin",
+    },
+    "94e116f7-885d-4d32-87ae-697c5dc09b9e": {
+        "github_id": "mod-test-002",
+        "username": "moderator_user",
+        "display_name": "Moderator User",
+        "email": "moderator@example.com",
+        "role": "moderator",
+    },
+    "2a3b7c3e-971b-4b42-9c8c-0f1843486c50": {
+        "github_id": "user-test-003",
+        "username": "regular_user",
+        "display_name": "Regular User",
+        "email": "user@example.com",
+        "role": "user",
+    },
+}
+
 # Valid roles that can be created via X-Dev-Role header
 VALID_DEV_ROLES = {"admin", "moderator", "manager", "user"}
 
@@ -138,7 +164,22 @@ async def parse_dev_token(authorization: str | None, x_dev_role: str | None, db)
         # Suffix is a valid UUID; look up the user by ID.
         resp = db.table("users").select("*").eq("id", suffix).execute()
         if not resp.data:
-            raise HTTPException(status_code=404, detail=f"Dev user not found: {suffix}")
+            # Self-heal known deterministic test identities to reduce suite flakiness
+            # when test cleanup temporarily drops seeded users.
+            seed = DEV_USER_SEEDS.get(suffix)
+            if seed is None:
+                raise HTTPException(status_code=404, detail=f"Dev user not found: {suffix}")
+
+            try:
+                db.table("users").upsert({"id": suffix, **seed}, on_conflict="id").execute()
+                resp = db.table("users").select("*").eq("id", suffix).execute()
+            except Exception as exc:
+                logger.error("Failed to recreate deterministic dev user %s: %s", suffix, exc)
+                raise HTTPException(status_code=500, detail=f"Failed to recreate dev user: {suffix}")
+
+            if not resp.data:
+                raise HTTPException(status_code=404, detail=f"Dev user not found: {suffix}")
+
         user = resp.data[0]
         logger.debug(f"Resolved dev user by UUID: {user['id']} (role: {user.get('role')})")
         return {

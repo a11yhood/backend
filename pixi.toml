@@ -41,6 +41,13 @@ cmd = "./scripts/reset-test-db.sh --env-file .env.test && pixi run test"
 [tasks.test-fresh.env]
 ENV_FILE = ".env.test"
 
+[tasks.test-fresh-split]
+description = "Reset DB, then run unit and integration tests in separate processes (avoids HTTP/2 stream exhaustion)"
+cmd = "./scripts/reset-test-db.sh --env-file .env.test && pixi run test-unit && pixi run test-integration"
+
+[tasks.test-fresh-split.env]
+ENV_FILE = ".env.test"
+
 [tasks.dev]
 description = "Start dev backend in Docker using Supabase test env on port 8002"
 cmd = "./scripts/start-dev.sh --port 8002"
