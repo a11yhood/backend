@@ -352,24 +352,44 @@ def _reset_and_assert_clean(db):
 
 def _assert_seed_baseline(db):
     """Fail fast if baseline seed data was not inserted as expected."""
-    supported_sources_count = _table_row_count(db, "supported_sources")
-    users_count = _table_row_count(db, "users")
-    products_count = _table_row_count(db, "products")
+    # Supabase/PostgREST can occasionally show a short visibility lag immediately
+    # after a burst of upserts in shared test environments. Retry briefly before
+    # failing so transient lag does not cause fixture-level flakiness.
+    last_counts: dict[str, int] = {}
+    for attempt in range(1, 6):
+        supported_sources_count = _table_row_count(db, "supported_sources")
+        users_count = _table_row_count(db, "users")
+        products_count = _table_row_count(db, "products")
+        last_counts = {
+            "supported_sources": supported_sources_count,
+            "users": users_count,
+            "products": products_count,
+        }
 
-    if supported_sources_count < 3:
+        if (
+            supported_sources_count >= 3
+            and users_count >= len(TEST_USERS)
+            and products_count >= len(TEST_PRODUCTS)
+        ):
+            return
+
+        if attempt < 5:
+            time.sleep(0.25 * attempt)
+
+    if last_counts.get("supported_sources", 0) < 3:
         raise RuntimeError(
             "Test seed failed: expected at least 3 supported_sources rows, "
-            f"found {supported_sources_count}"
+            f"found {last_counts.get('supported_sources', 0)}"
         )
-    if users_count < len(TEST_USERS):
+    if last_counts.get("users", 0) < len(TEST_USERS):
         raise RuntimeError(
             "Test seed failed: expected at least "
-            f"{len(TEST_USERS)} users rows, found {users_count}"
+            f"{len(TEST_USERS)} users rows, found {last_counts.get('users', 0)}"
         )
-    if products_count < len(TEST_PRODUCTS):
+    if last_counts.get("products", 0) < len(TEST_PRODUCTS):
         raise RuntimeError(
             "Test seed failed: expected at least "
-            f"{len(TEST_PRODUCTS)} products rows, found {products_count}"
+            f"{len(TEST_PRODUCTS)} products rows, found {last_counts.get('products', 0)}"
         )
 
 

@@ -138,17 +138,44 @@ def test_stats_returns_dev_config(client, test_admin):
 
 
 def test_reset_clears_tables(client, test_admin, test_product):
-    """reset returns status='reset' with non-zero deleted row counts."""
+    """reset returns status='reset' with deleted counts and seeded manifest data."""
     response = client.post("/api/dev/reset", headers=_admin_headers(test_admin))
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "reset"
     assert "cleared_tables" in data
     assert "total_rows_deleted" in data
+    assert data["seeded"] is True
+    assert "seed_version" in data
+    assert "seed_manifest" in data
+    assert data["seed_manifest"]["seeded_image_id"]
+    assert data["seed_manifest"]["seeded_product_with_image_id"]
+    assert data["seed_manifest"]["seeded_product_image_id"]
+    assert data["seed_manifest"]["seeded_product_visible"] is True
+    assert data["seed_manifest"]["seeded_user_id"]
     assert isinstance(data["total_rows_deleted"], int)
     assert data["total_rows_deleted"] > 0
     assert data["cleared_tables"]["products"] >= 1
     assert data["cleared_tables"]["users"] >= 1
+
+
+def test_reset_seeded_product_visible_to_regular_user(client, test_admin, test_user):
+    """After reset, seeded product with image should be visible to a regular dev token user."""
+    reset_response = client.post("/api/dev/reset", headers=_admin_headers(test_admin))
+    assert reset_response.status_code == 200
+    manifest = reset_response.json()["seed_manifest"]
+
+    products_response = client.get("/api/products", headers=_user_headers(test_user))
+    assert products_response.status_code == 200
+    products = products_response.json()
+    assert isinstance(products, list)
+
+    matching = [
+        p
+        for p in products
+        if p.get("id") == manifest["seeded_product_with_image_id"] and p.get("image_id")
+    ]
+    assert matching, "Expected seeded product with image_id to be visible to regular user"
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +221,18 @@ def test_check_limits_returns_400_when_exceeded(client, test_admin, clean_databa
     assert response.status_code == 400
     assert "Dev row limits exceeded" in response.json()["detail"]
     assert "products:" in response.json()["detail"]
+
+
+def test_seed_manifest_endpoint_available_in_test_mode(client, test_user):
+    """/api/test/seed-manifest returns stable seeded IDs for authenticated test users."""
+    response = client.get("/api/test/seed-manifest", headers=_user_headers(test_user))
+    assert response.status_code == 200
+    data = response.json()
+    assert "seed_version" in data
+    assert "seeded_image_id" in data
+    assert "seeded_product_with_image_id" in data
+    assert "seeded_product_image_id" in data
+    assert "seeded_user_id" in data
 
 
 # ---------------------------------------------------------------------------

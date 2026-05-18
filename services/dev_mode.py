@@ -13,6 +13,11 @@ from services.database import get_db
 
 logger = logging.getLogger(__name__)
 
+SEED_VERSION = "2026-05-15-seed-image-contract-v1"
+SEEDED_PRODUCT_SLUG = "test-product"
+SEEDED_IMAGE_KEY = "seed:test-product:image:1"
+SEEDED_USER_USERNAME = "regular_user"
+
 # Tables that shouldn't have row limits (system tables, join tables)
 UNLIMITED_TABLES = {
     "auth.users",
@@ -140,6 +145,68 @@ async def reset_database():
         result["errors"] = errors
         logger.warning(f"Reset completed with errors on: {', '.join(errors.keys())}")
     return result
+
+
+def get_seed_manifest() -> dict:
+    """Return stable seeded IDs used by frontend integration tests."""
+    db = get_db()
+
+    image_resp = (
+        db.table("images")
+        .select("id")
+        .eq("canonical_key", SEEDED_IMAGE_KEY)
+        .limit(1)
+        .execute()
+    )
+    product_resp = (
+        db.table("products")
+        .select("id,image_id,banned")
+        .eq("slug", SEEDED_PRODUCT_SLUG)
+        .limit(1)
+        .execute()
+    )
+    user_resp = (
+        db.table("users")
+        .select("id")
+        .eq("username", SEEDED_USER_USERNAME)
+        .limit(1)
+        .execute()
+    )
+
+    seeded_image_id = image_resp.data[0]["id"] if image_resp.data else None
+    seeded_product_id = product_resp.data[0]["id"] if product_resp.data else None
+    seeded_product_image_id = product_resp.data[0].get("image_id") if product_resp.data else None
+    seeded_product_visible = bool(product_resp.data and not product_resp.data[0].get("banned", False))
+    seeded_user_id = user_resp.data[0]["id"] if user_resp.data else None
+
+    return {
+        "seed_version": SEED_VERSION,
+        "seeded_image_id": seeded_image_id,
+        "seeded_product_with_image_id": seeded_product_id,
+        "seeded_product_image_id": seeded_product_image_id,
+        "seeded_product_visible": seeded_product_visible,
+        "seeded_user_id": seeded_user_id,
+    }
+
+
+async def reset_and_reseed_database() -> dict:
+    """Reset then reseed test data before returning success."""
+    reset_result = await reset_database()
+
+    from seed_scripts.seed_all import main as run_seed_all
+
+    seed_exit_code = run_seed_all()
+    if seed_exit_code != 0:
+        raise RuntimeError(f"Seed process failed with exit code {seed_exit_code}")
+
+    manifest = get_seed_manifest()
+    return {
+        **reset_result,
+        "status": "reset",
+        "seeded": True,
+        "seed_version": manifest["seed_version"],
+        "seed_manifest": manifest,
+    }
 
 
 async def get_dev_stats():

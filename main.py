@@ -462,6 +462,7 @@ app.include_router(sources.router)
 app.include_router(images.router)
 if settings.TEST_MODE:
     app.include_router(dev.router)
+    app.include_router(dev.test_router)
 
 
 if __name__ == "__main__":

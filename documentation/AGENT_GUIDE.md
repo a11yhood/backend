@@ -100,10 +100,19 @@ naive_timestamp = datetime.now(UTC).replace(tzinfo=None)
 - **Fixtures**: use pytest fixtures for test data setup; tests should use the FastAPI TestClient to make API calls (not direct database operations). Fixtures may insert directly into the database for setup, but test assertions should verify API responses.
 - **No direct database operations in tests**: All test operations (create, read, update, delete) should go through the API layer. This ensures tests verify the complete request/response cycle including validation, authorization, and data transformation.
 
+### Adding New Tests (Agent Checklist)
+- Choose the correct layer and marker (`unit` vs `integration`).
+- Prefer existing fixtures from `tests/conftest.py` (`client`, `auth_headers`, `clean_database`, seeded users).
+- Keep identity-sensitive tests deterministic (seeded UUID tokens/users).
+- Run targeted file-level tests first, then broader suites.
+- When behavior/contracts change, update testing/docs references.
+- See [TESTING.md](TESTING.md) and [QUICK_TEST_GUIDE.md](QUICK_TEST_GUIDE.md) for commands and conventions.
+
 
 ## Required Docs to Read
 - [README.md](../README.md) — repo overview and commands.
 - [documentation/README.md](README.md) — documentation index.
+- [TESTING.md](TESTING.md) & [QUICK_TEST_GUIDE.md](QUICK_TEST_GUIDE.md) — test layers, commands, and new-test checklist.
 - [TESTING_STRATEGY.md](TESTING_STRATEGY.md) & [TEST_COVERAGE_MATRIX.md](TEST_COVERAGE_MATRIX.md) — how tests map to features.
 - [USER_STORIES_AND_TESTS.md](USER_STORIES_AND_TESTS.md) — expected outcomes per story; update when features change.
 - [LOCAL_TESTING.md](LOCAL_TESTING.md) & [QUICK_START.md](QUICK_START.md) — environment and startup.

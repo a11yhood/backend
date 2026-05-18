@@ -24,6 +24,38 @@ load_dotenv(env_file, override=True)
 from config import get_settings
 from database_adapter import DatabaseAdapter
 
+TEST_USERS = [
+    {
+        "id": "49366adb-2d13-412f-9ae5-4c35dbffab10",
+        "github_id": "admin-test-001",
+        "username": "admin_user",
+        "display_name": "Admin User",
+        "email": "admin@example.com",
+        "role": "admin",
+    },
+    {
+        "id": "94e116f7-885d-4d32-87ae-697c5dc09b9e",
+        "github_id": "mod-test-002",
+        "username": "moderator_user",
+        "display_name": "Moderator User",
+        "email": "moderator@example.com",
+        "role": "moderator",
+    },
+    {
+        "id": "2a3b7c3e-971b-4b42-9c8c-0f1843486c50",
+        "github_id": "user-test-003",
+        "username": "regular_user",
+        "display_name": "Regular User",
+        "email": "user@example.com",
+        "role": "user",
+    },
+]
+
+
+def _ensure_seed_users(db) -> None:
+    """Ensure canonical seed users exist before writing FK-backed collections."""
+    db.table("users").upsert(TEST_USERS, on_conflict="id").execute()
+
 # Fixed collection IDs for stable test references
 TEST_COLLECTIONS = [
     {
@@ -65,6 +97,8 @@ def seed_collections():
     """Upsert test collections and add products to them."""
     settings = get_settings(env_file)
     db = DatabaseAdapter(settings)
+
+    _ensure_seed_users(db)
 
     print("Creating test collections...\n")
 

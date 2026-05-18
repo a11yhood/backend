@@ -125,6 +125,19 @@ Creates a sample product with tags for testing.
 
 ---
 
+#### `seed_test_image.py`
+Creates a deterministic test image and links it to the seeded test product.
+
+```bash
+.venv/bin/python -c "import sys; sys.path.insert(0, '.'); from seed_scripts.seed_test_image import seed_image; seed_image()"
+```
+
+**Creates:**
+- Image row with canonical key: `seed:test-product:image:1`
+- Product link: updates `test-product` with `image_id` and `image_alt`
+
+---
+
 #### `seed_test_collections.py`
 Creates sample collections for testing collection features.
 

@@ -7,7 +7,8 @@ Runs all seed scripts in the correct order:
   3. seed_scraper_search_terms - Seeds scraper search terms
   4. seed_test_users         - Creates test users
   5. seed_test_product       - Creates test product
-  6. seed_test_collections   - Creates test collections
+    6. seed_test_image         - Creates and links a seeded test image
+    7. seed_test_collections   - Creates test collections
 
 Run with: uv run python seed_scripts/seed_all.py
 """
@@ -74,6 +75,7 @@ def main():
         ("seed_scraper_search_terms", "seed_scraper_search_terms", "main"),
         ("seed_test_users", "seed_test_users", "seed_users"),
         ("seed_test_product", "seed_test_product", "seed_product"),
+        ("seed_test_image", "seed_test_image", "seed_image"),
         ("seed_test_collections", "seed_test_collections", "seed_collections"),
     ]
 

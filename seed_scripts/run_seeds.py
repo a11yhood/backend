@@ -51,6 +51,7 @@ SEED_SCRIPTS = {
     "scraper_search_terms": ("seed_scraper_search_terms", "main"),
     "test_users": ("seed_test_users", "seed_users"),
     "test_product": ("seed_test_product", "seed_product"),
+    "test_image": ("seed_test_image", "seed_image"),
     "test_collections": ("seed_test_collections", "seed_collections"),
 }
 
@@ -61,6 +62,7 @@ DEFAULT_SEEDS = [
     "scraper_search_terms",
     "test_users",
     "test_product",
+    "test_image",
     "test_collections",
 ]
 
