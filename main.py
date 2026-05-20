@@ -61,6 +61,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 logger = logging.getLogger(__name__)
 
 
+def _should_run_scheduler() -> bool:
+    """Return whether background scheduler should run in this process.
+
+    Vercel serverless functions are ephemeral and not suitable for persistent
+    background jobs. Allow explicit override via ENABLE_SCHEDULER=true.
+    """
+    if os.getenv("ENABLE_SCHEDULER", "").lower() in {"1", "true", "yes"}:
+        return True
+    return os.getenv("VERCEL") != "1"
+
+
 @app.on_event("startup")
 async def validate_security_configuration():
     """Validate critical security settings on startup.
@@ -159,8 +170,8 @@ async def validate_security_configuration():
         f"  - CORS origins: {len(get_cors_origins())} configured\n"
     )
 
-    # Initialize scheduled scrapers (if not in test mode)
-    if not local_settings.TEST_MODE:
+    # Initialize scheduled scrapers only in long-running process environments.
+    if not local_settings.TEST_MODE and _should_run_scheduler():
         try:
             scheduler_service = get_scheduled_scraper_service()
             db = get_db()
@@ -171,12 +182,15 @@ async def validate_security_configuration():
             logger.error(f"Failed to initialize scheduled scrapers: {e}")
             # Don't fail startup if scheduler fails, just log the error
     else:
-        logger.info("Scheduled scrapers disabled in TEST_MODE")
+        logger.info("Scheduled scrapers disabled for this environment")
 
 
 @app.on_event("shutdown")
 async def shutdown_scheduled_scrapers():
     """Stop scheduled scrapers on shutdown"""
+    if not _should_run_scheduler():
+        return
+
     try:
         scheduler_service = get_scheduled_scraper_service()
         scheduler_service.stop()
