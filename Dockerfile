@@ -24,8 +24,10 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
-# Copy application code
-COPY --chown=appuser:appuser . .
+# Copy application code.
+# In rootless Docker, avoid chown operations as they can fail on UID mapping.
+# The app runs as appuser (UID 1000) which can read files copied here.
+COPY . .
 
 USER appuser
 
