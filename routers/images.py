@@ -72,7 +72,6 @@ def _validate_image_decoding(image_bytes: bytes, declared_mime: str) -> tuple[in
     try:
         from PIL import Image, UnidentifiedImageError
     except ImportError as exc:  # pragma: no cover
-        logger.exception("Pillow import failed during image decode validation: %s", exc)
         raise HTTPException(
             status_code=500,
             detail="Server-side image processing is unavailable (Pillow not installed).",
@@ -140,7 +139,6 @@ def _apply_crop(
     try:
         from PIL import Image
     except ImportError as exc:  # pragma: no cover
-        logger.exception("Pillow import failed during crop operation: %s", exc)
         raise HTTPException(
             status_code=500,
             detail="Server-side image processing is unavailable (Pillow not installed).",
