@@ -220,8 +220,15 @@ if not any(isinstance(m, type) and issubclass(m, type) and
         CORSMiddleware,
         allow_origins=cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allow_headers=["*"],
+        allow_methods=["POST", "OPTIONS", "GET", "PUT", "DELETE", "PATCH"],
+        allow_headers=[
+            "authorization",
+            "content-type",
+            "accept",
+            "origin",
+            "x-requested-with",
+        ],
+        max_age=86400,
     )
 
 # Security headers middleware

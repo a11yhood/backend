@@ -69,6 +69,7 @@ jobs:
           pixi run pytest -m unit -q
 
       - name: Create CI test env file
+        if: github.actor != 'dependabot[bot]'
         env:
           CI_SUPABASE_URL_TEST: ${{ secrets.SUPABASE_URL_TEST }}
           CI_SUPABASE_KEY_TEST: ${{ secrets.SUPABASE_KEY_TEST }}
@@ -90,4 +91,5 @@ jobs:
           } > .env.test
 
       - name: Run integration smoke tests
+        if: github.actor != 'dependabot[bot]'
         run: pixi run pytest tests/test_main.py tests/test_auth_fixture_determinism.py tests/test_timestamp_serialization.py -q
