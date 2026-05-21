@@ -205,27 +205,10 @@ def get_cors_origins():
     Dev uses Vite proxy, so only HTTPS localhost needs direct CORS access.
     Production must explicitly set FRONTEND_URL and PRODUCTION_URL.
     """
+    # Use only CORS_ORIGINS (comma-separated)
     origins = set()
-
-    # Add configured frontend URLs
-    if settings.FRONTEND_URL:
-        origins.add(settings.FRONTEND_URL)
-    if settings.PRODUCTION_URL:
-        origins.add(settings.PRODUCTION_URL)
-
-    # Dev mode: Allow HTTPS localhost (Vite dev server uses proxy for API calls)
-    # HTTP variants not needed - Vite proxy handles the HTTPS->HTTP translation
-    if settings.TEST_MODE:
-        origins.update({
-            "https://localhost:5173",
-            "https://127.0.0.1:5173",
-        })
-
-    # Support additional origins via env var (comma-separated)
-    extra = os.getenv("CORS_EXTRA_ORIGINS", "")
-    if extra:
-        origins.update(o.strip() for o in extra.split(",") if o.strip())
-
+    if settings.CORS_ORIGINS:
+        origins.update(o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip())
     return list(origins)
 
 # ============================================================================

@@ -30,11 +30,8 @@ class Settings(BaseSettings):
     SUPABASE_POSTGREST_TIMEOUT: int = 180
 
     # CORS - strict allowlist for security
-    # Dev: Uses Vite proxy (https://localhost:5173 -> http://localhost:8000)
-    # Prod: Set to actual frontend domain (e.g., https://a11yhood.com)
-    FRONTEND_URL: str = "https://localhost:4173"
-    PRODUCTION_URL: str = ""
-    CORS_EXTRA_ORIGINS: str = ""  # Comma-separated additional origins
+    # Set CORS_ORIGINS to a comma-separated list of allowed 
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS")
     ALLOWED_HOSTS: str = ""  # Comma-separated host allowlist for TrustedHostMiddleware
 
     # Environment mode (development, staging, production)
