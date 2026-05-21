@@ -61,6 +61,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 logger = logging.getLogger(__name__)
 
 
+def _should_run_scheduler() -> bool:
+    """Return whether background scheduler should run in this process.
+
+    Vercel serverless functions are ephemeral and not suitable for persistent
+    background jobs. Allow explicit override via ENABLE_SCHEDULER=true.
+    """
+    if os.getenv("ENABLE_SCHEDULER", "").lower() in {"1", "true", "yes"}:
+        return True
+    return os.getenv("VERCEL") != "1"
+
+
 @app.on_event("startup")
 async def validate_security_configuration():
     """Validate critical security settings on startup.
@@ -159,8 +170,8 @@ async def validate_security_configuration():
         f"  - CORS origins: {len(get_cors_origins())} configured\n"
     )
 
-    # Initialize scheduled scrapers (if not in test mode)
-    if not local_settings.TEST_MODE:
+    # Initialize scheduled scrapers only in long-running process environments.
+    if not local_settings.TEST_MODE and _should_run_scheduler():
         try:
             scheduler_service = get_scheduled_scraper_service()
             db = get_db()
@@ -171,12 +182,15 @@ async def validate_security_configuration():
             logger.error(f"Failed to initialize scheduled scrapers: {e}")
             # Don't fail startup if scheduler fails, just log the error
     else:
-        logger.info("Scheduled scrapers disabled in TEST_MODE")
+        logger.info("Scheduled scrapers disabled for this environment")
 
 
 @app.on_event("shutdown")
 async def shutdown_scheduled_scrapers():
     """Stop scheduled scrapers on shutdown"""
+    if not _should_run_scheduler():
+        return
+
     try:
         scheduler_service = get_scheduled_scraper_service()
         scheduler_service.stop()
@@ -345,14 +359,30 @@ async def handle_request_validation_error(request: Request, exc: RequestValidati
 allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "testserver"]
 # Keep TestClient stable even when shell env vars temporarily override TEST_MODE.
 
+
+def _extract_host(raw_value: str) -> str:
+    """Normalize configured host values for TrustedHostMiddleware."""
+    value = raw_value.strip()
+    if not value:
+        return ""
+    return value.replace("https://", "").replace("http://", "").split("/")[0]
+
 if settings.PRODUCTION_URL:
-    host = settings.PRODUCTION_URL.replace("https://", "").replace("http://", "").split("/")[0]
+    host = _extract_host(settings.PRODUCTION_URL)
     if host:
         allowed_hosts.append(host)
 if settings.FRONTEND_URL:
-    host = settings.FRONTEND_URL.replace("https://", "").replace("http://", "").split("/")[0]
+    host = _extract_host(settings.FRONTEND_URL)
     if host and host not in allowed_hosts:
         allowed_hosts.append(host)
+
+# Optional explicit allowlist from environment/config.
+# Example: ALLOWED_HOSTS=api.example.com,staging.example.com,*.vercel.app
+if settings.ALLOWED_HOSTS:
+    for raw_host in settings.ALLOWED_HOSTS.split(","):
+        host = _extract_host(raw_host)
+        if host and host not in allowed_hosts:
+            allowed_hosts.append(host)
 
 app.add_middleware(
     TrustedHostMiddleware,

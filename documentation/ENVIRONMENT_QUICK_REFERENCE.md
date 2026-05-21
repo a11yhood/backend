@@ -171,6 +171,7 @@ kill $(lsof -t -i:8000)  # Backend
 | `TEST_MODE` | `true` | `false` |
 | `SECRET_KEY` | Dev default | **Generate new!** |
 | `GITHUB_CLIENT_ID` | (optional for test) | Required for auth |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1,testserver` | `api.yourdomain.com,*.vercel.app` |
 
 
 ## Troubleshooting

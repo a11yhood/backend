@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "https://localhost:4173"
     PRODUCTION_URL: str = ""
     CORS_EXTRA_ORIGINS: str = ""  # Comma-separated additional origins
+    ALLOWED_HOSTS: str = ""  # Comma-separated host allowlist for TrustedHostMiddleware
 
     # Environment mode (development, staging, production)
     ENVIRONMENT: str | None = None  # 'production', 'staging', 'development'
