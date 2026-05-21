@@ -89,18 +89,12 @@ async def validate_security_configuration():
     cors_origins = get_cors_origins()
     logger.info(f"CORS origins configured: {cors_origins}")
 
-    # Detect production environment by checking for production indicators
-    # We only consider it "production" if PRODUCTION_URL is configured.
-    is_production = any([
-        # Production domain in CORS
-        local_settings.PRODUCTION_URL and
-        "localhost" not in local_settings.PRODUCTION_URL and
-        local_settings.PRODUCTION_URL.strip(),
 
-        # Explicit production environment variable
-        os.getenv("ENVIRONMENT") == "production",
-        os.getenv("ENV") == "production",
-    ])
+    # Detect production environment from explicit environment flags.
+    is_production = (
+        os.getenv("ENVIRONMENT", "").strip().lower() == "production"
+        or os.getenv("ENV", "").strip().lower() == "production"
+    )
 
     # CRITICAL: Prevent TEST_MODE in production
     if local_settings.TEST_MODE and is_production:
@@ -115,7 +109,7 @@ async def validate_security_configuration():
             "\n"
             "Production detected due to:\n"
             f"  - SUPABASE_URL: {local_settings.SUPABASE_URL}\n"
-            f"  - PRODUCTION_URL: {local_settings.PRODUCTION_URL}\n"
+            f"  - CORS_ORIGINS: {cors_origins}\n"
         )
 
     # CRITICAL: Validate SECRET_KEY in production
@@ -203,29 +197,12 @@ def get_cors_origins():
 
     Security: Never use wildcard origins with credentials.
     Dev uses Vite proxy, so only HTTPS localhost needs direct CORS access.
-    Production must explicitly set FRONTEND_URL and PRODUCTION_URL.
+    Production must explicitly set CORS_ORIGINS.
     """
+    # Use only CORS_ORIGINS (comma-separated)
     origins = set()
-
-    # Add configured frontend URLs
-    if settings.FRONTEND_URL:
-        origins.add(settings.FRONTEND_URL)
-    if settings.PRODUCTION_URL:
-        origins.add(settings.PRODUCTION_URL)
-
-    # Dev mode: Allow HTTPS localhost (Vite dev server uses proxy for API calls)
-    # HTTP variants not needed - Vite proxy handles the HTTPS->HTTP translation
-    if settings.TEST_MODE:
-        origins.update({
-            "https://localhost:5173",
-            "https://127.0.0.1:5173",
-        })
-
-    # Support additional origins via env var (comma-separated)
-    extra = os.getenv("CORS_EXTRA_ORIGINS", "")
-    if extra:
-        origins.update(o.strip() for o in extra.split(",") if o.strip())
-
+    if settings.CORS_ORIGINS:
+        origins.update(o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip())
     return list(origins)
 
 # ============================================================================
@@ -367,14 +344,12 @@ def _extract_host(raw_value: str) -> str:
         return ""
     return value.replace("https://", "").replace("http://", "").split("/")[0]
 
-if settings.PRODUCTION_URL:
-    host = _extract_host(settings.PRODUCTION_URL)
-    if host:
-        allowed_hosts.append(host)
-if settings.FRONTEND_URL:
-    host = _extract_host(settings.FRONTEND_URL)
-    if host and host not in allowed_hosts:
-        allowed_hosts.append(host)
+# Add hosts derived from CORS origins.
+if settings.CORS_ORIGINS:
+    for raw_origin in settings.CORS_ORIGINS.split(","):
+        host = _extract_host(raw_origin)
+        if host and host not in allowed_hosts:
+            allowed_hosts.append(host)
 
 # Optional explicit allowlist from environment/config.
 # Example: ALLOWED_HOSTS=api.example.com,staging.example.com,*.vercel.app
@@ -420,10 +395,6 @@ async def health_check():
         current_settings.SUPABASE_URL and
         "supabase.co" in current_settings.SUPABASE_URL and
         "dummy" not in current_settings.SUPABASE_URL,
-
-        current_settings.PRODUCTION_URL and
-        "localhost" not in current_settings.PRODUCTION_URL and
-        current_settings.PRODUCTION_URL.strip(),
 
         os.getenv("ENVIRONMENT") == "production",
         os.getenv("ENV") == "production",

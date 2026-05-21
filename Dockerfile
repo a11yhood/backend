@@ -9,20 +9,24 @@ FROM python:3.13-slim
 # Set working directory
 WORKDIR /app
 
-# Install build dependencies needed for C extensions (e.g. pyroaring)
+# Install build dependencies needed for C extensions (e.g. pyroaring) and curl for uv installer
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc python3-dev && \
+    apt-get install -y --no-install-recommends gcc python3-dev curl && \
     rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
 
 # Create non-root user early so COPY can set ownership directly
 RUN groupadd -g 1000 appuser \
     && useradd -m -u 1000 -g appuser appuser
 
-# Copy requirements first for layer caching
-COPY requirements.txt .
+# Copy dependency files first for layer caching
+COPY pyproject.toml uv.lock .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
+# Install Python dependencies from lockfile
+RUN uv sync --frozen --no-dev
 
 # Copy application code.
 # In rootless Docker, avoid chown operations as they can fail on UID mapping.
@@ -36,7 +40,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
+    CMD uv run python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
 
 # Default command (overridden in development by start-dev.sh)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
