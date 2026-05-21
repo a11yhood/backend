@@ -40,13 +40,13 @@ def test_test_mode_rejected_in_production_with_supabase(monkeypatch):
         asyncio.run(validate_security_configuration())
 
 
-def test_test_mode_rejected_in_production_with_production_url(monkeypatch):
-    """TEST_MODE should be rejected when PRODUCTION_URL is set"""
+def test_test_mode_rejected_in_production_with_environment_flag(monkeypatch):
+    """TEST_MODE should be rejected when explicit production environment is set."""
     _set_env(
         monkeypatch,
         {
             "TEST_MODE": "true",
-            "PRODUCTION_URL": "https://a11yhood.com",
+            "ENVIRONMENT": "production",
         },
     )
     from importlib import reload

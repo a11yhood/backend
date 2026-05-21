@@ -344,14 +344,12 @@ def _extract_host(raw_value: str) -> str:
         return ""
     return value.replace("https://", "").replace("http://", "").split("/")[0]
 
-if settings.PRODUCTION_URL:
-    host = _extract_host(settings.PRODUCTION_URL)
-    if host:
-        allowed_hosts.append(host)
-if settings.FRONTEND_URL:
-    host = _extract_host(settings.FRONTEND_URL)
-    if host and host not in allowed_hosts:
-        allowed_hosts.append(host)
+# Add hosts derived from CORS origins.
+if settings.CORS_ORIGINS:
+    for raw_origin in settings.CORS_ORIGINS.split(","):
+        host = _extract_host(raw_origin)
+        if host and host not in allowed_hosts:
+            allowed_hosts.append(host)
 
 # Optional explicit allowlist from environment/config.
 # Example: ALLOWED_HOSTS=api.example.com,staging.example.com,*.vercel.app
