@@ -116,6 +116,7 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
   - Running migrations before seeding
 - **Notes**: 
   - Requires `psql` on your PATH
+  - DB URL lookup order is env file first (`SUPABASE_DB_URL`, `DATABASE_URL`, `TEST_DATABASE_URL`), then shell-variable fallback
   - Tracks applied migrations in `public.schema_migrations` table
   - Skips already-applied migrations automatically
 
@@ -124,7 +125,7 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
 - **Environment**: `.env`
 - **Use when**: Setting up or updating production Supabase schema
 - **⚠️ Warning**: Directly modifies production database—ensure backups exist!
-- **Notes**: Same as `apply-migrations` but reads credentials from `.env`
+- **Notes**: Same as `apply-migrations` but reads credentials from `.env` first, with shell-variable fallback
 
 #### `pixi run seed`
 - **Purpose**: Run development seed scripts
