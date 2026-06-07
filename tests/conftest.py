@@ -273,7 +273,7 @@ def _table_row_count(db, table_name: str) -> int:
             return resp.count or 0
         except Exception as exc:
             if attempt == 3:
-                break
+                raise RuntimeError("Test DB reset failed while counting table rows") from exc
             logger.warning(
                 "Transient table count failure for '%s' (attempt %d/3): %s",
                 table_name,
@@ -281,10 +281,6 @@ def _table_row_count(db, table_name: str) -> int:
                 exc,
             )
             time.sleep(0.25 * attempt)
-
-    if last_exc is not None:
-        raise last_exc
-    raise RuntimeError("Test DB reset failed without a captured exception")
 
 
 def _reset_and_assert_clean(db):
@@ -317,7 +313,6 @@ def _reset_and_assert_clean(db):
         "scraper_search_terms",
     }
 
-    last_exc: Exception | None = None
     for attempt in range(1, 3):
         try:
             db.cleanup()
@@ -339,15 +334,10 @@ def _reset_and_assert_clean(db):
                 )
             return
         except Exception as exc:
-            last_exc = exc
             if attempt == 2:
-                break
+                raise RuntimeError("Test DB reset failed after retries") from exc
             logger.warning("Retrying test DB reset after transient failure (attempt %d/2): %s", attempt, exc)
             time.sleep(0.5)
-
-    if last_exc is not None:
-        raise last_exc
-    raise RuntimeError("Test DB reset failed without a captured exception.")
 
 
 def _assert_seed_baseline(db):
@@ -396,7 +386,6 @@ def _assert_seed_baseline(db):
 @pytest.fixture
 def clean_database(test_db):
     """Provide a freshly cleaned and re-seeded database for each test."""
-    last_exc: Exception | None = None
     for attempt in range(1, 4):
         try:
             _reset_and_assert_clean(test_db)
@@ -404,7 +393,6 @@ def clean_database(test_db):
             _assert_seed_baseline(test_db)
             break
         except Exception as exc:
-            last_exc = exc
             if attempt == 3:
                 raise
             logger.warning(
