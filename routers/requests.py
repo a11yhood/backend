@@ -349,43 +349,32 @@ def _grant_permission(db, request_data: dict, reviewer_id: str | None = None):
     request_type = request_data["type"]
 
     if request_type == "product-ownership":
-        # Add user as product manager. Keep idempotent for repeated approvals.
-        existing = (
-            db.table("product_editors")
-            .select("product_id")
-            .eq("product_id", request_data["product_id"])
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        if not existing.data:
-            owner_data = {
-                "product_id": request_data["product_id"],
-                "user_id": user_id,
-                "created_at": datetime.now(UTC).isoformat(),
-            }
-            db.table("product_editors").insert(owner_data).execute()
+        # Atomic and idempotent: safe under concurrent approvals.
+        owner_data = {
+            "product_id": request_data["product_id"],
+            "user_id": user_id,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        db.table("product_editors").upsert(
+            owner_data,
+            on_conflict="product_id,user_id",
+        ).execute()
 
     elif request_type == "collection-ownership":
         collection_id = request_data.get("collection_id")
         if not collection_id:
             return
 
-        existing = (
-            db.table("collection_editors")
-            .select("collection_id")
-            .eq("collection_id", collection_id)
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        if not existing.data:
-            owner_data = {
-                "collection_id": collection_id,
-                "user_id": user_id,
-                "created_at": datetime.now(UTC).isoformat(),
-            }
-            db.table("collection_editors").insert(owner_data).execute()
+        # Atomic and idempotent: safe under concurrent approvals.
+        owner_data = {
+            "collection_id": collection_id,
+            "user_id": user_id,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        db.table("collection_editors").upsert(
+            owner_data,
+            on_conflict="collection_id,user_id",
+        ).execute()
 
     elif request_type in ["moderator", "admin"]:
         # Prefer the admin_update_user_role RPC to satisfy DB trigger/policy checks.
