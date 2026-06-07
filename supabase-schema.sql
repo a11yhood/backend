@@ -365,7 +365,6 @@
   CREATE INDEX idx_collection_products_collection_id ON collection_products(collection_id);
   CREATE INDEX idx_collection_products_product_id ON collection_products(product_id);
   CREATE INDEX idx_collection_products_position ON collection_products(collection_id, position);
-  CREATE INDEX idx_collection_editors_collection_user ON collection_editors(collection_id, user_id);
 
   -- ============================================================================
   -- USER ACTIVITIES TABLE
