@@ -416,8 +416,7 @@ def clean_database(test_db):
             )
             time.sleep(0.4 * attempt)
 
-    if last_exc is not None and attempt == 3:
-        raise last_exc
+    # Final-attempt failures already raise inside the loop above; do not re-raise after a successful retry.
     yield test_db
 
 
