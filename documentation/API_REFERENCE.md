@@ -1030,7 +1030,6 @@ Collection responses use snake_case field names:
   "user_id": "49366adb-2d13-412f-9ae5-4c35dbffab10",
   "user_name": "johndoe",
   "editor_ids": [
-    "49366adb-2d13-412f-9ae5-4c35dbffab10",
     "90ea5cc1-e58c-4c3a-a938-8d9ad7d1bb47"
   ],
   "product_ids": [
@@ -1089,7 +1088,7 @@ POST /api/collections
 }
 ```
 
-Creator is automatically added to `editor_ids`.
+The owner is tracked in `user_id` and is not duplicated in `editor_ids`.
 
 ### Create Collection From Search
 
@@ -1178,7 +1177,7 @@ DELETE /api/collections/{collection_slug}/products
 GET /api/collections/{collection_slug}/editors
 ```
 
-For private collections, requires owner/editor access.
+For private collections, requires owner or editor access.
 
 **Response:**
 ```json

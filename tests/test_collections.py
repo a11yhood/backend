@@ -30,7 +30,7 @@ class TestCreateCollection:
         assert data["description"] == "Products I love"
         assert data["is_public"] is True
         assert data["user_id"] == test_user["id"]
-        assert test_user["id"] in data["editor_ids"]
+        assert data["editor_ids"] == []
         assert data["product_ids"] == []
         assert "id" in data
         assert "created_at" in data
@@ -112,10 +112,10 @@ class TestCreateCollection:
         assert response.status_code == 201
         assert response.json()["is_public"] is False
 
-    def test_create_collection_adds_creator_as_editor(
+    def test_create_collection_does_not_add_creator_as_editor(
         self, client, test_user, auth_headers, sqlite_db
     ):
-        """Creator should be added to collection_editors when collection is created."""
+        """Owner identity should not be duplicated in collection_editors."""
         response = client.post(
             "/api/collections",
             headers=auth_headers(test_user),
@@ -130,8 +130,7 @@ class TestCreateCollection:
             .eq("collection_id", collection_id)
             .execute()
         )
-        assert editors.data
-        assert any(row["user_id"] == test_user["id"] for row in editors.data)
+        assert not any(row["user_id"] == test_user["id"] for row in (editors.data or []))
 
 
 class TestGetUserCollections:
@@ -154,7 +153,7 @@ class TestGetUserCollections:
         assert isinstance(data, list)
         assert len(data) >= 1
         assert any(c["id"] == collection_id for c in data)
-        assert any(test_user["id"] in c["editor_ids"] for c in data if c["id"] == collection_id)
+        assert all(test_user["id"] not in c["editor_ids"] for c in data if c["id"] == collection_id)
 
     def test_get_user_collections_only_own(self, client, test_user, test_user_2, auth_headers):
         """Test that user only sees their own collections"""
@@ -272,7 +271,7 @@ class TestGetCollectionDetails:
         data = response.json()
         assert data["name"] == "Public Collection"
         assert data["description"] == "A public collection"
-        assert test_user["id"] in data["editor_ids"]
+        assert test_user["id"] not in data["editor_ids"]
 
     def test_get_collection_details_private_owner(self, client, test_user, auth_headers):
         """Test owner can get their private collection"""
@@ -498,7 +497,18 @@ class TestCollectionEditors:
         assert response.status_code == 200
         data = response.json()
         assert data["collection_id"] == collection["id"]
-        assert test_user["id"] in data["editor_ids"]
+        assert test_user["id"] not in data["editor_ids"]
+
+    def test_owner_cannot_be_added_as_editor(self, client, test_user, auth_headers):
+        collection = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "No Owner Editor"}
+        ).json()
+
+        response = client.post(
+            f"/api/collections/{collection['id']}/editors/{test_user['id']}",
+            headers=auth_headers(test_user),
+        )
+        assert response.status_code == 400
 
     def test_owner_can_add_and_remove_editor(
         self, client, test_user, test_user_2, auth_headers

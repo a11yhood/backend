@@ -1,8 +1,9 @@
 """Collection management endpoints.
 
 Supports user-curated product collections with public/private visibility.
-All mutations require authentication and enforce ownership checks.
-Security: Users can only modify their own collections unless admin.
+All mutations require authentication and enforce owner/editor checks.
+Security: Owners and assigned editors can modify collections; admins and moderators
+can manage collection editor assignments.
 """
 
 import logging
@@ -54,6 +55,7 @@ def _is_collection_editor(db, collection_id: str, user_id: str | None) -> bool:
 
 
 def _can_edit_collection(db, collection: dict, current_user: dict | None) -> bool:
+    """True when user is the collection owner or an assigned editor."""
     if not collection or not current_user:
         return False
     user_id = current_user.get("id")
@@ -63,6 +65,7 @@ def _can_edit_collection(db, collection: dict, current_user: dict | None) -> boo
 
 
 def _can_manage_collection_editors(collection: dict, current_user: dict | None) -> bool:
+    """True when user can add/remove editors: owner, admin, or moderator."""
     if not collection or not current_user:
         return False
     if collection.get("user_id") == current_user.get("id"):
@@ -70,28 +73,13 @@ def _can_manage_collection_editors(collection: dict, current_user: dict | None) 
     return current_user.get("role") in {"admin", "moderator"}
 
 
-def _ensure_collection_editor_or_rollback(db, collection_id: str, user_id: str) -> None:
-    try:
-        db.table("collection_editors").upsert(
-            {"collection_id": collection_id, "user_id": user_id},
-            on_conflict="collection_id,user_id",
-        ).execute()
-    except Exception as exc:
-        logger.error(
-            "failed to initialize collection editor row for collection_id=%s user_id=%s: %s",
-            collection_id,
-            user_id,
-            exc,
-        )
-        try:
-            db.table("collections").delete().eq("id", collection_id).execute()
-        except Exception as rollback_exc:
-            logger.warning(
-                "rollback delete failed for collection_id=%s after editor init failure: %s",
-                collection_id,
-                rollback_exc,
-            )
-        raise HTTPException(status_code=500, detail="Failed to initialize collection editors")
+def _extract_non_owner_editor_ids(editor_rows: list[dict], owner_user_id: str | None) -> list[str]:
+    """Return editor user IDs excluding the owner, who is represented by `user_id`."""
+    return [
+        row["user_id"]
+        for row in editor_rows
+        if row.get("user_id") and row.get("user_id") != owner_user_id
+    ]
 
 
 @router.post("", response_model=CollectionResponse, status_code=201)
@@ -138,8 +126,7 @@ async def create_collection(
         raise HTTPException(status_code=400, detail="Failed to create collection")
 
     created_collection = response.data[0]
-    _ensure_collection_editor_or_rollback(db, created_collection["id"], user_id)
-    created_collection["editor_ids"] = [user_id]
+    created_collection["editor_ids"] = []
     created_collection["product_ids"] = []
     created_collection["product_slugs"] = []
     return created_collection
@@ -302,8 +289,6 @@ async def create_collection_from_search(
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to create collection")
 
-    _ensure_collection_editor_or_rollback(db, collection_id, collection["user_id"])
-
     # Insert products into junction table
     if product_ids:
         junction_records = [
@@ -442,7 +427,9 @@ def _populate_collection_relationships(db, collection: dict) -> dict:
     editors_resp = (
         db.table("collection_editors").select("user_id").eq("collection_id", collection_id).execute()
     )
-    collection["editor_ids"] = [row["user_id"] for row in (editors_resp.data or [])]
+    collection["editor_ids"] = _extract_non_owner_editor_ids(
+        editors_resp.data or [], collection.get("user_id")
+    )
 
     # Get product IDs from junction table, ordered by position
     junction_resp = (
@@ -554,7 +541,7 @@ async def get_collection(
 ):
     """Get collection details by slug.
 
-    Public collections viewable by all; private collections only by owner.
+    Public collections are viewable by all; private collections require owner or editor access.
     """
     collection = _get_collection_by_slug_or_id(db, collection_slug)
 
@@ -574,7 +561,7 @@ async def update_collection(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Update collection by slug - only owner can edit."""
+    """Update collection by slug. Allowed for owner or assigned editor."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -641,7 +628,9 @@ async def get_collection_editors(
     )
     return {
         "collection_id": collection["id"],
-        "editor_ids": [row["user_id"] for row in (editors_resp.data or [])],
+        "editor_ids": _extract_non_owner_editor_ids(
+            editors_resp.data or [], collection.get("user_id")
+        ),
     }
 
 
@@ -663,7 +652,9 @@ async def add_collection_editor(
 
     collection = _get_collection_by_slug_or_id(db, collection_slug)
     if not _can_manage_collection_editors(collection, current_user):
-        raise HTTPException(status_code=403, detail="Only owners and admins can manage editors")
+        raise HTTPException(status_code=403, detail="Only owners, moderators, and admins can manage editors")
+    if editor_user_id == collection.get("user_id"):
+        raise HTTPException(status_code=400, detail="Collection owner is not an editor")
 
     user_resp = db.table("users").select("id").eq("id", editor_user_id).limit(1).execute()
     if not user_resp.data:
@@ -695,7 +686,7 @@ async def remove_collection_editor(
 
     collection = _get_collection_by_slug_or_id(db, collection_slug)
     if not _can_manage_collection_editors(collection, current_user):
-        raise HTTPException(status_code=403, detail="Only owners and admins can manage editors")
+        raise HTTPException(status_code=403, detail="Only owners, admins, or moderators can manage editors")
 
     if editor_user_id == collection.get("user_id"):
         raise HTTPException(status_code=400, detail="Cannot remove the collection owner")
@@ -714,7 +705,7 @@ async def delete_collection(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Delete collection by slug - only owner can delete."""
+    """Delete collection by slug - owner or editor can delete."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     collection = _get_collection_by_slug_or_id(db, collection_slug)
