@@ -1225,6 +1225,15 @@ Returns updated collection object.
 - **Compatibility alias:** `message` (accepted on create; mirrored from `reason` in responses)
 - Clients should migrate to `reason` and treat `message` as deprecated compatibility only.
 
+### Collection Ownership Request Semantics
+
+- Keep `type=collection-ownership` as the request type, but treat it as a **collaborator/editor access request**.
+- Approval grants editor access by adding the requester to `collection_editors` / `editor_ids`.
+- Approval **does not** transfer literal collection ownership and does not change `collections.user_id`.
+- Review uses the existing requests workflow/queue via `PATCH /api/requests/{request_id}`.
+- Reviewers for `collection-ownership`: collection owner, admin, or moderator.
+- Duplicate pending `collection-ownership` requests for the same `(user_id, collection_id)` are rejected.
+
 ### Request Object
 
 ```json
@@ -1273,7 +1282,7 @@ POST /api/requests/
 - `admin`
 - `product-ownership` (requires `product_id`)
 - `source-domain` (requires domain info in `reason`)
-- `collection-ownership` (requires `collection_id`)
+- `collection-ownership` (requires `collection_id`; grants editor/collaborator access on approval)
 
 **Example (preferred):**
 ```json
@@ -1309,6 +1318,10 @@ PATCH /api/requests/{request_id}
 - Admin/Moderator can review all request types.
 - Collection owner can review `collection-ownership` requests for their own collection.
 - Only admin can approve `type=admin` role requests.
+
+**Approval effects (collection ownership requests):**
+- Approved `type=collection-ownership` requests add the requester to `collection_editors`.
+- Ownership does not change; `collections.user_id` remains the existing owner.
 
 ### Delete Request
 

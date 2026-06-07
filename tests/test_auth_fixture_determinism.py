@@ -2,7 +2,7 @@
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.functional
 
 
 def test_auth_client_resolves_seeded_regular_user(auth_client, test_user):

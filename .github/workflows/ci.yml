@@ -90,6 +90,6 @@ jobs:
             echo "SUPABASE_ANON_KEY=$CI_SUPABASE_ANON_KEY_TEST"
           } > .env.test
 
-      - name: Run integration smoke tests
+      - name: Run functional tests
         if: github.actor != 'dependabot[bot]'
-        run: pixi run pytest tests/test_main.py tests/test_auth_fixture_determinism.py tests/test_timestamp_serialization.py -q
+        run: pixi run test-functional -q

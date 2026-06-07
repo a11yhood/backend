@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.functional
 
 
 def _assert_full_iso_timestamp(value: str | None):

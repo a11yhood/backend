@@ -33,10 +33,11 @@ pixi run seed-list             # List available seed scripts
 ### Testing
 
 ```bash
-pixi run test            # Run unit tests, then non-unit tests
+pixi run test            # Run unit, functional, then integration tests
 pixi run test-unit       # Run unit-only tests
-pixi run test-integration # Run non-unit tests (DB-backed tests reset per test)
-pixi run test-fresh      # Reset test DB snapshot, then run both paths
+pixi run test-functional # Run functional smoke tests
+pixi run test-integration # Run integration tests (non-unit, non-functional)
+pixi run test-fresh      # Reset test DB snapshot, then run the full suite
 ```
 
 ### Direct Server (No Docker)
@@ -152,7 +153,7 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
 ### Testing
 
 #### `pixi run test`
-- **Purpose**: Run unit tests first, then non-unit tests
+- **Purpose**: Run unit tests first, then functional tests, then integration tests
 - **Environment**: `.env.test` (Supabase test project)
 - **Database**:
   - Unit phase avoids DB-backed fixtures entirely
@@ -162,9 +163,16 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
   - Running CI/CD locally before pushing
   - Development workflow
 - **Notes**: 
-  - Composes `pixi run test-unit` then `pixi run test-integration`
-  - Non-unit tests still require `SUPABASE_URL` and `SUPABASE_KEY` in `.env.test`
+  - Composes `pixi run test-unit`, then `pixi run test-functional`, then `pixi run test-integration`
+  - Functional and integration tests still require `SUPABASE_URL` and `SUPABASE_KEY` in `.env.test`
   - CI/CD should prefer this command for full validation
+
+#### `pixi run test-functional`
+- **Purpose**: Run the functional smoke tests that validate the app wiring end to end
+- **Environment**: `.env.test`
+- **Use when**:
+  - You want the small end-to-end sanity set
+  - Verifying app startup, auth fixture wiring, and timestamp serialization
 
 #### `pixi run test-unit`
 - **Purpose**: Run only tests marked `unit`
@@ -176,7 +184,7 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
   - Running in restricted CI/firewalled environments
 
 #### `pixi run test-integration`
-- **Purpose**: Run all tests not marked `unit`
+- **Purpose**: Run all tests marked `integration`
 - **Environment**: `.env.test`
 - **Database**: DB-backed fixtures reset and reseed per test via `clean_database`
 - **Use when**:
@@ -185,7 +193,7 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
   - Running the slower integration half of the suite
 
 #### `pixi run test-fresh`
-- **Purpose**: Restore the test DB snapshot, then run unit and non-unit tests
+- **Purpose**: Restore the test DB snapshot, then run unit, functional, and integration tests
 - **Environment**: `.env.test`
 - **Use when**:
 -  - You need a clean test baseline before a full run
