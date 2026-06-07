@@ -32,8 +32,7 @@ def _looks_like_uuid(value: str) -> bool:
     try:
         uuid.UUID(str(value))
         return True
-    except Exception as e:
-        logger.error(f"uuid error: {type(e).__name__}: {str(e)}")
+    except (ValueError, TypeError, AttributeError):
         return False
 
 
