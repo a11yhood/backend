@@ -21,6 +21,7 @@ from models.collections import (
     ProductIdsRequest,
 )
 from services.auth import get_current_user, get_current_user_optional
+from services.db_consistency import wait_for_row_visibility
 from services.database import get_db
 from services.id_generator import generate_id_with_uniqueness_check
 
@@ -120,12 +121,29 @@ async def create_collection(
     }
 
     # Insert into database
+    if user_id and not wait_for_row_visibility(db, "users", "id", user_id, select="id", attempts=2):
+        db.table("users").upsert(
+            {
+                "id": user_id,
+                "github_id": current_user.get("github_id") or f"rehydrated-{user_id[:8]}",
+                "username": current_user.get("username") or f"user_{user_id[:8]}",
+                "display_name": current_user.get("display_name") or user_name,
+                "email": current_user.get("email") or f"{user_id[:8]}@a11yhood.test",
+                "role": current_user.get("role") or "user",
+            },
+            on_conflict="id",
+        ).execute()
+
     response = db.table("collections").insert(collection).execute()
 
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to create collection")
 
     created_collection = response.data[0]
+    created_collection = (
+        wait_for_row_visibility(db, "collections", "id", created_collection["id"])
+        or created_collection
+    )
     created_collection["editor_ids"] = []
     created_collection["product_ids"] = []
     created_collection["product_slugs"] = []

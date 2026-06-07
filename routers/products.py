@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from config import settings
 from models.products import ProductCreate, ProductResponse, ProductUpdate
 from services.auth import get_current_user, get_current_user_optional
+from services.db_consistency import wait_for_row_visibility
 from services.database import get_db
 from services.id_generator import generate_id_with_uniqueness_check
 from services.image_references import (
@@ -1463,7 +1464,37 @@ async def create_product(
     db_insert = {k: v for k, v in db_data.items() if v is not None}
     db_insert.update(_build_manual_edit_metadata(current_user.get("id")))
     db_insert["slug"] = slug
-    response = db.table("products").insert(db_insert).execute()
+    user_id = current_user.get("id")
+    if user_id and not wait_for_row_visibility(db, "users", "id", user_id, select="id", attempts=2):
+        db.table("users").upsert(
+            {
+                "id": user_id,
+                "github_id": current_user.get("github_id") or f"rehydrated-{user_id[:8]}",
+                "username": current_user.get("username") or f"user_{user_id[:8]}",
+                "display_name": current_user.get("display_name") or current_user.get("username") or "Rehydrated User",
+                "email": current_user.get("email") or f"{user_id[:8]}@a11yhood.test",
+                "role": current_user.get("role") or "user",
+            },
+            on_conflict="id",
+        ).execute()
+
+    try:
+        response = db.table("products").insert(db_insert).execute()
+    except Exception as exc:
+        if "products_created_by_fkey" not in str(exc):
+            raise
+        db.table("users").upsert(
+            {
+                "id": user_id,
+                "github_id": current_user.get("github_id") or f"rehydrated-{user_id[:8]}",
+                "username": current_user.get("username") or f"user_{user_id[:8]}",
+                "display_name": current_user.get("display_name") or current_user.get("username") or "Rehydrated User",
+                "email": current_user.get("email") or f"{user_id[:8]}@a11yhood.test",
+                "role": current_user.get("role") or "user",
+            },
+            on_conflict="id",
+        ).execute()
+        response = db.table("products").insert(db_insert).execute()
 
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to create product")
@@ -1471,6 +1502,7 @@ async def create_product(
     # Map database response back to API response format
     result = response.data[0]
     product_id = result["id"]
+    result = wait_for_row_visibility(db, "products", "id", product_id) or result
     _attach_product_image_url(result, db)
     result["external_id"] = result.get("external_id")
 

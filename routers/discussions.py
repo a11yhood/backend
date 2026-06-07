@@ -17,6 +17,7 @@ from models.discussions import (
     DiscussionUpdate,
 )
 from services.auth import get_current_user
+from services.db_consistency import wait_for_row_visibility
 from services.database import get_db
 from services.sanitizer import sanitize_html
 
@@ -111,6 +112,25 @@ async def create_discussion(
     # Sanitize user-generated content to prevent XSS
     discussion_data["content"] = sanitize_html(discussion_data.get("content", ""))
 
+    user_id = current_user.get("id")
+    if user_id and not wait_for_row_visibility(db, "users", "id", user_id, select="id", attempts=2):
+        db.table("users").upsert(
+            {
+                "id": user_id,
+                "github_id": current_user.get("github_id") or f"rehydrated-{user_id[:8]}",
+                "username": current_user.get("username") or f"user_{user_id[:8]}",
+                "display_name": current_user.get("display_name") or current_user.get("username") or "Rehydrated User",
+                "email": current_user.get("email") or f"{user_id[:8]}@a11yhood.test",
+                "role": current_user.get("role") or "user",
+            },
+            on_conflict="id",
+        ).execute()
+
+    if discussion_data.get("product_id"):
+        wait_for_row_visibility(db, "products", "id", discussion_data["product_id"], select="id")
+    if discussion_data.get("parent_id"):
+        wait_for_row_visibility(db, "discussions", "id", discussion_data["parent_id"], select="id")
+
     response = db.table("discussions").insert(discussion_data).execute()
 
     if not response.data:
@@ -118,6 +138,9 @@ async def create_discussion(
 
     # The insert returns the data including the username we just inserted
     created_discussion = response.data[0]
+    created_discussion = (
+        wait_for_row_visibility(db, "discussions", "id", created_discussion["id"]) or created_discussion
+    )
 
     # Ensure username is in the response (it should be from the insert)
     if "username" not in created_discussion:

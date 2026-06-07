@@ -455,10 +455,6 @@ def _export_public_mode(db) -> tuple[list[str], list[str]]:
     sql_lines.extend(_export_products_public(db))
     exported_tables.append("products")
 
-    logger.info("  - product_urls")
-    sql_lines.extend(_export_product_urls_public(db))
-    exported_tables.append("product_urls")
-
     logger.info("  - product_tags")
     sql_lines.extend(_export_table_data_public(db, "product_tags"))
     exported_tables.append("product_tags")

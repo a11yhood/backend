@@ -133,9 +133,12 @@ if [[ -f "$SNAPSHOT_FILE" ]] && command -v psql >/dev/null 2>&1; then
   fi
 
   echo "Restoring test snapshot: ${SNAPSHOT_FILE}"
-  psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$SNAPSHOT_FILE" >/dev/null
-  echo "Reset complete via snapshot restore."
-  exit 0
+  if psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$SNAPSHOT_FILE" >/dev/null; then
+    echo "Reset complete via snapshot restore."
+    exit 0
+  fi
+
+  echo "Warning: snapshot restore failed; falling back to cleanup + seed." >&2
 fi
 
 echo "Snapshot not available; using cleanup + seed fallback."

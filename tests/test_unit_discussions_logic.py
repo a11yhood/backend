@@ -43,6 +43,9 @@ class _FakeDiscussionsTable:
             self._selected_parent_ids = set(values)
         return self
 
+    def limit(self, *_args, **_kwargs):
+        return self
+
     def insert(self, row):
         self.inserted = row
         return self
@@ -81,6 +84,8 @@ class _FakeDB:
         self._table = table
 
     def table(self, name: str):
+        if name in {"users", "products"}:
+            return _FakeDiscussionsTable(existing=[{"id": "u1"}, {"id": "p1"}])
         assert name == "discussions"
         return self._table
 
