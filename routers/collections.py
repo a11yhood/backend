@@ -439,38 +439,81 @@ def _get_collection_with_products(db, collection_id: str) -> dict:
 
 def _populate_collection_relationships(db, collection: dict) -> dict:
     """Attach editor and product relationship fields expected by the API response model."""
-    collection_id = collection["id"]
+    _populate_collection_relationships_bulk(db, [collection])
+    return collection
+
+
+def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list[dict]:
+    """Populate editor_ids, product_ids, and product_slugs for many collections in bulk."""
+    if not collections:
+        return collections
+
+    collection_ids = [c["id"] for c in collections if c.get("id")]
+    if not collection_ids:
+        return collections
+
+    owner_by_collection = {c["id"]: c.get("user_id") for c in collections if c.get("id")}
 
     editors_resp = (
-        db.table("collection_editors").select("user_id").eq("collection_id", collection_id).execute()
-    )
-    collection["editor_ids"] = _extract_non_owner_editor_ids(
-        editors_resp.data or [], collection.get("user_id")
-    )
-
-    # Get product IDs from junction table, ordered by position
-    junction_resp = (
-        db.table("collection_products")
-        .select("product_id")
-        .eq("collection_id", collection_id)
-        .order("position")
+        db.table("collection_editors")
+        .select("collection_id, user_id")
+        .in_("collection_id", collection_ids)
         .execute()
     )
-    product_ids = [p["product_id"] for p in (junction_resp.data or [])]
+    editors_by_collection: dict[str, list[dict]] = {}
+    for row in (editors_resp.data or []):
+        collection_id = row.get("collection_id")
+        if not collection_id:
+            continue
+        editors_by_collection.setdefault(collection_id, []).append(row)
 
-    # Get product slugs by querying products table with the IDs
-    product_slugs = []
-    if product_ids:
-        products_resp = db.table("products").select("id, slug").in_("id", product_ids).execute()
-        # Create a map of product_id -> slug for fast lookup
-        id_to_slug = {p["id"]: p["slug"] for p in (products_resp.data or [])}
-        # Build slugs list in the same order as product_ids
-        product_slugs = [id_to_slug.get(pid, None) for pid in product_ids]
+    junction_resp = (
+        db.table("collection_products")
+        .select("collection_id, product_id, position")
+        .in_("collection_id", collection_ids)
+        .execute()
+    )
+    product_rows_by_collection: dict[str, list[dict]] = {}
+    for row in (junction_resp.data or []):
+        collection_id = row.get("collection_id")
+        if not collection_id:
+            continue
+        product_rows_by_collection.setdefault(collection_id, []).append(row)
 
-    collection["product_ids"] = product_ids
-    collection["product_slugs"] = product_slugs
+    all_product_ids = {
+        row["product_id"]
+        for rows in product_rows_by_collection.values()
+        for row in rows
+        if row.get("product_id")
+    }
+    id_to_slug: dict[str, str] = {}
+    if all_product_ids:
+        products_resp = db.table("products").select("id, slug").in_("id", list(all_product_ids)).execute()
+        id_to_slug = {p["id"]: p["slug"] for p in (products_resp.data or []) if p.get("id")}
 
-    return collection
+    for collection in collections:
+        collection_id = collection.get("id")
+        if not collection_id:
+            collection["editor_ids"] = []
+            collection["product_ids"] = []
+            collection["product_slugs"] = []
+            continue
+
+        editor_rows = editors_by_collection.get(collection_id, [])
+        collection["editor_ids"] = _extract_non_owner_editor_ids(
+            editor_rows,
+            owner_by_collection.get(collection_id),
+        )
+
+        product_rows = sorted(
+            product_rows_by_collection.get(collection_id, []),
+            key=lambda row: (row.get("position") is None, row.get("position", 0)),
+        )
+        product_ids = [row["product_id"] for row in product_rows if row.get("product_id")]
+        collection["product_ids"] = product_ids
+        collection["product_slugs"] = [id_to_slug.get(pid, None) for pid in product_ids]
+
+    return collections
 
 
 def _get_collection_by_slug_or_id(db, slug_or_id: str) -> dict:
@@ -505,9 +548,8 @@ async def get_user_collections(
     )
     collections = response.data or []
 
-    # Populate product_ids and product_slugs for each collection
-    for collection in collections:
-        _populate_collection_relationships(db, collection)
+    # Populate relationship fields in bulk to avoid N+1 round-trips.
+    _populate_collection_relationships_bulk(db, collections)
 
     return collections
 
@@ -529,9 +571,8 @@ async def get_public_collections(
 
     collections = response.data or []
 
-    # Populate product_ids and product_slugs for each collection
-    for collection in collections:
-        _populate_collection_relationships(db, collection)
+    # Populate relationship fields in bulk to avoid N+1 round-trips.
+    _populate_collection_relationships_bulk(db, collections)
 
     # Filter by search if provided
     if search:
