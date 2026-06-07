@@ -267,13 +267,11 @@ def _table_row_count(db, table_name: str) -> int:
     Retries transient network/read-timeout failures to reduce flaky integration
     failures from occasional Supabase HTTP timeouts.
     """
-    last_exc: Exception | None = None
     for attempt in range(1, 4):
         try:
             resp = db.table(table_name).select("*", count="exact").limit(1).execute()
             return resp.count or 0
         except Exception as exc:
-            last_exc = exc
             if attempt == 3:
                 break
             logger.warning(
@@ -416,8 +414,7 @@ def clean_database(test_db):
             )
             time.sleep(0.4 * attempt)
 
-    if last_exc is not None and attempt == 3:
-        raise last_exc
+    # Final-attempt failures already raise inside the loop above; do not re-raise after a successful retry.
     yield test_db
 
 
