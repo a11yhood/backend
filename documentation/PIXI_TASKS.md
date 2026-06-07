@@ -184,7 +184,7 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
   - Running in restricted CI/firewalled environments
 
 #### `pixi run test-integration`
-- **Purpose**: Run all tests marked `integration`
+- **Purpose**: Run all tests not marked `unit` or `functional`
 - **Environment**: `.env.test`
 - **Database**: DB-backed fixtures reset and reseed per test via `clean_database`
 - **Use when**:
