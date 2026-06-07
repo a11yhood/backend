@@ -21,8 +21,7 @@ from models.collections import (
     ProductIdsRequest,
 )
 from services.auth import get_current_user, get_current_user_optional
-from services.db_consistency import wait_for_row_visibility
-from services.database import get_db
+from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])

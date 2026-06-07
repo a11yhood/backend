@@ -17,8 +17,7 @@ from models.discussions import (
     DiscussionUpdate,
 )
 from services.auth import get_current_user
-from services.db_consistency import wait_for_row_visibility
-from services.database import get_db
+from services.database import get_db, wait_for_row_visibility
 from services.sanitizer import sanitize_html
 
 router = APIRouter(prefix="/api/discussions", tags=["discussions"])

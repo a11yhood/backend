@@ -21,8 +21,7 @@ from fastapi.testclient import TestClient
 
 from main import app
 from services.auth import build_dev_user_token
-from services.db_consistency import wait_for_row_visibility
-from services.database import get_db
+from services.database import get_db, wait_for_row_visibility
 
 from .test_data import TEST_PRODUCTS, TEST_USERS
 

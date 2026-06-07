@@ -1,5 +1,5 @@
-from datetime import UTC, datetime
 import time
+from datetime import UTC, datetime
 
 import pytest
 

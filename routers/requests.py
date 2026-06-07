@@ -17,8 +17,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from config import get_settings
 from services.auth import get_current_user
-from services.db_consistency import wait_for_row_visibility
-from services.database import get_db
+from services.database import get_db, wait_for_row_visibility
 from services.sources import extract_domain
 from services.timestamps import ApiTimestamp, OptionalApiTimestamp
 

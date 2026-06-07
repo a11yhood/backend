@@ -3,12 +3,16 @@
 Uses Supabase for all environments; configure SUPABASE_URL/KEY in .env or .env.test.
 """
 
+import logging
+import time
+
 from fastapi import HTTPException
 
 from config import load_settings_from_env
 from database_adapter import DatabaseAdapter, set_supabase_auth_token
 
 db_adapter: DatabaseAdapter | None = None
+logger = logging.getLogger(__name__)
 
 
 def _get_db_adapter() -> DatabaseAdapter:
@@ -38,6 +42,56 @@ def get_db():
             return result.data
     """
     return _get_db_adapter()
+
+
+def wait_for_row_visibility(
+    db,
+    table_name: str,
+    column_name: str,
+    value,
+    *,
+    select: str = "*",
+    attempts: int = 5,
+    base_delay: float = 0.15,
+):
+    """Poll until a recently written row becomes query-visible, or return None."""
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            response = (
+                db.table(table_name)
+                .select(select)
+                .eq(column_name, value)
+                .limit(1)
+                .execute()
+            )
+            if response.data:
+                return response.data[0]
+        except Exception as exc:
+            last_exc = exc
+            if attempt < attempts:
+                logger.warning(
+                    "Visibility probe failed for %s.%s=%r (attempt %d/%d): %s",
+                    table_name,
+                    column_name,
+                    value,
+                    attempt,
+                    attempts,
+                    exc,
+                )
+
+        if attempt < attempts:
+            time.sleep(base_delay * attempt)
+
+    if last_exc is not None:
+        logger.warning(
+            "Row visibility probe exhausted for %s.%s=%r after exception: %s",
+            table_name,
+            column_name,
+            value,
+            last_exc,
+        )
+    return None
 
 
 def verify_token(token: str, adapter: DatabaseAdapter | None = None):

@@ -19,8 +19,7 @@ from pydantic import BaseModel
 from config import settings
 from models.products import ProductCreate, ProductResponse, ProductUpdate
 from services.auth import get_current_user, get_current_user_optional
-from services.db_consistency import wait_for_row_visibility
-from services.database import get_db
+from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
 from services.image_references import (
     get_or_create_image_id,
