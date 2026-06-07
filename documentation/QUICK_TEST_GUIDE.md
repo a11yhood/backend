@@ -9,12 +9,17 @@ Fast reference for running tests and adding new tests in this repository.
 - Mark with `pytest.mark.unit`.
 - No real DB calls.
 
-2. Integration test (default backend layer)
+2. Functional test
+- Use for small end-to-end smoke coverage of the app wiring.
+- Mark with `pytest.mark.functional`.
+- Covers startup, auth fixture wiring, and timestamp serialization checks.
+
+3. Integration test (default backend layer)
 - Use for API behavior and DB side effects.
 - Mark with `pytest.mark.integration`.
 - Use `client`, `auth_client`, `admin_client`, `clean_database` fixtures.
 
-3. Live/system test
+4. Live/system test
 - Use only for external services or running backend validation.
 - Mark as integration and gate with env vars.
 
@@ -23,6 +28,9 @@ Fast reference for running tests and adding new tests in this repository.
 ```bash
 # Unit only
 pixi run test-unit
+
+# Functional only
+pixi run test-functional
 
 # Integration only
 pixi run test-integration
@@ -47,6 +55,7 @@ pixi run pytest tests/test_images_integration.py::test_image_upload_admin_succes
 
 1. Pick the right file and marker
 - Unit: `tests/test_*.py` with `pytestmark = pytest.mark.unit`
+- Functional: `tests/test_*.py` with `pytestmark = pytest.mark.functional`
 - Integration: `tests/test_*.py` with `pytestmark = pytest.mark.integration`
 
 2. Use project fixtures
@@ -68,7 +77,7 @@ pixi run pytest tests/test_images_integration.py::test_image_upload_admin_succes
 
 PR CI runs:
 - unit tests: `pixi run pytest -m unit -q`
-- integration smoke set: `tests/test_main.py tests/test_auth_fixture_determinism.py tests/test_timestamp_serialization.py`
+- functional tests: `pixi run test-functional -q`
 
 PR CI does not run the full integration suite by default.
 

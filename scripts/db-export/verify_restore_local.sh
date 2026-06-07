@@ -248,9 +248,11 @@ BEGIN
     RAISE EXCEPTION 'public restore leaked collections rows: %', leaked_rows;
   END IF;
 
-  SELECT COUNT(*) INTO leaked_rows FROM collection_editors;
-  IF leaked_rows <> 0 THEN
-    RAISE EXCEPTION 'public restore leaked collection_editors rows: %', leaked_rows;
+  IF to_regclass('public.collection_editors') IS NOT NULL THEN
+    SELECT COUNT(*) INTO leaked_rows FROM collection_editors;
+    IF leaked_rows <> 0 THEN
+      RAISE EXCEPTION 'public restore leaked collection_editors rows: %', leaked_rows;
+    END IF;
   END IF;
 
   SELECT COUNT(*) INTO leaked_rows FROM discussions;

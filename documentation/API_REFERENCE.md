@@ -1030,7 +1030,6 @@ Collection responses use snake_case field names:
   "user_id": "49366adb-2d13-412f-9ae5-4c35dbffab10",
   "user_name": "johndoe",
   "editor_ids": [
-    "49366adb-2d13-412f-9ae5-4c35dbffab10",
     "90ea5cc1-e58c-4c3a-a938-8d9ad7d1bb47"
   ],
   "product_ids": [
@@ -1089,7 +1088,7 @@ POST /api/collections
 }
 ```
 
-Creator is automatically added to `editor_ids`.
+The owner is tracked in `user_id` and is not duplicated in `editor_ids`.
 
 ### Create Collection From Search
 
@@ -1178,7 +1177,7 @@ DELETE /api/collections/{collection_slug}/products
 GET /api/collections/{collection_slug}/editors
 ```
 
-For private collections, requires owner/editor access.
+For private collections, requires owner or editor access.
 
 **Response:**
 ```json
@@ -1219,215 +1218,124 @@ Returns updated collection object.
 
 ## User Requests
 
-### Get All Requests
+### Field Naming Contract (`reason` vs `message`)
+
+- **Canonical field:** `reason`
+- **Compatibility alias:** `message` (accepted on create; mirrored from `reason` in responses)
+- Clients should migrate to `reason` and treat `message` as deprecated compatibility only.
+
+### Collection Ownership Request Semantics
+
+- Keep `type=collection-ownership` as the request type, but treat it as a **collaborator/editor access request**.
+- Approval grants editor access by adding the requester to `collection_editors` / `editor_ids`.
+- Approval **does not** transfer literal collection ownership and does not change `collections.user_id`.
+- Review uses the existing requests workflow/queue via `PATCH /api/requests/{request_id}`.
+- Reviewers for `collection-ownership`: collection owner, admin, or moderator.
+- Duplicate pending `collection-ownership` requests for the same `(user_id, collection_id)` are rejected.
+
+### Request Object
+
+```json
+{
+  "id": "req-1",
+  "user_id": "12345",
+  "type": "collection-ownership",
+  "status": "pending",
+  "product_id": null,
+  "collection_id": "col-1",
+  "reason": "I help maintain this collection",
+  "message": "I help maintain this collection",
+  "reviewed_by": null,
+  "reviewed_at": null,
+  "created_at": "2026-06-03T10:00:00+00:00",
+  "updated_at": "2026-06-03T10:00:00+00:00"
+}
+```
+
+### List Requests
 
 ```http
 GET /api/requests
-GET /api/requests?status=pending
+GET /api/requests?status=pending&type=product-ownership
 ```
 
-**Query Parameters:**
-- `status` (optional): Filter by status (`pending`, `approved`, `rejected`)
+**Permissions:**
+- Admin/Moderator: see all requests
+- Regular user: sees only own requests
 
-**Response:**
-```json
-[
-  {
-    "id": "req-1",
-    "userId": "12345",
-    "userName": "johndoe",
-    "userAvatarUrl": "https://...",
-    "type": "moderator",
-    "message": "I'd like to help moderate",
-    "status": "pending",
-    "createdAt": 1704067200000
-  }
-]
-```
-
-### Get User's Requests
+### List My Requests
 
 ```http
-GET /api/users/:userId/requests
-```
-
-**Parameters:**
-- `userId`: User ID
-
-**Response:**
-```json
-[
-  {
-    "id": "req-1",
-    "userId": "12345",
-    "type": "moderator",
-    "status": "pending",
-    ...
-  }
-]
+GET /api/requests/me
+GET /api/requests/me?status=pending&type=collection-ownership
 ```
 
 ### Create Request
 
 ```http
-POST /api/requests
+POST /api/requests/
 ```
 
-**Body:**
+**Supported `type` values:**
+- `moderator`
+- `admin`
+- `product-ownership` (requires `product_id`)
+- `source-domain` (requires domain info in `reason`)
+- `collection-ownership` (requires `collection_id`; grants editor/collaborator access on approval)
+
+**Example (preferred):**
 ```json
 {
-  "userId": "12345",
-  "userName": "johndoe",
-  "userAvatarUrl": "https://...",
+  "type": "collection-ownership",
+  "collection_id": "col-1",
+  "reason": "I help maintain this collection"
+}
+```
+
+**Example (legacy compatibility):**
+```json
+{
   "type": "moderator",
   "message": "I'd like to help moderate"
 }
 ```
 
-For product management requests:
-```json
-{
-  "userId": "12345",
-  "userName": "johndoe",
-  "type": "product-ownership",
-  "productId": "prod-1",
-  "message": "I created this product"
-}
-```
-
-**Response:**
-```json
-{
-  "id": "req-new",
-  "userId": "12345",
-  "type": "moderator",
-  "status": "pending",
-  "createdAt": 1704153600000,
-  ...
-}
-```
-
-### Approve Request
+### Review Request (Approve/Reject)
 
 ```http
-POST /api/requests/:id/approve
+PATCH /api/requests/{request_id}
 ```
-
-**Permissions:** Admin only
-
-**Parameters:**
-- `id`: Request ID
 
 **Body:**
 ```json
 {
-  "reviewerId": "admin-id",
-  "note": "Approved - welcome to the team!"
+  "status": "approved"
 }
 ```
 
-**Response:**
-```json
-{
-  "id": "req-1",
-  "status": "approved",
-  "reviewedAt": 1704153600000,
-  "reviewedBy": "admin-id",
-  "reviewerNote": "Approved - welcome to the team!",
-  ...
-}
-```
+**Permissions:**
+- Admin/Moderator can review all request types.
+- Collection owner can review `collection-ownership` requests for their own collection.
+- Only admin can approve `type=admin` role requests.
 
-### Reject Request
-
-```http
-POST /api/requests/:id/reject
-```
-
-**Permissions:** Admin only
-
-**Parameters:**
-- `id`: Request ID
-
-**Body:**
-```json
-{
-  "reviewerId": "admin-id",
-  "note": "Not at this time"
-}
-```
-
-**Response:**
-```json
-{
-  "id": "req-1",
-  "status": "rejected",
-  "reviewedAt": 1704153600000,
-  "reviewedBy": "admin-id",
-  "reviewerNote": "Not at this time",
-  ...
-}
-```
-
-### Withdraw Request
-
-```http
-POST /api/requests/:id/withdraw
-```
-
-**Permissions:** Request creator only
-
-**Parameters:**
-- `id`: Request ID
-
-**Body:**
-```json
-{
-  "userId": "12345"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true
-}
-```
+**Approval effects (collection ownership requests):**
+- Approved `type=collection-ownership` requests add the requester to `collection_editors`.
+- Ownership does not change; `collections.user_id` remains the existing owner.
 
 ### Delete Request
 
 ```http
-DELETE /api/requests/:id
+DELETE /api/requests/{request_id}
 ```
 
-**Permissions:** Admin only
-
-**Parameters:**
-- `id`: Request ID
+**Permissions:**
+- Admin can delete any request.
+- Request creator can delete own pending request.
 
 **Response:**
 ```json
 {
-  "success": true
-}
-```
-
-### Cleanup Stale Requests
-
-```http
-POST /api/requests/cleanup
-```
-
-**Permissions:** Admin only
-
-Removes requests for deleted products and archives old completed requests.
-
-**Response:**
-```json
-{
-  "removedStaleProductRequests": 5,
-  "archivedOldRequests": 12,
-  "totalRemaining": 3
+  "message": "Request deleted successfully"
 }
 ```
 

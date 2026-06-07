@@ -66,6 +66,126 @@ def test_user_can_request_product_editor(client, test_user, test_product, auth_h
     assert data["reason"] == "I am the creator of this product"
 
 
+def test_create_request_accepts_message_alias(client, test_user, auth_headers):
+    """Legacy clients can send message while backend stores and returns reason."""
+    response = client.post(
+        "/api/requests/",
+        json={"type": "moderator", "message": "I can help with moderation"},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["reason"] == "I can help with moderation"
+    assert data["message"] == "I can help with moderation"
+
+
+def test_user_can_request_collection_ownership(client, test_user, test_user_2, auth_headers):
+    """Users can request collection editor access by collection_id."""
+    create_collection = client.post(
+        "/api/collections",
+        headers=auth_headers(test_user_2),
+        json={"name": "Shared Collection", "is_public": True},
+    )
+    assert create_collection.status_code == 201
+    collection = create_collection.json()
+
+    response = client.post(
+        "/api/requests/",
+        json={
+            "type": "collection-ownership",
+            "collection_id": collection["id"],
+            "reason": "I help maintain this collection",
+        },
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["type"] == "collection-ownership"
+    assert data["status"] == "pending"
+    assert data["collection_id"] == collection["id"]
+
+
+def test_collection_ownership_request_requires_collection_id(client, test_user, auth_headers):
+    response = client.post(
+        "/api/requests/",
+        json={"type": "collection-ownership", "reason": "I am a collaborator"},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 400
+    assert "collection_id" in response.json()["detail"].lower()
+
+
+def test_collection_owner_can_approve_collection_ownership_request(
+    client, test_user, test_user_2, auth_headers
+):
+    """Collection owners can review collection-ownership requests for their collection."""
+    create_collection = client.post(
+        "/api/collections",
+        headers=auth_headers(test_user_2),
+        json={"name": "Owner Managed Collection", "is_public": True},
+    )
+    collection = create_collection.json()
+
+    create_request = client.post(
+        "/api/requests/",
+        json={
+            "type": "collection-ownership",
+            "collection_id": collection["id"],
+            "reason": "Please add me as editor",
+        },
+        headers=auth_headers(test_user),
+    )
+    request_id = create_request.json()["id"]
+
+    approve = client.patch(
+        f"/api/requests/{request_id}",
+        json={"status": "approved"},
+        headers=auth_headers(test_user_2),
+    )
+    assert approve.status_code == 200
+    assert approve.json()["status"] == "approved"
+
+    edit = client.put(
+        f"/api/collections/{collection['slug']}",
+        headers=auth_headers(test_user),
+        json={"description": "Edited after approval"},
+    )
+    assert edit.status_code == 200
+    assert edit.json()["description"] == "Edited after approval"
+
+
+def test_non_owner_cannot_approve_collection_ownership_request(
+    client, test_user, test_user_2, auth_headers
+):
+    create_collection = client.post(
+        "/api/collections",
+        headers=auth_headers(test_user_2),
+        json={"name": "Protected Collection", "is_public": True},
+    )
+    collection = create_collection.json()
+
+    create_request = client.post(
+        "/api/requests/",
+        json={
+            "type": "collection-ownership",
+            "collection_id": collection["id"],
+            "reason": "Please add me as editor",
+        },
+        headers=auth_headers(test_user),
+    )
+    request_id = create_request.json()["id"]
+
+    reject = client.patch(
+        f"/api/requests/{request_id}",
+        json={"status": "approved"},
+        headers=auth_headers(test_user),
+    )
+    assert reject.status_code == 403
+
+
 def test_product_management_request_requires_product_id(client, test_user, auth_headers):
     """Test that product management requests must include a product_id"""
     response = client.post(

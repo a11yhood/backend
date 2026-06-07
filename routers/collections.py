@@ -1,8 +1,9 @@
 """Collection management endpoints.
 
 Supports user-curated product collections with public/private visibility.
-All mutations require authentication and enforce ownership checks.
-Security: Users can only modify their own collections unless admin.
+All mutations require authentication and enforce owner/editor checks.
+Security: Owners and assigned editors can modify collections; admins and moderators
+can manage collection editor assignments.
 """
 
 import logging
@@ -20,7 +21,7 @@ from models.collections import (
     ProductIdsRequest,
 )
 from services.auth import get_current_user, get_current_user_optional
-from services.database import get_db
+from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
@@ -32,8 +33,7 @@ def _looks_like_uuid(value: str) -> bool:
     try:
         uuid.UUID(str(value))
         return True
-    except Exception as e:
-        logger.error(f"uuid error: {type(e).__name__}: {str(e)}")
+    except (ValueError, TypeError, AttributeError):
         return False
 
 
@@ -55,6 +55,7 @@ def _is_collection_editor(db, collection_id: str, user_id: str | None) -> bool:
 
 
 def _can_edit_collection(db, collection: dict, current_user: dict | None) -> bool:
+    """True when user is the collection owner or an assigned editor."""
     if not collection or not current_user:
         return False
     user_id = current_user.get("id")
@@ -64,6 +65,7 @@ def _can_edit_collection(db, collection: dict, current_user: dict | None) -> boo
 
 
 def _can_manage_collection_editors(collection: dict, current_user: dict | None) -> bool:
+    """True when user can add/remove editors: owner, admin, or moderator."""
     if not collection or not current_user:
         return False
     if collection.get("user_id") == current_user.get("id"):
@@ -71,28 +73,13 @@ def _can_manage_collection_editors(collection: dict, current_user: dict | None) 
     return current_user.get("role") in {"admin", "moderator"}
 
 
-def _ensure_collection_editor_or_rollback(db, collection_id: str, user_id: str) -> None:
-    try:
-        db.table("collection_editors").upsert(
-            {"collection_id": collection_id, "user_id": user_id},
-            on_conflict="collection_id,user_id",
-        ).execute()
-    except Exception as exc:
-        logger.error(
-            "failed to initialize collection editor row for collection_id=%s user_id=%s: %s",
-            collection_id,
-            user_id,
-            exc,
-        )
-        try:
-            db.table("collections").delete().eq("id", collection_id).execute()
-        except Exception as rollback_exc:
-            logger.warning(
-                "rollback delete failed for collection_id=%s after editor init failure: %s",
-                collection_id,
-                rollback_exc,
-            )
-        raise HTTPException(status_code=500, detail="Failed to initialize collection editors")
+def _extract_non_owner_editor_ids(editor_rows: list[dict], owner_user_id: str | None) -> list[str]:
+    """Return editor user IDs excluding the owner, who is represented by `user_id`."""
+    return [
+        row["user_id"]
+        for row in editor_rows
+        if row.get("user_id") and row.get("user_id") != owner_user_id
+    ]
 
 
 @router.post("", response_model=CollectionResponse, status_code=201)
@@ -133,14 +120,30 @@ async def create_collection(
     }
 
     # Insert into database
+    if user_id and not wait_for_row_visibility(db, "users", "id", user_id, select="id", attempts=2):
+        db.table("users").upsert(
+            {
+                "id": user_id,
+                "github_id": current_user.get("github_id") or f"rehydrated-{user_id[:8]}",
+                "username": current_user.get("username") or f"user_{user_id[:8]}",
+                "display_name": current_user.get("display_name") or user_name,
+                "email": current_user.get("email") or f"{user_id[:8]}@a11yhood.test",
+                "role": current_user.get("role") or "user",
+            },
+            on_conflict="id",
+        ).execute()
+
     response = db.table("collections").insert(collection).execute()
 
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to create collection")
 
     created_collection = response.data[0]
-    _ensure_collection_editor_or_rollback(db, created_collection["id"], user_id)
-    created_collection["editor_ids"] = [user_id]
+    created_collection = (
+        wait_for_row_visibility(db, "collections", "id", created_collection["id"])
+        or created_collection
+    )
+    created_collection["editor_ids"] = []
     created_collection["product_ids"] = []
     created_collection["product_slugs"] = []
     return created_collection
@@ -303,8 +306,6 @@ async def create_collection_from_search(
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to create collection")
 
-    _ensure_collection_editor_or_rollback(db, collection_id, collection["user_id"])
-
     # Insert products into junction table
     if product_ids:
         junction_records = [
@@ -438,36 +439,81 @@ def _get_collection_with_products(db, collection_id: str) -> dict:
 
 def _populate_collection_relationships(db, collection: dict) -> dict:
     """Attach editor and product relationship fields expected by the API response model."""
-    collection_id = collection["id"]
+    _populate_collection_relationships_bulk(db, [collection])
+    return collection
+
+
+def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list[dict]:
+    """Populate editor_ids, product_ids, and product_slugs for many collections in bulk."""
+    if not collections:
+        return collections
+
+    collection_ids = [c["id"] for c in collections if c.get("id")]
+    if not collection_ids:
+        return collections
+
+    owner_by_collection = {c["id"]: c.get("user_id") for c in collections if c.get("id")}
 
     editors_resp = (
-        db.table("collection_editors").select("user_id").eq("collection_id", collection_id).execute()
-    )
-    collection["editor_ids"] = [row["user_id"] for row in (editors_resp.data or [])]
-
-    # Get product IDs from junction table, ordered by position
-    junction_resp = (
-        db.table("collection_products")
-        .select("product_id")
-        .eq("collection_id", collection_id)
-        .order("position")
+        db.table("collection_editors")
+        .select("collection_id, user_id")
+        .in_("collection_id", collection_ids)
         .execute()
     )
-    product_ids = [p["product_id"] for p in (junction_resp.data or [])]
+    editors_by_collection: dict[str, list[dict]] = {}
+    for row in (editors_resp.data or []):
+        collection_id = row.get("collection_id")
+        if not collection_id:
+            continue
+        editors_by_collection.setdefault(collection_id, []).append(row)
 
-    # Get product slugs by querying products table with the IDs
-    product_slugs = []
-    if product_ids:
-        products_resp = db.table("products").select("id, slug").in_("id", product_ids).execute()
-        # Create a map of product_id -> slug for fast lookup
-        id_to_slug = {p["id"]: p["slug"] for p in (products_resp.data or [])}
-        # Build slugs list in the same order as product_ids
-        product_slugs = [id_to_slug.get(pid, None) for pid in product_ids]
+    junction_resp = (
+        db.table("collection_products")
+        .select("collection_id, product_id, position")
+        .in_("collection_id", collection_ids)
+        .execute()
+    )
+    product_rows_by_collection: dict[str, list[dict]] = {}
+    for row in (junction_resp.data or []):
+        collection_id = row.get("collection_id")
+        if not collection_id:
+            continue
+        product_rows_by_collection.setdefault(collection_id, []).append(row)
 
-    collection["product_ids"] = product_ids
-    collection["product_slugs"] = product_slugs
+    all_product_ids = {
+        row["product_id"]
+        for rows in product_rows_by_collection.values()
+        for row in rows
+        if row.get("product_id")
+    }
+    id_to_slug: dict[str, str] = {}
+    if all_product_ids:
+        products_resp = db.table("products").select("id, slug").in_("id", list(all_product_ids)).execute()
+        id_to_slug = {p["id"]: p["slug"] for p in (products_resp.data or []) if p.get("id")}
 
-    return collection
+    for collection in collections:
+        collection_id = collection.get("id")
+        if not collection_id:
+            collection["editor_ids"] = []
+            collection["product_ids"] = []
+            collection["product_slugs"] = []
+            continue
+
+        editor_rows = editors_by_collection.get(collection_id, [])
+        collection["editor_ids"] = _extract_non_owner_editor_ids(
+            editor_rows,
+            owner_by_collection.get(collection_id),
+        )
+
+        product_rows = sorted(
+            product_rows_by_collection.get(collection_id, []),
+            key=lambda row: (row.get("position") is None, row.get("position", 0)),
+        )
+        product_ids = [row["product_id"] for row in product_rows if row.get("product_id")]
+        collection["product_ids"] = product_ids
+        collection["product_slugs"] = [id_to_slug.get(pid, None) for pid in product_ids]
+
+    return collections
 
 
 def _get_collection_by_slug_or_id(db, slug_or_id: str) -> dict:
@@ -502,9 +548,8 @@ async def get_user_collections(
     )
     collections = response.data or []
 
-    # Populate product_ids and product_slugs for each collection
-    for collection in collections:
-        _populate_collection_relationships(db, collection)
+    # Populate relationship fields in bulk to avoid N+1 round-trips.
+    _populate_collection_relationships_bulk(db, collections)
 
     return collections
 
@@ -526,9 +571,8 @@ async def get_public_collections(
 
     collections = response.data or []
 
-    # Populate product_ids and product_slugs for each collection
-    for collection in collections:
-        _populate_collection_relationships(db, collection)
+    # Populate relationship fields in bulk to avoid N+1 round-trips.
+    _populate_collection_relationships_bulk(db, collections)
 
     # Filter by search if provided
     if search:
@@ -555,7 +599,7 @@ async def get_collection(
 ):
     """Get collection details by slug.
 
-    Public collections viewable by all; private collections only by owner.
+    Public collections are viewable by all; private collections require owner or editor access.
     """
     collection = _get_collection_by_slug_or_id(db, collection_slug)
 
@@ -575,7 +619,7 @@ async def update_collection(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Update collection by slug - only owner can edit."""
+    """Update collection by slug. Allowed for owner or assigned editor."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -642,7 +686,9 @@ async def get_collection_editors(
     )
     return {
         "collection_id": collection["id"],
-        "editor_ids": [row["user_id"] for row in (editors_resp.data or [])],
+        "editor_ids": _extract_non_owner_editor_ids(
+            editors_resp.data or [], collection.get("user_id")
+        ),
     }
 
 
@@ -664,7 +710,9 @@ async def add_collection_editor(
 
     collection = _get_collection_by_slug_or_id(db, collection_slug)
     if not _can_manage_collection_editors(collection, current_user):
-        raise HTTPException(status_code=403, detail="Only owners and admins can manage editors")
+        raise HTTPException(status_code=403, detail="Only owners, moderators, and admins can manage editors")
+    if editor_user_id == collection.get("user_id"):
+        raise HTTPException(status_code=400, detail="Collection owner is not an editor")
 
     user_resp = db.table("users").select("id").eq("id", editor_user_id).limit(1).execute()
     if not user_resp.data:
@@ -696,7 +744,7 @@ async def remove_collection_editor(
 
     collection = _get_collection_by_slug_or_id(db, collection_slug)
     if not _can_manage_collection_editors(collection, current_user):
-        raise HTTPException(status_code=403, detail="Only owners and admins can manage editors")
+        raise HTTPException(status_code=403, detail="Only owners, admins, or moderators can manage editors")
 
     if editor_user_id == collection.get("user_id"):
         raise HTTPException(status_code=400, detail="Cannot remove the collection owner")
@@ -715,7 +763,7 @@ async def delete_collection(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Delete collection by slug - only owner can delete."""
+    """Delete collection by slug - owner or editor can delete."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     collection = _get_collection_by_slug_or_id(db, collection_slug)

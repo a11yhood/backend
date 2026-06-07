@@ -20,7 +20,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import app
-from services.database import get_db
+from services.auth import build_dev_user_token
+from services.database import get_db, wait_for_row_visibility
 
 from .test_data import TEST_PRODUCTS, TEST_USERS
 
@@ -74,7 +75,7 @@ def auth_client(clean_database, test_user):
     class _AuthClient:
         def __init__(self, base, user):
             self._base = base
-            self._headers = {"Authorization": f"Bearer dev-token-{user['id']}"}
+            self._headers = {"Authorization": f"Bearer {build_dev_user_token(user['id'])}"}
 
         def request(self, method, url, **kwargs):
             headers = kwargs.pop("headers", {}) or {}
@@ -114,7 +115,7 @@ def admin_client(clean_database, test_admin):
     class _AuthClient:
         def __init__(self, base, user):
             self._base = base
-            self._headers = {"Authorization": f"Bearer dev-token-{user['id']}"}
+            self._headers = {"Authorization": f"Bearer {build_dev_user_token(user['id'])}"}
 
         def request(self, method, url, **kwargs):
             headers = kwargs.pop("headers", {}) or {}
@@ -154,7 +155,7 @@ def auth_client_2(clean_database, test_user_2):
     class _AuthClient:
         def __init__(self, base, user):
             self._base = base
-            self._headers = {"Authorization": f"Bearer dev-token-{user['id']}"}
+            self._headers = {"Authorization": f"Bearer {build_dev_user_token(user['id'])}"}
 
         def request(self, method, url, **kwargs):
             headers = kwargs.pop("headers", {}) or {}
@@ -266,15 +267,13 @@ def _table_row_count(db, table_name: str) -> int:
     Retries transient network/read-timeout failures to reduce flaky integration
     failures from occasional Supabase HTTP timeouts.
     """
-    last_exc: Exception | None = None
     for attempt in range(1, 4):
         try:
             resp = db.table(table_name).select("*", count="exact").limit(1).execute()
             return resp.count or 0
         except Exception as exc:
-            last_exc = exc
             if attempt == 3:
-                break
+                raise RuntimeError("Test DB reset failed while counting table rows") from exc
             logger.warning(
                 "Transient table count failure for '%s' (attempt %d/3): %s",
                 table_name,
@@ -282,10 +281,6 @@ def _table_row_count(db, table_name: str) -> int:
                 exc,
             )
             time.sleep(0.25 * attempt)
-
-    if last_exc is not None:
-        raise last_exc
-    raise RuntimeError("Test DB reset failed without a captured exception")
 
 
 def _reset_and_assert_clean(db):
@@ -318,7 +313,6 @@ def _reset_and_assert_clean(db):
         "scraper_search_terms",
     }
 
-    last_exc: Exception | None = None
     for attempt in range(1, 3):
         try:
             db.cleanup()
@@ -340,15 +334,10 @@ def _reset_and_assert_clean(db):
                 )
             return
         except Exception as exc:
-            last_exc = exc
             if attempt == 2:
-                break
+                raise RuntimeError("Test DB reset failed after retries") from exc
             logger.warning("Retrying test DB reset after transient failure (attempt %d/2): %s", attempt, exc)
             time.sleep(0.5)
-
-    if last_exc is not None:
-        raise last_exc
-    raise RuntimeError("Test DB reset failed without a captured exception.")
 
 
 def _assert_seed_baseline(db):
@@ -397,9 +386,23 @@ def _assert_seed_baseline(db):
 @pytest.fixture
 def clean_database(test_db):
     """Provide a freshly cleaned and re-seeded database for each test."""
-    _reset_and_assert_clean(test_db)
-    _seed_test_data(test_db)
-    _assert_seed_baseline(test_db)
+    for attempt in range(1, 4):
+        try:
+            _reset_and_assert_clean(test_db)
+            _seed_test_data(test_db)
+            _assert_seed_baseline(test_db)
+            break
+        except Exception as exc:
+            if attempt == 3:
+                raise
+            logger.warning(
+                "Retrying clean_database fixture bootstrap after failure (attempt %d/3): %s",
+                attempt,
+                exc,
+            )
+            time.sleep(0.4 * attempt)
+
+    # Final-attempt failures already raise inside the loop above; do not re-raise after a successful retry.
     yield test_db
 
 
@@ -500,15 +503,17 @@ def _seed_test_data(db):
 @pytest.fixture
 def test_user(clean_database):
     """Return the seeded regular test user."""
+    expected = next(user for user in TEST_USERS if user["username"] == "regular_user")
     last_data = None
     for attempt in range(1, 4):
-        result = clean_database.table("users").select("*").eq("username", "regular_user").execute()
+        result = clean_database.table("users").select("*").eq("id", expected["id"]).execute()
         if result.data:
             return result.data[0]
         last_data = result.data
+        clean_database.table("users").upsert(expected, on_conflict="id").execute()
         if attempt < 3:
             logger.warning(
-                "Seeded regular_user not visible yet (attempt %d/3); retrying",
+                "Seeded regular_user missing by id; recreated and retrying (attempt %d/3)",
                 attempt,
             )
             time.sleep(0.25 * attempt)
@@ -521,15 +526,17 @@ def test_user(clean_database):
 @pytest.fixture
 def test_admin(clean_database):
     """Return the seeded admin test user."""
+    expected = next(user for user in TEST_USERS if user["username"] == "admin_user")
     last_data = None
     for attempt in range(1, 4):
-        result = clean_database.table("users").select("*").eq("username", "admin_user").execute()
+        result = clean_database.table("users").select("*").eq("id", expected["id"]).execute()
         if result.data:
             return result.data[0]
         last_data = result.data
+        clean_database.table("users").upsert(expected, on_conflict="id").execute()
         if attempt < 3:
             logger.warning(
-                "Seeded admin_user not visible yet (attempt %d/3); retrying",
+                "Seeded admin_user missing by id; recreated and retrying (attempt %d/3)",
                 attempt,
             )
             time.sleep(0.25 * attempt)
@@ -554,6 +561,7 @@ def test_moderator(clean_database):
     }
     result = clean_database.table("users").insert(moderator_data).execute()
     user = result.data[0]
+    user = wait_for_row_visibility(clean_database, "users", "id", user["id"]) or user
     yield user
     try:
         clean_database.table("users").delete().eq("id", user["id"]).execute()
@@ -576,6 +584,7 @@ def test_user_2(clean_database):
     }
     result = clean_database.table("users").insert(user_data).execute()
     user = result.data[0]
+    user = wait_for_row_visibility(clean_database, "users", "id", user["id"]) or user
     yield user
     try:
         clean_database.table("users").delete().eq("id", user["id"]).execute()
@@ -617,7 +626,8 @@ def test_product(clean_database, test_user):
         clean_database.table("users").upsert(user_row, on_conflict="id").execute()
         result = clean_database.table("products").insert(product_data).execute()
 
-    return result.data[0]
+    product = result.data[0]
+    return wait_for_row_visibility(clean_database, "products", "id", product["id"]) or product
 
 
 @pytest.fixture
@@ -641,7 +651,7 @@ def auth_headers():
         user_id = user.get("id")
         if not user_id:
             raise ValueError("auth_headers: user dict must contain 'id'")
-        return {"Authorization": f"Bearer dev-token-{user_id}"}
+        return {"Authorization": f"Bearer {build_dev_user_token(user_id)}"}
 
     return _make
 

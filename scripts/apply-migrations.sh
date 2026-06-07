@@ -5,12 +5,12 @@ set -euo pipefail
 #
 # Defaults:
 # - ENV_FILE=.env.test
-# - DB URL from SUPABASE_DB_URL, DATABASE_URL, or TEST_DATABASE_URL
+# - DB URL from env file first, then shell env fallback
 #
 # Usage:
 #   ./scripts/apply-migrations.sh
 #   ./scripts/apply-migrations.sh --env-file .env
-#   SUPABASE_DB_URL='postgresql://...' ./scripts/apply-migrations.sh
+#   SUPABASE_DB_URL='postgresql://...' ./scripts/apply-migrations.sh   # fallback only
 
 ENV_FILE=".env.test"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,12 +28,12 @@ Options:
   --help            Show this help message
 
 DB URL lookup order:
-  1) SUPABASE_DB_URL (shell env)
-  2) DATABASE_URL (shell env)
-  3) TEST_DATABASE_URL (shell env)
-  4) SUPABASE_DB_URL in env file
-  5) DATABASE_URL in env file
-  6) TEST_DATABASE_URL in env file
+  1) SUPABASE_DB_URL in env file
+  2) DATABASE_URL in env file
+  3) TEST_DATABASE_URL in env file
+  4) SUPABASE_DB_URL (shell env fallback)
+  5) DATABASE_URL (shell env fallback)
+  6) TEST_DATABASE_URL (shell env fallback)
 
 Notes:
 - Requires psql on PATH.
@@ -95,7 +95,7 @@ read_env_var() {
   printf '%s' "$value"
 }
 
-DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-${TEST_DATABASE_URL:-}}}"
+DB_URL=""
 if [[ -z "$DB_URL" ]]; then
   DB_URL="$(read_env_var "$ROOT_DIR/$ENV_FILE" "SUPABASE_DB_URL")"
 fi
@@ -105,11 +105,15 @@ fi
 if [[ -z "$DB_URL" ]]; then
   DB_URL="$(read_env_var "$ROOT_DIR/$ENV_FILE" "TEST_DATABASE_URL")"
 fi
+if [[ -z "$DB_URL" ]]; then
+  DB_URL="${SUPABASE_DB_URL:-${DATABASE_URL:-${TEST_DATABASE_URL:-}}}"
+fi
 
 if [[ -z "$DB_URL" ]]; then
   echo "Error: No database URL found." >&2
-  echo "Set SUPABASE_DB_URL (recommended) in shell or ${ENV_FILE}," >&2
-  echo "or set DATABASE_URL/TEST_DATABASE_URL." >&2
+  echo "Set SUPABASE_DB_URL (recommended) in ${ENV_FILE}," >&2
+  echo "or set DATABASE_URL/TEST_DATABASE_URL in ${ENV_FILE}." >&2
+  echo "Shell SUPABASE_DB_URL/DATABASE_URL/TEST_DATABASE_URL are used only as fallback." >&2
   exit 1
 fi
 

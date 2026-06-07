@@ -34,6 +34,7 @@ TABLES_TO_EXPORT = [
     "supported_sources",
     "tags",
     "users",
+    "images",
     "products",
     "product_editors",
     "product_urls",
@@ -129,6 +130,7 @@ ORDER_COLUMNS: dict[str, list[str]] = {
     "supported_sources": ["id"],
     "scraper_search_terms": ["id"],
     "users": ["id"],
+    "images": ["id"],
     "products": ["id"],
     "product_editors": ["id"],
     "product_urls": ["id"],
@@ -335,6 +337,37 @@ def _export_products_public(db) -> list[str]:
         return [f"-- Failed to export products: {e}"]
 
 
+def _export_images_public_from_product_refs(db) -> list[str]:
+    """Export synthetic image rows for referenced product image IDs.
+
+    Public exports avoid image payload details, but still need placeholder
+    image rows to satisfy products.image_id foreign keys during restore.
+    """
+    lines = []
+
+    try:
+        product_rows = _fetch_all_rows(db, "products", "image_id")
+        image_ids = sorted({row.get("image_id") for row in product_rows if row.get("image_id")})
+
+        lines.append(f"-- images ({len(image_ids)} synthetic rows from product image refs)")
+        lines.append("TRUNCATE TABLE images CASCADE;")
+
+        for image_id in image_ids:
+            canonical_key = f"public-export-{image_id}"
+            lines.append(
+                "INSERT INTO images (id, canonical_key, source_kind) "
+                f"VALUES ({_escape_public_sql_value(image_id)}, "
+                f"{_escape_public_sql_value(canonical_key)}, 'external');"
+            )
+
+        lines.append("")
+        return lines
+
+    except Exception as e:
+        logger.warning(f"Failed to export images for public mode: {e}")
+        return [f"-- Failed to export images for public mode: {e}"]
+
+
 def _export_product_urls_public(db) -> list[str]:
     lines = []
 
@@ -414,13 +447,13 @@ def _export_public_mode(db) -> tuple[list[str], list[str]]:
     sql_lines.extend(_export_table_data_public(db, "tags"))
     exported_tables.append("tags")
 
+    logger.info("  - images (synthetic rows for product image references)")
+    sql_lines.extend(_export_images_public_from_product_refs(db))
+    exported_tables.append("images")
+
     logger.info("  - products (public columns only)")
     sql_lines.extend(_export_products_public(db))
     exported_tables.append("products")
-
-    logger.info("  - product_urls")
-    sql_lines.extend(_export_product_urls_public(db))
-    exported_tables.append("product_urls")
 
     logger.info("  - product_tags")
     sql_lines.extend(_export_table_data_public(db, "product_tags"))
@@ -446,7 +479,7 @@ def _header_for_mode(mode: str) -> list[str]:
         return [
             "-- Public products dataset for a11yhood",
             f"-- Generated: {datetime.now().isoformat()}",
-            "-- Contains: Products, ratings (aggregated), tags, sources, categories",
+            "-- Contains: Products, image references, ratings (aggregated), tags, sources, categories",
             "-- Excludes: User data, authentication, internal metadata",
             "",
         ]

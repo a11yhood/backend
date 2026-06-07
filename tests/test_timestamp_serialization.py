@@ -1,8 +1,9 @@
+import time
 from datetime import UTC, datetime
 
 import pytest
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.functional
 
 
 def _assert_full_iso_timestamp(value: str | None):
@@ -21,9 +22,16 @@ def test_user_endpoints_return_full_iso_timestamps(client, admin_client, clean_d
     _assert_full_iso_timestamp(user["joined_at"])
     _assert_full_iso_timestamp(user["last_active"])
 
-    admin_list = admin_client.get("/api/users/")
-    assert admin_list.status_code == 200
-    listed_user = next(row for row in admin_list.json() if row["id"] == test_user["id"])
+    listed_user = None
+    for attempt in range(1, 4):
+        admin_list = admin_client.get("/api/users/")
+        assert admin_list.status_code == 200
+        listed_user = next((row for row in admin_list.json() if row["id"] == test_user["id"]), None)
+        if listed_user is not None:
+            break
+        time.sleep(0.2 * attempt)
+
+    assert listed_user is not None
     _assert_full_iso_timestamp(listed_user["created_at"])
 
 

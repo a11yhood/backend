@@ -365,7 +365,6 @@
   CREATE INDEX idx_collection_products_collection_id ON collection_products(collection_id);
   CREATE INDEX idx_collection_products_product_id ON collection_products(product_id);
   CREATE INDEX idx_collection_products_position ON collection_products(collection_id, position);
-  CREATE INDEX idx_collection_editors_collection_user ON collection_editors(collection_id, user_id);
 
   -- ============================================================================
   -- USER ACTIVITIES TABLE
@@ -422,9 +421,10 @@
   CREATE TABLE user_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('moderator', 'admin', 'product-ownership', 'source-domain')),
+    type TEXT NOT NULL CHECK (type IN ('moderator', 'admin', 'product-ownership', 'source-domain', 'collection-ownership')),
     reason TEXT,
     product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+    collection_id UUID REFERENCES collections(id) ON DELETE SET NULL,
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
     reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at TIMESTAMPTZ,
