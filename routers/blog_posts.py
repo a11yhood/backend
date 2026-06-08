@@ -242,20 +242,20 @@ async def list_blog_posts(
     query = db.table("blog_posts").select("*")
     if not include_unpublished:
         query = query.eq("published", True)
+    if author_id:
+        query = query.or_(f"author_id.eq.{author_id},author_ids.cs.{{{author_id}}}")
 
     # Push ordering to SQL: primary publish_date desc NULLS LAST, then published_at desc, then created_at desc
     # Supabase/PostgREST supports multiple order clauses by repeating `order`.
-    query = query.order("publish_date", desc=True, nullsfirst=False).order(
-        "published_at", desc=True, nullsfirst=False
-    ).order("created_at", desc=True)
-    if not author_id:
-        query = query.range(offset, offset + limit - 1)
+    query = (
+        query.order("publish_date", desc=True, nullsfirst=False)
+        .order("published_at", desc=True, nullsfirst=False)
+        .order("created_at", desc=True)
+    )
+    query = query.range(offset, offset + limit - 1)
 
     db_resp = query.execute()
     posts = [_normalize_post(p, db) for p in (db_resp.data or [])]
-    if author_id:
-        posts = [post for post in posts if author_id in (post.get("author_ids") or [])]
-        posts = posts[offset : offset + limit]
     # Cache for 5 minutes for public listing
     if response is not None and not include_unpublished:
         response.headers["Cache-Control"] = "public, max-age=300"
