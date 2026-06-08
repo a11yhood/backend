@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from config import settings
 from models.products import ProductCreate, ProductResponse, ProductUpdate
@@ -176,6 +176,20 @@ def _get_product_by_identifier(db, identifier: str) -> dict | None:
             return resp.data[0]
     resp = db.table("products").select("*").eq("slug", identifier).limit(1).execute()
     return resp.data[0] if resp.data else None
+
+
+def _extract_non_owner_editor_ids(editor_ids: list[str], owner_user_id: str | None) -> list[str]:
+    """Return editor IDs excluding the product owner (created_by)."""
+    if not editor_ids:
+        return []
+    return [user_id for user_id in editor_ids if user_id and user_id != owner_user_id]
+
+
+def _get_product_editor_ids(db, product_id: str, owner_user_id: str | None) -> list[str]:
+    """Fetch non-owner editor IDs for a product."""
+    owners_response = db.table("product_editors").select("user_id").eq("product_id", product_id).execute()
+    raw_ids = [row["user_id"] for row in owners_response.data] if owners_response.data else []
+    return _extract_non_owner_editor_ids(raw_ids, owner_user_id)
 
 
 async def _enrich_manual_product_metadata(
@@ -1019,7 +1033,9 @@ async def get_products(
             source_key = str(item.get("source")).strip().lower()
             item["source"] = source_name_map.get(source_key, item.get("source"))
         item["tags"] = tags_by_product.get(item["id"], [])
-        item["editor_ids"] = owners_by_product.get(item["id"], [])
+        item["editor_ids"] = _extract_non_owner_editor_ids(
+            owners_by_product.get(item["id"], []), item.get("created_by")
+        )
         normalized.append(item)
 
     return normalized
@@ -1122,12 +1138,7 @@ async def product_exists(
         item["stars"] = item.get("source_rating_count") or 0
         _attach_product_image_url(item, db)
         # Add editor_ids from relationship table
-        owners_response = (
-            db.table("product_editors").select("user_id").eq("product_id", item["id"]).execute()
-        )
-        item["editor_ids"] = (
-            [owner["user_id"] for owner in owners_response.data] if owners_response.data else []
-        )
+        item["editor_ids"] = _get_product_editor_ids(db, item["id"], item.get("created_by"))
         attach_rating_fields(db, item)
         return {"exists": True, "product": item}
     return {"exists": False}
@@ -1146,12 +1157,7 @@ async def get_product(
 
     product_id = result["id"]
     # Attach editor_ids
-    owners_response = (
-        db.table("product_editors").select("user_id").eq("product_id", product_id).execute()
-    )
-    result["editor_ids"] = (
-        [row["user_id"] for row in owners_response.data] if owners_response.data else []
-    )
+    result["editor_ids"] = _get_product_editor_ids(db, product_id, result.get("created_by"))
     # Attach tags via relationship
     pt_rows = get_product_tag_rows(db, [product_id])
     tag_ids = [row["tag_id"] for row in pt_rows] if pt_rows else []
@@ -1178,12 +1184,7 @@ async def get_product_by_slug(
         raise HTTPException(status_code=404, detail="Product not found")
 
     result = response.data[0]
-    owners_response = (
-        db.table("product_editors").select("user_id").eq("product_id", result["id"]).execute()
-    )
-    result["editor_ids"] = (
-        [row["user_id"] for row in owners_response.data] if owners_response.data else []
-    )
+    result["editor_ids"] = _get_product_editor_ids(db, result["id"], result.get("created_by"))
     pt_rows = get_product_tag_rows(db, [result["id"]])
     tag_ids = [row["tag_id"] for row in pt_rows] if pt_rows else []
     tags_map = get_tags_map(db, tag_ids) if tag_ids else {}
@@ -1255,10 +1256,7 @@ async def get_product_collections(
 def _normalize_product(product: dict, db) -> dict:
     """Attach derived fields (owners, tags, stars, url/image aliases)."""
     pid = product.get("id")
-    owners_response = db.table("product_editors").select("user_id").eq("product_id", pid).execute()
-    product["editor_ids"] = (
-        [row["user_id"] for row in owners_response.data] if owners_response.data else []
-    )
+    product["editor_ids"] = _get_product_editor_ids(db, pid, product.get("created_by"))
 
     pt_rows = get_product_tag_rows(db, [pid])
     tag_ids = [row["tag_id"] for row in pt_rows] if pt_rows else []
@@ -1281,7 +1279,8 @@ async def create_product(
 
     Validates product URL against supported sources and auto-assigns source name.
     Supports upsert by URL: if product with same URL exists, updates it instead.
-    Automatically adds creator as product editor/owner in product_editors table.
+    Product owner is the creator (`created_by`). Additional collaborators are stored in
+    `product_editors` and exposed as `editor_ids`.
     Security: Requires valid auth token; all users can create products.
     """
     # Get list of supported sources
@@ -1405,7 +1404,7 @@ async def create_product(
         _attach_product_image_url(result, db)
         result["external_id"] = result.get("external_id")
 
-        # Add current user as owner if not already one
+        # Add current user as an editor collaborator if not already one and not the owner
         existing_owner = (
             db.table("product_editors")
             .select("*")
@@ -1413,7 +1412,7 @@ async def create_product(
             .eq("user_id", current_user["id"])
             .execute()
         )
-        if not existing_owner.data:
+        if not existing_owner.data and current_user["id"] != result.get("created_by"):
             import uuid
 
             owner_data = {
@@ -1424,11 +1423,8 @@ async def create_product(
             db.table("product_editors").insert(owner_data).execute()
 
         # Add editor_ids to response
-        owners_response = (
-            db.table("product_editors").select("user_id").eq("product_id", product_id).execute()
-        )
-        result["editor_ids"] = (
-            [owner["user_id"] for owner in owners_response.data] if owners_response.data else []
+        result["editor_ids"] = _get_product_editor_ids(
+            db, product_id, result.get("created_by")
         )
 
         # Update tag relationships if provided
@@ -1505,19 +1501,8 @@ async def create_product(
     _attach_product_image_url(result, db)
     result["external_id"] = result.get("external_id")
 
-    # Add creator as product manager
-    import uuid
-
-    owner_data = {"id": str(uuid.uuid4()), "product_id": product_id, "user_id": current_user["id"]}
-    db.table("product_editors").insert(owner_data).execute()
-
     # Add editor_ids to response
-    owners_response = (
-        db.table("product_editors").select("user_id").eq("product_id", product_id).execute()
-    )
-    result["editor_ids"] = (
-        [owner["user_id"] for owner in owners_response.data] if owners_response.data else []
-    )
+    result["editor_ids"] = _get_product_editor_ids(db, product_id, result.get("created_by"))
 
     # Create tag relationships if provided
     if product.tags:
@@ -1570,10 +1555,8 @@ async def update_product(
     # Check if user is in product_editors if not creator/admin/moderator
     is_editor = False
     if not is_creator and not is_admin_or_moderator:
-        from services.database import db_adapter
-
         editors_check = (
-            db_adapter.supabase.table("product_editors")
+            db.table("product_editors")
             .select("user_id")
             .eq("product_id", product_id)
             .eq("user_id", current_user["id"])
@@ -1640,12 +1623,7 @@ async def update_product(
 
     # Attach editor_ids
     try:
-        owners_response = (
-            db.table("product_editors").select("user_id").eq("product_id", product_id).execute()
-        )
-        result["editor_ids"] = (
-            [owner["user_id"] for owner in owners_response.data] if owners_response.data else []
-        )
+        result["editor_ids"] = _get_product_editor_ids(db, product_id, result.get("created_by"))
     except Exception as e:
         logger = logging.getLogger(__name__)
         logger.error(f"[Editors] Failed to fetch editors for product {product_id}: {e}")
@@ -1688,10 +1666,8 @@ async def patch_product(
     # Check if user is in product_editors if not creator/admin/moderator
     is_editor = False
     if not is_creator and not is_admin_or_moderator:
-        from services.database import db_adapter
-
         editors_check = (
-            db_adapter.supabase.table("product_editors")
+            db.table("product_editors")
             .select("user_id")
             .eq("product_id", product_id)
             .eq("user_id", current_user["id"])
@@ -2026,6 +2002,39 @@ def _ensure_moderator_or_admin(current_user: dict):
         raise HTTPException(status_code=403, detail="Moderator or admin access required")
 
 
+def _can_manage_product_editors(db, product: dict, current_user: dict | None) -> bool:
+    """Return True when caller can add/remove product editors."""
+    if not current_user:
+        return False
+
+    role = current_user.get("role")
+    if role in {"admin", "moderator"}:
+        return True
+
+    user_id = current_user.get("id")
+    if not user_id:
+        return False
+
+    if product.get("created_by") == user_id:
+        return True
+
+    editor_check = (
+        db.table("product_editors")
+        .select("user_id")
+        .eq("product_id", product["id"])
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(editor_check.data)
+
+
+class ProductOwnerAssignment(BaseModel):
+    user_id: str = Field(..., alias="userId")
+
+    model_config = {"populate_by_name": True}
+
+
 @router.post("/{product_slug}/ban", response_model=ProductResponse)
 async def ban_product(
     product_slug: str,
@@ -2098,30 +2107,168 @@ async def unban_product(
     return _normalize_product(product, db)
 
 
-@router.get("/{product_id}/owners")
+@router.get("/{product_id}/editors")
 async def get_product_editors(
     product_id: str,
     db=Depends(get_db),
 ):
-    """Get all editors of a product"""
-    # First check if product exists
-    product_response = db.table("products").select("id").eq("id", product_id).execute()
-    if not product_response.data:
+    """Get all non-owner editors of a product."""
+    product = _get_product_by_identifier(db, product_id)
+    if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    product_id = product["id"]
 
     # Get all editor relationships
     editors_response = (
         db.table("product_editors").select("user_id").eq("product_id", product_id).execute()
     )
 
-    if not editors_response.data:
+    editor_ids = _extract_non_owner_editor_ids(
+        [editor["user_id"] for editor in (editors_response.data or [])], product.get("created_by")
+    )
+    if not editor_ids:
         return []
 
     # Get user details for each editor
-    user_ids = [editor["user_id"] for editor in editors_response.data]
-    users_response = db.table("users").select("*").in_("id", user_ids).execute()
+    users_response = db.table("users").select("*").in_("id", editor_ids).execute()
 
     return users_response.data or []
+
+
+@router.post("/{product_id}/editors/{editor_user_id}", response_model=ProductResponse)
+async def add_product_editor(
+    product_id: str,
+    editor_user_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Add an editor/owner relationship to a product.
+
+    Allowed for existing product editors, product creator, admins, and moderators.
+    """
+    product = _get_product_by_identifier(db, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product_id = product["id"]
+
+    if not _can_manage_product_editors(db, product, current_user):
+        raise HTTPException(status_code=403, detail="Only owners, editors, moderators, and admins can manage product editors")
+
+    if not _looks_like_uuid(editor_user_id):
+        raise HTTPException(status_code=400, detail="Invalid editor user id")
+
+    if editor_user_id == product.get("created_by"):
+        raise HTTPException(status_code=400, detail="Product owner is not an editor")
+
+    user_response = db.table("users").select("id").eq("id", editor_user_id).limit(1).execute()
+    if not user_response.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.table("product_editors").upsert(
+        {"product_id": product_id, "user_id": editor_user_id},
+        on_conflict="product_id,user_id",
+    ).execute()
+
+    product_response = db.table("products").select("*").eq("id", product_id).limit(1).execute()
+    if not product_response.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return _normalize_product(product_response.data[0], db)
+
+
+@router.delete("/{product_id}/editors/{editor_user_id}", response_model=ProductResponse)
+async def remove_product_editor(
+    product_id: str,
+    editor_user_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Remove an editor/owner relationship from a product.
+
+    Allowed for existing product editors, product creator, admins, and moderators.
+    """
+    product = _get_product_by_identifier(db, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product_id = product["id"]
+
+    if not _can_manage_product_editors(db, product, current_user):
+        raise HTTPException(status_code=403, detail="Only owners, editors, moderators, and admins can manage product editors")
+
+    if not _looks_like_uuid(editor_user_id):
+        raise HTTPException(status_code=400, detail="Invalid editor user id")
+
+    if editor_user_id == product.get("created_by"):
+        raise HTTPException(status_code=400, detail="Cannot remove the product creator")
+
+    db.table("product_editors").delete().eq("product_id", product_id).eq(
+        "user_id", editor_user_id
+    ).execute()
+
+    product_response = db.table("products").select("*").eq("id", product_id).limit(1).execute()
+    if not product_response.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return _normalize_product(product_response.data[0], db)
+
+
+@router.get("/{product_id}/owners")
+async def get_product_editors_legacy(
+    product_id: str,
+    db=Depends(get_db),
+):
+    """Backward-compatible endpoint returning legacy owner/editor rows.
+
+    This endpoint includes all users in the product_editors join table.
+    """
+    product = _get_product_by_identifier(db, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    editors_response = (
+        db.table("product_editors").select("user_id").eq("product_id", product["id"]).execute()
+    )
+
+    if not editors_response.data:
+        return []
+
+    users_response = (
+        db.table("users")
+        .select("*")
+        .in_("id", [editor["user_id"] for editor in editors_response.data])
+        .execute()
+    )
+    return users_response.data or []
+
+
+@router.post("/{product_id}/owners", response_model=ProductResponse)
+async def add_product_editor_legacy(
+    product_id: str,
+    payload: ProductOwnerAssignment,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Backward-compatible alias for adding product editors via request body."""
+    return await add_product_editor(
+        product_id=product_id,
+        editor_user_id=payload.user_id,
+        current_user=current_user,
+        db=db,
+    )
+
+
+@router.delete("/{product_id}/owners/{editor_user_id}", response_model=ProductResponse)
+async def remove_product_editor_legacy(
+    product_id: str,
+    editor_user_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Backward-compatible alias for removing product editors."""
+    return await remove_product_editor(
+        product_id=product_id,
+        editor_user_id=editor_user_id,
+        current_user=current_user,
+        db=db,
+    )
 
 
 # ------------------------------

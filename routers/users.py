@@ -500,24 +500,14 @@ async def get_user_stats(username: str, db=Depends(get_db)):
 async def get_owned_products(
     username: str, db=Depends(get_db), current_user: dict = Depends(get_current_user)
 ):
-    """Get products owned by a user"""
+    """Get products owned by a user (owner = created_by)."""
     target_user = _get_user_by_identifier(db, username)
     user_id = target_user.get("id")
     # Check authorization - must be the user or admin
     if current_user["id"] != user_id and current_user.get("role") not in ["admin", "moderator"]:
         raise HTTPException(status_code=403, detail="Not authorized to view these products")
 
-    # Get all product IDs owned by this user
-    ownership_response = (
-        db.table("product_editors").select("product_id").eq("user_id", user_id).execute()
-    )
-
-    if not ownership_response.data:
-        return {"products": []}
-
-    product_ids = [row["product_id"] for row in ownership_response.data]
-
-    # Get the actual products
-    products_response = db.table("products").select("*").in_("id", product_ids).execute()
+    # Owner is the product creator.
+    products_response = db.table("products").select("*").eq("created_by", user_id).execute()
 
     return {"products": normalize_timestamp_fields(products_response.data or [])}

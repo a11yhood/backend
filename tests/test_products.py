@@ -675,12 +675,55 @@ def test_create_product_success(auth_client, test_user):
     data = response.json()
     assert data["name"] == "New Product"
     assert data["created_by"] == test_user["id"]
+    assert test_user["id"] not in data["editor_ids"]
 
 
 def test_update_product_owner_only(auth_client, test_product):
     response = auth_client.put(f"/api/products/{test_product['id']}", json={"name": "New Name"})
     assert response.status_code == 200
     assert response.json()["name"] == "New Name"
+
+
+def test_add_product_owner_success(auth_client, test_product, test_user_2):
+    response = auth_client.post(
+        f"/api/products/{test_product['id']}/owners",
+        json={"user_id": test_user_2["id"]},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert test_user_2["id"] in data["editor_ids"]
+
+
+def test_add_product_editor_collection_style_success(auth_client, test_product, test_user_2):
+    response = auth_client.post(
+        f"/api/products/{test_product['id']}/editors/{test_user_2['id']}"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert test_user_2["id"] in data["editor_ids"]
+
+
+def test_add_product_owner_forbidden_for_non_editor(auth_client_2, test_product, test_user):
+    response = auth_client_2.post(
+        f"/api/products/{test_product['id']}/owners",
+        json={"user_id": test_user["id"]},
+    )
+    assert response.status_code == 403
+
+
+def test_remove_product_owner_success(auth_client, test_product, test_user_2):
+    add_response = auth_client.post(
+        f"/api/products/{test_product['id']}/owners",
+        json={"user_id": test_user_2["id"]},
+    )
+    assert add_response.status_code == 200
+
+    remove_response = auth_client.delete(
+        f"/api/products/{test_product['id']}/owners/{test_user_2['id']}"
+    )
+    assert remove_response.status_code == 200
+    data = remove_response.json()
+    assert test_user_2["id"] not in data["editor_ids"]
 
 
 def test_delete_product_owner_success(auth_client, test_product):
