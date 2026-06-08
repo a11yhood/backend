@@ -871,7 +871,7 @@ GET /api/blog-posts?includeUnpublished=true
 
 **Query Parameters:**
 - `includeUnpublished` (optional): Include unpublished posts (admin only, default: false)
-- `author_id` (optional): Filter posts by author membership (`author_id` or `author_ids`)
+- `author_id` (optional): Filter posts by author membership (`author_ids`)
 
 **Response:**
 ```json
