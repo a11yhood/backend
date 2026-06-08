@@ -4,7 +4,7 @@ updates:
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      interval: "quarterly"
+      interval: "weekly"
       day: "monday"
       time: "03:00"
     allow:
@@ -30,7 +30,7 @@ updates:
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
-      interval: "quarterly"
+      interval: "weekly"
       day: "monday"
       time: "03:30"
     groups:
@@ -61,7 +61,9 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "quarterly"
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
     groups:
       github-actions-version-updates:
         applies-to: "version-updates"
