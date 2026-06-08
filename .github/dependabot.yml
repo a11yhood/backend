@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Python dependencies (pixi/pip)
+  # Python direct dependencies in pyproject.toml
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -10,23 +10,69 @@ updates:
     allow:
       - dependency-type: "direct"
     groups:
-      development-dependencies:
-        dependency-type: "development"
-      production-dependencies:
-        dependency-type: "production"
+      python-direct-dependencies:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+      python-security-updates:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
     commit-message:
       prefix: "deps:"
     pull-request-branch-name:
       separator: "/"
     reviewers:
       - "a11yhood/maintainers"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+
+  # uv.lock updates (often transitive); keep these grouped
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:30"
+    groups:
+      uv-dependencies:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      uv-security-updates:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    commit-message:
+      prefix: "deps:"
+    pull-request-branch-name:
+      separator: "/"
+    reviewers:
+      - "a11yhood/maintainers"
+    open-pull-requests-limit: 2
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    groups:
+      github-actions-version-updates:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+      github-actions-security-updates:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
     reviewers:
       - "a11yhood/maintainers"
     open-pull-requests-limit: 3
