@@ -332,6 +332,48 @@ def test_get_products_supports_multiple_source_params(client, clean_database):
     assert p3_id not in ids
 
 
+def test_get_products_and_count_filter_by_editor_id(client, clean_database, test_user, test_user_2):
+    editor_product_id = str(uuid.uuid4())
+    other_product_id = str(uuid.uuid4())
+
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": editor_product_id,
+                "name": "Editor Scoped Product",
+                "description": "Visible to selected editor",
+                "source": "Github",
+                "type": "Software",
+                "source_url": "https://github.com/example/editor-scoped",
+                "created_by": test_user["id"],
+            },
+            {
+                "id": other_product_id,
+                "name": "Other Product",
+                "description": "Not visible to selected editor",
+                "source": "Github",
+                "type": "Software",
+                "source_url": "https://github.com/example/not-editor-scoped",
+                "created_by": test_user["id"],
+            },
+        ],
+    )
+    clean_database.table("product_editors").insert(
+        {"id": str(uuid.uuid4()), "product_id": editor_product_id, "user_id": test_user_2["id"]}
+    ).execute()
+
+    resp = client.get(f"/api/products?editor_id={test_user_2['id']}")
+    assert resp.status_code == 200
+    ids = {item["id"] for item in resp.json()}
+    assert editor_product_id in ids
+    assert other_product_id not in ids
+
+    count_resp = client.get(f"/api/products/count?editor_id={test_user_2['id']}")
+    assert count_resp.status_code == 200
+    assert count_resp.json()["count"] == 1
+
+
 def test_get_products_filters_by_min_display_rating(client, clean_database, test_user):
     high_id = str(uuid.uuid4())
     mixed_id = str(uuid.uuid4())

@@ -251,6 +251,44 @@ class TestGetPublicCollections:
         assert response.status_code == 200
         assert response.json() is not None
 
+    def test_public_collections_filter_by_editor_id(
+        self, client, test_user, test_user_2, auth_headers, sqlite_db
+    ):
+        owner_collection = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user_2),
+            json={"name": "Owned By Editor", "is_public": True},
+        )
+        editor_collection = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Edited By User 2", "is_public": True},
+        )
+        unrelated_collection = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Unrelated Public", "is_public": True},
+        )
+
+        owner_collection_id = owner_collection.json()["id"]
+        editor_collection_id = editor_collection.json()["id"]
+        unrelated_collection_id = unrelated_collection.json()["id"]
+
+        sqlite_db.table("collection_editors").insert(
+            {
+                "id": str(uuid.uuid4()),
+                "collection_id": editor_collection_id,
+                "user_id": test_user_2["id"],
+            }
+        ).execute()
+
+        response = client.get(f"/api/collections/public?editor_id={test_user_2['id']}")
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()}
+        assert owner_collection_id in ids
+        assert editor_collection_id in ids
+        assert unrelated_collection_id not in ids
+
 
 class TestGetCollectionDetails:
     """Tests for Story 6.4: View Collection Details"""
