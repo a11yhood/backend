@@ -330,6 +330,9 @@ GET /api/products
 Use `GET /api/images/{imageId}` to render image bytes for uploaded images or follow
 redirects for external image sources.
 
+**Query Parameters:**
+- `editor_id` (optional): Filter products to those where the user is listed in `product_editors`
+
 ### Get Single Product
 
 ```http
@@ -868,6 +871,7 @@ GET /api/blog-posts?includeUnpublished=true
 
 **Query Parameters:**
 - `includeUnpublished` (optional): Include unpublished posts (admin only, default: false)
+- `author_id` (optional): Filter posts by author membership (`author_ids`)
 
 **Response:**
 ```json
@@ -1064,6 +1068,7 @@ GET /api/collections/public?search=yarn
 **Query Parameters:**
 - `sort_by` (optional): `created_at` (default), `product_count`, or `updated_at`
 - `search` (optional): Case-insensitive filter by collection name
+- `editor_id` (optional): Filter public collections where the user is owner or assigned editor
 
 ### Get Single Collection
 

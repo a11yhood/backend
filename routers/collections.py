@@ -558,6 +558,7 @@ async def get_user_collections(
 async def get_public_collections(
     sort_by: str = Query("created_at", pattern=r"^(created_at|product_count|updated_at)$"),
     search: str | None = None,
+    editor_id: str | None = Query(None, description="Filter by collection owner/editor user ID"),
     db=Depends(get_db),
 ):
     """Get all public collections, optionally sorted and filtered.
@@ -578,6 +579,13 @@ async def get_public_collections(
     if search:
         search_lower = search.lower()
         collections = [c for c in collections if search_lower in c.get("name", "").lower()]
+
+    if editor_id:
+        collections = [
+            c
+            for c in collections
+            if c.get("user_id") == editor_id or editor_id in (c.get("editor_ids") or [])
+        ]
 
     # Sort
     if sort_by == "product_count":

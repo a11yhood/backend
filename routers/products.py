@@ -333,6 +333,7 @@ def _prepare_product_filters(
     max_age: int | None = None,
     search: str | None = None,
     created_by: str | None = None,
+    editor_id: str | None = None,
     include_banned: bool = False,
     allow_aliases: bool = True,
 ) -> dict[str, Any]:
@@ -378,6 +379,7 @@ def _prepare_product_filters(
         "updated_since": updated_since,
         "search": search,
         "created_by": created_by,
+        "editor_id": editor_id,
         "include_banned": include_banned,
     }
 
@@ -404,6 +406,17 @@ def _apply_product_filters(query, db, filters: dict[str, Any]):
 
     if filters["created_by"]:
         query = query.eq("created_by", filters["created_by"])
+
+    if filters["editor_id"]:
+        editor_rows = (
+            db.table("product_editors").select("product_id").eq("user_id", filters["editor_id"]).execute()
+        )
+        editor_product_ids = [
+            row["product_id"] for row in (editor_rows.data or []) if row.get("product_id")
+        ]
+        if not editor_product_ids:
+            return None
+        query = query.in_("id", editor_product_ids)
 
     if not filters["include_banned"]:
         query = query.eq("banned", False)
@@ -882,6 +895,7 @@ async def get_products(
     max_age: int | None = Query(None, description="Filter products updated in the last N days"),
     search: str | None = None,
     created_by: str | None = None,
+    editor_id: str | None = None,
     include_banned: bool = Query(False, description="Include banned products (admin/mod only)"),
     include_ratings: bool = Query(
         False,
@@ -920,6 +934,7 @@ async def get_products(
         max_age=max_age,
         search=search,
         created_by=created_by,
+        editor_id=editor_id,
         include_banned=include_banned,
         allow_aliases=True,
     )
@@ -1052,6 +1067,7 @@ async def count_products(
     max_age: int | None = Query(None, description="Filter products updated in the last N days"),
     search: str | None = None,
     created_by: str | None = None,
+    editor_id: str | None = None,
     include_banned: bool = Query(False, description="Include banned products (admin/mod only)"),
     current_user: dict | None = Depends(get_current_user_optional),
     db=Depends(get_db),
@@ -1075,6 +1091,7 @@ async def count_products(
         max_age=max_age,
         search=search,
         created_by=created_by,
+        editor_id=editor_id,
         include_banned=include_banned,
         allow_aliases=True,
     )

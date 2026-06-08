@@ -238,6 +238,29 @@ def test_admin_can_publish_blog_post(admin_client, test_admin):
     assert detail["content"].startswith("**secure**")
 
 
+def test_blog_post_list_filters_by_author_id(admin_client, test_admin, test_user):
+    slug_a = f"security-blog-author-a-{int(time.time() * 1000)}"
+    slug_b = f"security-blog-author-b-{int(time.time() * 1000)}"
+
+    payload_a = _sample_blog_payload(
+        author_id=test_admin["id"], author_name="Admin User", slug=slug_a, published=True
+    )
+    payload_b = _sample_blog_payload(
+        author_id=test_user["id"], author_name="Regular User", slug=slug_b, published=True
+    )
+
+    create_a = admin_client.post("/api/blog-posts", json=payload_a)
+    create_b = admin_client.post("/api/blog-posts", json=payload_b)
+    assert create_a.status_code == 201
+    assert create_b.status_code == 201
+
+    filtered = admin_client._base.get(f"/api/blog-posts?author_id={test_user['id']}")
+    assert filtered.status_code == 200
+    slugs = {post["slug"] for post in filtered.json()}
+    assert slug_b in slugs
+    assert slug_a not in slugs
+
+
 def test_unpublished_blog_post_hidden_from_public(admin_client, test_admin):
     slug = f"security-blog-unpublished-{int(time.time() * 1000)}"
     payload = _sample_blog_payload(

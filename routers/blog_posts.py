@@ -229,6 +229,7 @@ def _ensure_slug_unique(db, slug: str, exclude_id: str | None = None):
 @router.get("", response_model=list[BlogPostResponse])
 async def list_blog_posts(
     include_unpublished: bool = Query(False, alias="includeUnpublished"),
+    author_id: str | None = Query(None, description="Filter by post author user ID"),
     limit: int = Query(20, le=100),
     offset: int = Query(0, ge=0),
     response: Response = None,
@@ -244,15 +245,17 @@ async def list_blog_posts(
 
     # Push ordering to SQL: primary publish_date desc NULLS LAST, then published_at desc, then created_at desc
     # Supabase/PostgREST supports multiple order clauses by repeating `order`.
-    query = (
-        query.order("publish_date", desc=True, nullsfirst=False)
-        .order("published_at", desc=True, nullsfirst=False)
-        .order("created_at", desc=True)
-    )
-    query = query.range(offset, offset + limit - 1)
+    query = query.order("publish_date", desc=True, nullsfirst=False).order(
+        "published_at", desc=True, nullsfirst=False
+    ).order("created_at", desc=True)
+    if not author_id:
+        query = query.range(offset, offset + limit - 1)
 
     db_resp = query.execute()
     posts = [_normalize_post(p, db) for p in (db_resp.data or [])]
+    if author_id:
+        posts = [post for post in posts if author_id in (post.get("author_ids") or [])]
+        posts = posts[offset : offset + limit]
     # Cache for 5 minutes for public listing
     if response is not None and not include_unpublished:
         response.headers["Cache-Control"] = "public, max-age=300"
