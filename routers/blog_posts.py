@@ -6,6 +6,7 @@ Markdown content should be sanitized before rendering to prevent XSS.
 """
 
 import re
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -226,6 +227,13 @@ def _ensure_slug_unique(db, slug: str, exclude_id: str | None = None):
         raise HTTPException(status_code=400, detail="Slug already exists")
 
 
+def _require_uuid(value: str, field_name: str) -> str:
+    try:
+        return str(uuid.UUID(value))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a valid UUID") from exc
+
+
 @router.get("", response_model=list[BlogPostResponse])
 async def list_blog_posts(
     include_unpublished: bool = Query(False, alias="includeUnpublished"),
@@ -239,11 +247,13 @@ async def list_blog_posts(
     if include_unpublished:
         ensure_admin(current_user)
 
+    author_uuid = _require_uuid(author_id, "author_id") if author_id else None
+
     query = db.table("blog_posts").select("*")
     if not include_unpublished:
         query = query.eq("published", True)
-    if author_id:
-        query = query.or_(f"author_id.eq.{author_id},author_ids.cs.{{{author_id}}}")
+    if author_uuid:
+        query = query.or_(f"author_id.eq.{author_uuid},author_ids.cs.{{{author_uuid}}}")
 
     # Push ordering to SQL: primary publish_date desc NULLS LAST, then published_at desc, then created_at desc
     # Supabase/PostgREST supports multiple order clauses by repeating `order`.
