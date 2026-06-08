@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Python direct dependencies in pyproject.toml (regular updates)
+  # Python direct dependencies in pyproject.toml
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -14,24 +14,6 @@ updates:
         applies-to: "version-updates"
         patterns:
           - "*"
-    commit-message:
-      prefix: "deps:"
-    pull-request-branch-name:
-      separator: "/"
-    reviewers:
-      - "a11yhood/maintainers"
-    open-pull-requests-limit: 2
-
-  # Python direct dependency security updates
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "02:30"
-    allow:
-      - dependency-type: "direct"
-    groups:
       python-security-updates:
         applies-to: "security-updates"
         patterns:
@@ -44,7 +26,7 @@ updates:
       - "a11yhood/maintainers"
     open-pull-requests-limit: 2
 
-  # uv.lock updates (often transitive); keep these in one grouped PR (regular updates)
+  # uv.lock updates (often transitive); keep these grouped
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
@@ -59,6 +41,10 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      uv-security-updates:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
     ignore:
       - dependency-name: "*"
         update-types:
@@ -71,27 +57,7 @@ updates:
       - "a11yhood/maintainers"
     open-pull-requests-limit: 2
 
-  # uv security updates
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "02:45"
-    groups:
-      uv-security-updates:
-        applies-to: "security-updates"
-        patterns:
-          - "*"
-    commit-message:
-      prefix: "deps:"
-    pull-request-branch-name:
-      separator: "/"
-    reviewers:
-      - "a11yhood/maintainers"
-    open-pull-requests-limit: 2
-
-  # GitHub Actions (regular updates)
+  # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -101,18 +67,6 @@ updates:
         applies-to: "version-updates"
         patterns:
           - "*"
-    reviewers:
-      - "a11yhood/maintainers"
-    open-pull-requests-limit: 3
-
-  # GitHub Actions security updates
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "02:50"
-    groups:
       github-actions-security-updates:
         applies-to: "security-updates"
         patterns:
