@@ -253,7 +253,8 @@ async def list_blog_posts(
     if not include_unpublished:
         query = query.eq("published", True)
     if author_uuid:
-        query = query.contains("author_ids", [author_uuid])
+        # Support both legacy single-author (`author_id`) and multi-author (`author_ids`) representations.
+        query = query.or_(f"author_id.eq.{author_uuid},author_ids.cs.{{{author_uuid}}}")
 
     # Push ordering to SQL: primary publish_date desc NULLS LAST, then published_at desc, then created_at desc
     # Supabase/PostgREST supports multiple order clauses by repeating `order`.
