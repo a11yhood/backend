@@ -234,40 +234,92 @@ GET /api/users/:userId/activities?limit=50
 ### Get User Statistics
 
 ```http
-GET /api/users/:userId/stats
+GET /api/users/{identifier}/stats
 ```
 
 **Parameters:**
-- `userId`: User ID
+- `identifier`: Username or UUID
+
+**Semantics:**
+- `products_submitted`: products where `products.created_by = user_id`
+- `products_managed`: products where the user appears in `product_editors`
+- `products`: aggregate of submitted + managed for backward compatibility
+- `collections_owned`: collections where `collections.user_id = user_id`
+- `collections_managed`: collections where the user appears in `collection_editors`
+- `collections`: aggregate of owned + managed for backward compatibility
+- `ratings_given`: rows in `ratings` for the user
+- `discussions_participated`: rows in `discussions` for the user
+- `total_contributions`: sum of all explicit contribution buckets above
 
 **Response:**
 ```json
 {
-  "productsSubmitted": 5,
-  "reviewsWritten": 12,
-  "ratingsGiven": 34,
-  "discussionsParticipated": 8,
-  "totalContributions": 59
+  "products_submitted": 1,
+  "products_managed": 2,
+  "products": 3,
+  "ratings_given": 4,
+  "discussions_participated": 0,
+  "collections_owned": 1,
+  "collections_managed": 1,
+  "collections": 2,
+  "total_contributions": 9
 }
 ```
 
 ### Get User's Products
 
 ```http
-GET /api/users/:userId/products
+GET /api/users/{identifier}/owned-products
 ```
 
 **Parameters:**
-- `userId`: User ID
+- `identifier`: Username or UUID
+
+**Semantics:**
+- Returns both products created by the user and products they manage through `product_editors`
+- Publicly readable for profile views
+
+**Response:**
+```json
+{
+  "products": [
+    {
+      "id": "prod-1",
+      "slug": "accessible-keyboard",
+      "name": "Accessible Keyboard",
+      "created_by": "12345"
+    }
+  ]
+}
+```
+
+### Get User's Public Collections
+
+```http
+GET /api/users/{identifier}/collections
+```
+
+**Parameters:**
+- `identifier`: Username or UUID
+
+**Semantics:**
+- Returns public collections owned by the user
+- Also returns public collections they manage through `collection_editors`
+- Private collections are excluded from this public-profile endpoint
 
 **Response:**
 ```json
 [
   {
-    "id": "prod-1",
-    "name": "Accessible Keyboard",
-    "submittedBy": "12345",
-    ...
+    "id": "collection-1",
+    "slug": "favorite-tools",
+    "user_id": "12345",
+    "user_name": "regular_user",
+    "name": "Favorite Tools",
+    "is_public": true,
+    "editor_ids": ["67890"],
+    "product_ids": ["prod-1"],
+    "product_slugs": ["accessible-keyboard"]
   }
 ]
 ```

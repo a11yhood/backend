@@ -76,6 +76,18 @@ Backend tests should prefer deterministic UUID-based dev auth for identity-sensi
 - Role-only behavior tests may use role-based dev tokens.
 - Keep frontend/manual dev flows role-token-friendly, but keep backend tests deterministic.
 
+## Seeded vs Dynamic Dev Users
+
+In `TEST_MODE`, there are two different categories of test identities:
+
+- Seeded deterministic users: `admin_user`, `moderator_user`, `regular_user`
+- Dynamic dev-role users: `dev_admin`, `dev_moderator`, `dev_user`
+
+Use seeded users when a test depends on known database fixtures or stable contribution counts.
+Use dynamic `dev_*` users for manual role-switching flows only.
+
+Do not assume `dev_user` and `regular_user` refer to the same database row. They are different identities and may have different products, collections, and stats.
+
 ## Marker usage and commands
 
 Run only unit tests:

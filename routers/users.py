@@ -47,6 +47,130 @@ def _get_user_by_identifier(db, identifier: str) -> dict:
     raise HTTPException(status_code=404, detail="User not found")
 
 
+def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list[dict]:
+    """Populate editor_ids, product_ids, and product_slugs for collections."""
+    if not collections:
+        return collections
+
+    collection_ids = [collection["id"] for collection in collections if collection.get("id")]
+    if not collection_ids:
+        return collections
+
+    owner_by_collection = {
+        collection["id"]: collection.get("user_id") for collection in collections if collection.get("id")
+    }
+
+    editors_resp = (
+        db.table("collection_editors")
+        .select("collection_id, user_id")
+        .in_("collection_id", collection_ids)
+        .execute()
+    )
+    editors_by_collection: dict[str, list[dict]] = {}
+    for row in (editors_resp.data or []):
+        collection_id = row.get("collection_id")
+        if not collection_id:
+            continue
+        editors_by_collection.setdefault(collection_id, []).append(row)
+
+    junction_resp = (
+        db.table("collection_products")
+        .select("collection_id, product_id, position")
+        .in_("collection_id", collection_ids)
+        .execute()
+    )
+    product_rows_by_collection: dict[str, list[dict]] = {}
+    for row in (junction_resp.data or []):
+        collection_id = row.get("collection_id")
+        if not collection_id:
+            continue
+        product_rows_by_collection.setdefault(collection_id, []).append(row)
+
+    all_product_ids = {
+        row["product_id"]
+        for rows in product_rows_by_collection.values()
+        for row in rows
+        if row.get("product_id")
+    }
+    id_to_slug: dict[str, str] = {}
+    if all_product_ids:
+        products_resp = db.table("products").select("id, slug").in_("id", list(all_product_ids)).execute()
+        id_to_slug = {
+            product["id"]: product["slug"] for product in (products_resp.data or []) if product.get("id")
+        }
+
+    for collection in collections:
+        collection_id = collection.get("id")
+        if not collection_id:
+            collection["editor_ids"] = []
+            collection["product_ids"] = []
+            collection["product_slugs"] = []
+            continue
+
+        owner_user_id = owner_by_collection.get(collection_id)
+        editor_rows = editors_by_collection.get(collection_id, [])
+        collection["editor_ids"] = [
+            row["user_id"]
+            for row in editor_rows
+            if row.get("user_id") and row.get("user_id") != owner_user_id
+        ]
+
+        product_rows = sorted(
+            product_rows_by_collection.get(collection_id, []),
+            key=lambda row: (row.get("position") is None, row.get("position", 0)),
+        )
+        product_ids = [row["product_id"] for row in product_rows if row.get("product_id")]
+        collection["product_ids"] = product_ids
+        collection["product_slugs"] = [id_to_slug.get(product_id) for product_id in product_ids]
+
+    return collections
+
+
+def _get_public_profile_collections(db, user_id: str) -> list[dict]:
+    """Return public collections owned by the user plus public collections they edit."""
+    owned_resp = (
+        db.table("collections")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("is_public", True)
+        .execute()
+    )
+    owned_collections = owned_resp.data or []
+
+    editor_links_resp = db.table("collection_editors").select("collection_id").eq("user_id", user_id).execute()
+    editor_collection_ids = [
+        row["collection_id"]
+        for row in (editor_links_resp.data or [])
+        if row.get("collection_id")
+    ]
+
+    managed_collections: list[dict] = []
+    if editor_collection_ids:
+        managed_resp = (
+            db.table("collections")
+            .select("*")
+            .in_("id", editor_collection_ids)
+            .eq("is_public", True)
+            .execute()
+        )
+        managed_collections = managed_resp.data or []
+
+    merged_by_id: dict[str, dict] = {}
+    for collection in owned_collections:
+        collection_id = collection.get("id")
+        if collection_id:
+            merged_by_id[collection_id] = collection
+    for collection in managed_collections:
+        collection_id = collection.get("id")
+        if collection_id:
+            merged_by_id[collection_id] = collection
+
+    collections = list(merged_by_id.values())
+    _populate_collection_relationships_bulk(db, collections)
+    collections.sort(key=lambda collection: collection.get("created_at") or "", reverse=True)
+    return normalize_timestamp_fields(collections)
+
+
 class UserAccountCreate(BaseModel):
     """Request model for creating/updating user account"""
 
@@ -453,9 +577,13 @@ async def get_all_users(db=Depends(get_db), current_user: dict = Depends(get_cur
 
 @router.get("/{username}/collections")
 async def get_user_collections(username: str, db=Depends(get_db)):
-    """Get user's product collections (not implemented yet)"""
-    # TODO: Implement collections when the feature is ready
-    return []
+    """Get public collections shown on a user's profile.
+
+    Returns public collections owned by the user and public collections where the
+    user has been granted editor access.
+    """
+    target_user = _get_user_by_identifier(db, username)
+    return _get_public_profile_collections(db, target_user.get("id"))
 
 
 @router.get("/{username}/requests")
@@ -483,35 +611,101 @@ async def get_user_stats(username: str, db=Depends(get_db)):
     """Get user statistics"""
     target_user = _get_user_by_identifier(db, username)
     user_id = target_user.get("id")
-    # Count user's contributions
-    products = db.table("products").select("id").eq("created_by", user_id).execute()
+
+    submitted_products = db.table("products").select("id").eq("created_by", user_id).execute()
+    submitted_product_ids = {
+        row["id"] for row in (submitted_products.data or []) if row.get("id")
+    }
+
+    product_editor_links = db.table("product_editors").select("product_id").eq("user_id", user_id).execute()
+    managed_product_ids = {
+        row["product_id"]
+        for row in (product_editor_links.data or [])
+        if row.get("product_id") and row.get("product_id") not in submitted_product_ids
+    }
+
     ratings = db.table("ratings").select("id").eq("user_id", user_id).execute()
     discussions = db.table("discussions").select("id").eq("user_id", user_id).execute()
+    owned_collections = db.table("collections").select("id").eq("user_id", user_id).execute()
 
-    products_submitted = len(products.data) if products.data else 0
+    collection_editor_links = (
+        db.table("collection_editors").select("collection_id").eq("user_id", user_id).execute()
+    )
+    managed_collection_ids = {
+        row["collection_id"]
+        for row in (collection_editor_links.data or [])
+        if row.get("collection_id")
+    }
+
+    owned_collection_ids = {
+        row["id"] for row in (owned_collections.data or []) if row.get("id")
+    }
+    managed_collection_ids = managed_collection_ids - owned_collection_ids
+
+    products_submitted = len(submitted_product_ids)
+    products_managed = len(managed_product_ids)
+    products_total = products_submitted + products_managed
     ratings_given = len(ratings.data) if ratings.data else 0
     discussions_participated = len(discussions.data) if discussions.data else 0
+    collections_owned = len(owned_collection_ids)
+    collections_managed = len(managed_collection_ids)
+    collections_total = collections_owned + collections_managed
+
+    total_contributions = (
+        products_submitted
+        + products_managed
+        + ratings_given
+        + discussions_participated
+        + collections_owned
+        + collections_managed
+    )
 
     return {
         "products_submitted": products_submitted,
+        "products_managed": products_managed,
+        # Backward-compatible aggregate for clients expecting a single products field.
+        "products": products_total,
         "ratings_given": ratings_given,
         "discussions_participated": discussions_participated,
-        "total_contributions": products_submitted + ratings_given + discussions_participated,
+        "collections_owned": collections_owned,
+        "collections_managed": collections_managed,
+        # Backward-compatible aggregate for clients expecting a single collections field.
+        "collections": collections_total,
+        "total_contributions": total_contributions,
     }
 
 
 @router.get("/{username}/owned-products")
 async def get_owned_products(
-    username: str, db=Depends(get_db), current_user: dict = Depends(get_current_user)
+    username: str,
+    db=Depends(get_db),
+    current_user: dict | None = Depends(get_current_user_optional),
 ):
-    """Get products owned by a user (owner = created_by)."""
+    """Get products managed by a user.
+
+    Includes products created by the user and products where they were granted
+    management access via the product_editors relationship.
+    """
     target_user = _get_user_by_identifier(db, username)
     user_id = target_user.get("id")
-    # Check authorization - must be the user or admin
-    if current_user["id"] != user_id and current_user.get("role") not in ["admin", "moderator"]:
-        raise HTTPException(status_code=403, detail="Not authorized to view these products")
+    # Public profile endpoint: product contributions are visible to everyone.
 
-    # Owner is the product creator.
-    products_response = db.table("products").select("*").eq("created_by", user_id).execute()
+    created_products = db.table("products").select("*").eq("created_by", user_id).execute()
 
-    return {"products": normalize_timestamp_fields(products_response.data or [])}
+    editor_links = db.table("product_editors").select("product_id").eq("user_id", user_id).execute()
+    editor_product_ids = [row["product_id"] for row in (editor_links.data or []) if row.get("product_id")]
+
+    editor_products: list[dict] = []
+    if editor_product_ids:
+        editor_products_resp = db.table("products").select("*").in_("id", editor_product_ids).execute()
+        editor_products = editor_products_resp.data or []
+
+    merged_by_id = {}
+    for product in (created_products.data or []):
+        if product.get("id"):
+            merged_by_id[product["id"]] = product
+    for product in editor_products:
+        if product.get("id"):
+            merged_by_id[product["id"]] = product
+
+    return {"products": normalize_timestamp_fields(list(merged_by_id.values()))}
