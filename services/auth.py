@@ -150,7 +150,7 @@ async def parse_dev_token(authorization: str | None, x_dev_role: str | None, db)
         # Check if test user with this role exists
         resp = db.table("users").select("*").eq("username", dev_username).execute()
 
-        if resp.data and len(resp.data) > 0:
+        if resp.data and len(resp.data) > 0 and resp.data[0].get("id"):
             user = resp.data[0]
             logger.debug(f"Found existing dev user: {user['id']} (role: {role})")
             return {
@@ -276,7 +276,7 @@ async def parse_dev_token(authorization: str | None, x_dev_role: str | None, db)
     # Check if test user with this role exists
     resp = db.table("users").select("*").eq("username", dev_username).execute()
 
-    if resp.data and len(resp.data) > 0:
+    if resp.data and len(resp.data) > 0 and resp.data[0].get("id"):
         user = resp.data[0]
         logger.debug(f"Found existing dev user: {user['id']} (role: {role})")
         return {

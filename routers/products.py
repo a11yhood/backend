@@ -399,9 +399,9 @@ def _prepare_product_filters(
 
 
 def _apply_product_filters(query, db, filters: dict[str, Any]):
-    source_values = filters["source_values"]
-    type_values = filters["type_values"]
-    tag_values = filters["tag_values"]
+    source_values = filters.get("source_values", set())
+    type_values = filters.get("type_values", set())
+    tag_values = filters.get("tag_values", [])
 
     if source_values:
         query = query.in_("source", list(source_values))
@@ -410,18 +410,18 @@ def _apply_product_filters(query, db, filters: dict[str, Any]):
         query = query.in_("type", list(type_values))
 
     if tag_values:
-        product_ids_with_tags = get_product_ids_for_tags(db, tag_values, filters["tag_mode"])
+        product_ids_with_tags = get_product_ids_for_tags(db, tag_values, filters.get("tag_mode", "or"))
         if not product_ids_with_tags:
             return None
         query = query.in_("id", list(product_ids_with_tags))
 
-    if filters["search"]:
+    if filters.get("search"):
         query = query.ilike("name", f"%{filters['search']}%")
 
-    if filters["created_by"]:
+    if filters.get("created_by"):
         query = query.eq("created_by", filters["created_by"])
 
-    if filters["editor_id"]:
+    if filters.get("editor_id"):
         editor_rows = (
             db.table("product_editors").select("product_id").eq("user_id", filters["editor_id"]).execute()
         )
@@ -432,13 +432,13 @@ def _apply_product_filters(query, db, filters: dict[str, Any]):
             return None
         query = query.in_("id", editor_product_ids)
 
-    if not filters["include_banned"]:
+    if not filters.get("include_banned", False):
         query = query.eq("banned", False)
 
-    if filters["updated_since"] is not None:
+    if filters.get("updated_since") is not None:
         query = query.gte("source_last_updated", filters["updated_since"])
 
-    if filters["min_rating"] is not None:
+    if filters.get("min_rating") is not None:
         min_rating = filters["min_rating"]
         # Include products where either computed rating or source rating meets threshold.
         query = query.or_(f"computed_rating.gte.{min_rating},source_rating.gte.{min_rating}")

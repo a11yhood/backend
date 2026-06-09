@@ -35,11 +35,15 @@ def _get_user_by_identifier(db, identifier: str) -> dict:
     """Fetch a user by username or id (UUID string) or raise 404."""
     response = db.table("users").select("*").eq("username", identifier).limit(1).execute()
     if response.data:
-        return response.data[0]
+        user = response.data[0]
+        if user.get("id"):
+            return user
     if _looks_like_uuid(identifier):
         response = db.table("users").select("*").eq("id", identifier).limit(1).execute()
         if response.data:
-            return response.data[0]
+            user = response.data[0]
+            if user.get("id"):
+                return user
     raise HTTPException(status_code=404, detail="User not found")
 
 
