@@ -745,6 +745,55 @@ def test_add_product_editor_collection_style_success(auth_client, test_product, 
     assert test_user_2["id"] in data["editor_ids"]
 
 
+def test_existing_editor_cannot_grant_other_editors(
+    auth_client, auth_client_2, clean_database, test_product, test_user_2
+):
+    third_user_id = str(uuid.uuid4())
+    clean_database.table("users").insert(
+        {
+            "id": third_user_id,
+            "github_id": f"test-user-{third_user_id[:8]}",
+            "username": f"testuser_{third_user_id[:8]}",
+            "email": f"{third_user_id[:8]}@example.com",
+            "display_name": "Third User",
+            "role": "user",
+        }
+    ).execute()
+
+    owner_add_response = auth_client.post(
+        f"/api/products/{test_product['id']}/editors/{test_user_2['id']}"
+    )
+    assert owner_add_response.status_code == 200
+
+    editor_grant_response = auth_client_2.post(
+        f"/api/products/{test_product['id']}/editors/{third_user_id}"
+    )
+    assert editor_grant_response.status_code == 403
+    assert "Only owners, moderators, and admins" in editor_grant_response.json()["detail"]
+
+
+def test_product_editor_endpoints_do_not_expose_private_user_fields(
+    auth_client, test_product, test_user_2
+):
+    add_response = auth_client.post(
+        f"/api/products/{test_product['id']}/owners",
+        json={"user_id": test_user_2["id"]},
+    )
+    assert add_response.status_code == 200
+
+    editors_response = auth_client.get(f"/api/products/{test_product['id']}/editors")
+    assert editors_response.status_code == 200
+    editors = editors_response.json()
+    assert len(editors) >= 1
+    assert all("email" not in editor for editor in editors)
+
+    owners_response = auth_client.get(f"/api/products/{test_product['id']}/owners")
+    assert owners_response.status_code == 200
+    owners = owners_response.json()
+    assert len(owners) >= 1
+    assert all("email" not in owner for owner in owners)
+
+
 def test_add_product_owner_forbidden_for_non_editor(auth_client_2, test_product, test_user):
     response = auth_client_2.post(
         f"/api/products/{test_product['id']}/owners",

@@ -2020,7 +2020,11 @@ def _ensure_moderator_or_admin(current_user: dict):
 
 
 def _can_manage_product_editors(db, product: dict, current_user: dict | None) -> bool:
-    """Return True when caller can add/remove product editors."""
+    """Return True when caller can add/remove product editors.
+
+    Security policy: only product creator, admin, or moderator can change
+    editor assignments.
+    """
     if not current_user:
         return False
 
@@ -2035,15 +2039,7 @@ def _can_manage_product_editors(db, product: dict, current_user: dict | None) ->
     if product.get("created_by") == user_id:
         return True
 
-    editor_check = (
-        db.table("product_editors")
-        .select("user_id")
-        .eq("product_id", product["id"])
-        .eq("user_id", user_id)
-        .limit(1)
-        .execute()
-    )
-    return bool(editor_check.data)
+    return False
 
 
 class ProductOwnerAssignment(BaseModel):
@@ -2146,8 +2142,13 @@ async def get_product_editors(
     if not editor_ids:
         return []
 
-    # Get user details for each editor
-    users_response = db.table("users").select("*").in_("id", editor_ids).execute()
+    # Return only public-safe user fields (avoid exposing private user data).
+    users_response = (
+        db.table("users")
+        .select("id,username,display_name,avatar_url")
+        .in_("id", editor_ids)
+        .execute()
+    )
 
     return users_response.data or []
 
@@ -2161,7 +2162,7 @@ async def add_product_editor(
 ):
     """Add an editor/owner relationship to a product.
 
-    Allowed for existing product editors, product creator, admins, and moderators.
+    Allowed for product creator, admins, and moderators.
     """
     product = _get_product_by_identifier(db, product_id)
     if not product:
@@ -2169,7 +2170,7 @@ async def add_product_editor(
     product_id = product["id"]
 
     if not _can_manage_product_editors(db, product, current_user):
-        raise HTTPException(status_code=403, detail="Only owners, editors, moderators, and admins can manage product editors")
+        raise HTTPException(status_code=403, detail="Only owners, moderators, and admins can manage product editors")
 
     if not _looks_like_uuid(editor_user_id):
         raise HTTPException(status_code=400, detail="Invalid editor user id")
@@ -2201,7 +2202,7 @@ async def remove_product_editor(
 ):
     """Remove an editor/owner relationship from a product.
 
-    Allowed for existing product editors, product creator, admins, and moderators.
+    Allowed for product creator, admins, and moderators.
     """
     product = _get_product_by_identifier(db, product_id)
     if not product:
@@ -2209,7 +2210,7 @@ async def remove_product_editor(
     product_id = product["id"]
 
     if not _can_manage_product_editors(db, product, current_user):
-        raise HTTPException(status_code=403, detail="Only owners, editors, moderators, and admins can manage product editors")
+        raise HTTPException(status_code=403, detail="Only owners, moderators, and admins can manage product editors")
 
     if not _looks_like_uuid(editor_user_id):
         raise HTTPException(status_code=400, detail="Invalid editor user id")
@@ -2249,7 +2250,7 @@ async def get_product_editors_legacy(
 
     users_response = (
         db.table("users")
-        .select("*")
+        .select("id,username,display_name,avatar_url")
         .in_("id", [editor["user_id"] for editor in editors_response.data])
         .execute()
     )
