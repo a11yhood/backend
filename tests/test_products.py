@@ -332,6 +332,48 @@ def test_get_products_supports_multiple_source_params(client, clean_database):
     assert p3_id not in ids
 
 
+def test_get_products_and_count_filter_by_editor_id(client, clean_database, test_user, test_user_2):
+    editor_product_id = str(uuid.uuid4())
+    other_product_id = str(uuid.uuid4())
+
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": editor_product_id,
+                "name": "Editor Scoped Product",
+                "description": "Visible to selected editor",
+                "source": "Github",
+                "type": "Software",
+                "source_url": "https://github.com/example/editor-scoped",
+                "created_by": test_user["id"],
+            },
+            {
+                "id": other_product_id,
+                "name": "Other Product",
+                "description": "Not visible to selected editor",
+                "source": "Github",
+                "type": "Software",
+                "source_url": "https://github.com/example/not-editor-scoped",
+                "created_by": test_user["id"],
+            },
+        ],
+    )
+    clean_database.table("product_editors").insert(
+        {"id": str(uuid.uuid4()), "product_id": editor_product_id, "user_id": test_user_2["id"]}
+    ).execute()
+
+    resp = client.get(f"/api/products?editor_id={test_user_2['id']}")
+    assert resp.status_code == 200
+    ids = {item["id"] for item in resp.json()}
+    assert editor_product_id in ids
+    assert other_product_id not in ids
+
+    count_resp = client.get(f"/api/products/count?editor_id={test_user_2['id']}")
+    assert count_resp.status_code == 200
+    assert count_resp.json()["count"] == 1
+
+
 def test_get_products_filters_by_min_display_rating(client, clean_database, test_user):
     high_id = str(uuid.uuid4())
     mixed_id = str(uuid.uuid4())
@@ -675,12 +717,104 @@ def test_create_product_success(auth_client, test_user):
     data = response.json()
     assert data["name"] == "New Product"
     assert data["created_by"] == test_user["id"]
+    assert test_user["id"] not in data["editor_ids"]
 
 
 def test_update_product_owner_only(auth_client, test_product):
     response = auth_client.put(f"/api/products/{test_product['id']}", json={"name": "New Name"})
     assert response.status_code == 200
     assert response.json()["name"] == "New Name"
+
+
+def test_add_product_owner_success(auth_client, test_product, test_user_2):
+    response = auth_client.post(
+        f"/api/products/{test_product['id']}/owners",
+        json={"user_id": test_user_2["id"]},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert test_user_2["id"] in data["editor_ids"]
+
+
+def test_add_product_editor_collection_style_success(auth_client, test_product, test_user_2):
+    response = auth_client.post(
+        f"/api/products/{test_product['id']}/editors/{test_user_2['id']}"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert test_user_2["id"] in data["editor_ids"]
+
+
+def test_existing_editor_cannot_grant_other_editors(
+    auth_client, auth_client_2, clean_database, test_product, test_user_2
+):
+    third_user_id = str(uuid.uuid4())
+    clean_database.table("users").insert(
+        {
+            "id": third_user_id,
+            "github_id": f"test-user-{third_user_id[:8]}",
+            "username": f"testuser_{third_user_id[:8]}",
+            "email": f"{third_user_id[:8]}@example.com",
+            "display_name": "Third User",
+            "role": "user",
+        }
+    ).execute()
+
+    owner_add_response = auth_client.post(
+        f"/api/products/{test_product['id']}/editors/{test_user_2['id']}"
+    )
+    assert owner_add_response.status_code == 200
+
+    editor_grant_response = auth_client_2.post(
+        f"/api/products/{test_product['id']}/editors/{third_user_id}"
+    )
+    assert editor_grant_response.status_code == 403
+    assert "Only owners, moderators, and admins" in editor_grant_response.json()["detail"]
+
+
+def test_product_editor_endpoints_do_not_expose_private_user_fields(
+    auth_client, test_product, test_user_2
+):
+    add_response = auth_client.post(
+        f"/api/products/{test_product['id']}/owners",
+        json={"user_id": test_user_2["id"]},
+    )
+    assert add_response.status_code == 200
+
+    editors_response = auth_client.get(f"/api/products/{test_product['id']}/editors")
+    assert editors_response.status_code == 200
+    editors = editors_response.json()
+    assert len(editors) >= 1
+    assert all("email" not in editor for editor in editors)
+
+    owners_response = auth_client.get(f"/api/products/{test_product['id']}/owners")
+    assert owners_response.status_code == 200
+    owners = owners_response.json()
+    assert len(owners) >= 1
+    assert all("email" not in owner for owner in owners)
+
+
+def test_add_product_owner_forbidden_for_non_editor(auth_client_2, test_product, test_user):
+    response = auth_client_2.post(
+        f"/api/products/{test_product['id']}/owners",
+        json={"user_id": test_user["id"]},
+    )
+    assert response.status_code == 403
+
+
+def test_remove_product_owner_success(auth_client, test_product, test_user_2):
+    add_response = auth_client.post(
+        f"/api/products/{test_product['id']}/owners",
+        json={"user_id": test_user_2["id"]},
+    )
+    assert add_response.status_code == 200
+
+    remove_response = auth_client.delete(
+        f"/api/products/{test_product['id']}/owners/{test_user_2['id']}"
+    )
+    assert remove_response.status_code == 200
+    data = remove_response.json()
+    assert test_user_2["id"] not in data["editor_ids"]
 
 
 def test_delete_product_owner_success(auth_client, test_product):

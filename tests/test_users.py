@@ -148,3 +148,127 @@ def test_me_endpoint_returns_full_profile_with_email(auth_client, test_user):
     assert response.status_code == 200
     data = response.json()
     assert data["email"] is None  # Public profile excludes email
+
+
+def test_user_profile_collections_returns_public_owned_and_managed(
+    client, clean_database, test_user, test_user_2
+):
+    """Public profile collections include owned public and managed public collections."""
+    owned_public_id = str(uuid.uuid4())
+    owned_private_id = str(uuid.uuid4())
+    managed_public_id = str(uuid.uuid4())
+
+    clean_database.table("collections").insert(
+        {
+            "id": owned_public_id,
+            "slug": f"owned-public-{owned_public_id[:8]}",
+            "user_id": test_user_2["id"],
+            "user_name": test_user_2["username"],
+            "name": "Owned Public Collection",
+            "description": "owned public",
+            "is_public": True,
+        }
+    ).execute()
+
+    clean_database.table("collections").insert(
+        {
+            "id": owned_private_id,
+            "slug": f"owned-private-{owned_private_id[:8]}",
+            "user_id": test_user_2["id"],
+            "user_name": test_user_2["username"],
+            "name": "Owned Private Collection",
+            "description": "owned private",
+            "is_public": False,
+        }
+    ).execute()
+
+    clean_database.table("collections").insert(
+        {
+            "id": managed_public_id,
+            "slug": f"managed-public-{managed_public_id[:8]}",
+            "user_id": test_user["id"],
+            "user_name": test_user["username"],
+            "name": "Managed Public Collection",
+            "description": "managed public",
+            "is_public": True,
+        }
+    ).execute()
+
+    clean_database.table("collection_editors").insert(
+        {
+            "collection_id": managed_public_id,
+            "user_id": test_user_2["id"],
+        }
+    ).execute()
+
+    response = client.get(f"/api/users/{test_user_2['username']}/collections")
+    assert response.status_code == 200
+
+    names = {collection["name"] for collection in response.json()}
+    assert "Owned Public Collection" in names
+    assert "Managed Public Collection" in names
+    assert "Owned Private Collection" not in names
+
+
+def test_user_stats_include_managed_products(client, clean_database, test_user, test_user_2):
+    """Stats include products managed through product_editors separate from submissions."""
+    managed_product_id = str(uuid.uuid4())
+    managed_slug = f"managed-editor-product-{managed_product_id[:8]}"
+
+    clean_database.table("products").insert(
+        {
+            "id": managed_product_id,
+            "name": "Managed Editor Product",
+            "description": "product managed by editor",
+            "source": "github",
+            "type": "Software",
+            "source_url": f"https://github.com/a11yhood/{managed_slug}",
+            "slug": managed_slug,
+            "created_by": test_user["id"],
+        }
+    ).execute()
+
+    clean_database.table("product_editors").insert(
+        {
+            "product_id": managed_product_id,
+            "user_id": test_user_2["id"],
+        }
+    ).execute()
+
+    response = client.get(f"/api/users/{test_user_2['username']}/stats")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["products_submitted"] == 0
+    assert data["products_managed"] == 1
+    assert data["products"] == 1
+    assert data["collections_owned"] == 0
+    assert data["collections_managed"] == 0
+    assert data["collections"] == 0
+    assert data["total_contributions"] == (
+        data["products_submitted"]
+        + data["products_managed"]
+        + data["ratings_given"]
+        + data["discussions_participated"]
+        + data["collections_owned"]
+        + data["collections_managed"]
+    )
+
+
+def test_owned_products_does_not_error_without_editor_links(client, test_admin, test_user):
+    """Owned-products should return created products even with zero editor-link rows."""
+    response = client.get(
+        f"/api/users/{test_user['username']}/owned-products",
+        headers={"Authorization": "Bearer dev-token-admin"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data.get("products"), list)
+
+
+def test_owned_products_is_public_for_profile_views(client, test_user):
+    """Owned-products can be fetched without auth for public profile rendering."""
+    response = client.get(f"/api/users/{test_user['username']}/owned-products")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data.get("products"), list)
