@@ -794,6 +794,19 @@ def test_product_editor_endpoints_do_not_expose_private_user_fields(
     assert all("email" not in owner for owner in owners)
 
 
+def test_product_owners_includes_creator_without_explicit_editor_rows(
+    auth_client, test_product, test_user
+):
+    owners_response = auth_client.get(f"/api/products/{test_product['id']}/owners")
+    assert owners_response.status_code == 200
+
+    owners = owners_response.json()
+    owner_ids = [owner["id"] for owner in owners]
+
+    assert test_user["id"] in owner_ids
+    assert all("email" not in owner for owner in owners)
+
+
 def test_add_product_owner_forbidden_for_non_editor(auth_client_2, test_product, test_user):
     response = auth_client_2.post(
         f"/api/products/{test_product['id']}/owners",

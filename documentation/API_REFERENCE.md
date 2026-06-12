@@ -613,6 +613,11 @@ GET /api/products/:id/owners
 **Parameters:**
 - `id`: Product ID
 
+**Semantics:**
+- Returns all edit-capable users for the product.
+- Includes the product creator (`created_by`) when present.
+- Includes additional collaborators explicitly assigned through `product_editors`.
+
 **Response:**
 ```json
 [

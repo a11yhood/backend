@@ -2233,9 +2233,11 @@ async def get_product_editors_legacy(
     product_id: str,
     db=Depends(get_db),
 ):
-    """Backward-compatible endpoint returning legacy owner/editor rows.
+    """Return all users with edit-capable access for a product.
 
-    This endpoint includes all users in the product_editors join table.
+    Canonical ownership semantics:
+    - Product creator (`created_by`) is always included when present.
+    - Additional collaborators come from `product_editors`.
     """
     product = _get_product_by_identifier(db, product_id)
     if not product:
@@ -2245,13 +2247,21 @@ async def get_product_editors_legacy(
         db.table("product_editors").select("user_id").eq("product_id", product["id"]).execute()
     )
 
-    if not editors_response.data:
+    owner_ids = {
+        editor.get("user_id")
+        for editor in (editors_response.data or [])
+        if editor.get("user_id")
+    }
+    if product.get("created_by"):
+        owner_ids.add(product["created_by"])
+
+    if not owner_ids:
         return []
 
     users_response = (
         db.table("users")
         .select("id,username,display_name,avatar_url")
-        .in_("id", [editor["user_id"] for editor in editors_response.data])
+        .in_("id", list(owner_ids))
         .execute()
     )
     return users_response.data or []
