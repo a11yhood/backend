@@ -176,6 +176,7 @@ class TestGetUserCollections:
             headers=auth_headers(test_user_2),
             json={"name": "User 2 Collection", "is_public": True},
         )
+        assert editor_response.status_code == 201
         editor_collection = editor_response.json()
 
         # Grant user 1 editor access to user 2's collection
