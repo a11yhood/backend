@@ -167,6 +167,7 @@ class TestGetUserCollections:
             headers=auth_headers(test_user),
             json={"name": "User 1 Collection", "is_public": True},
         )
+        assert owner_response.status_code == 201
         owner_collection = owner_response.json()
 
         # Create collection for user 2
