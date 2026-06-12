@@ -1093,6 +1093,8 @@ Collection responses use snake_case field names:
   "editor_ids": [
     "90ea5cc1-e58c-4c3a-a938-8d9ad7d1bb47"
   ],
+  "access_role": "owner",
+  "is_owner": true,
   "product_ids": [
     "2bf24db6-0a4f-4b2f-9005-8f4cf66d31ab"
   ],
@@ -1110,7 +1112,9 @@ Collection responses use snake_case field names:
 GET /api/collections
 ```
 
-Returns collections owned by the authenticated user.
+Returns collections the authenticated user can manage:
+- Owned collections (`access_role = owner`, `is_owner = true`)
+- Editor-managed collections (`access_role = editor`, `is_owner = false`)
 
 ### Get Public Collections
 
