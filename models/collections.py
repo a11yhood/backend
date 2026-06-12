@@ -52,6 +52,14 @@ class CollectionResponse(CollectionBase):
     editor_ids: list[str] = Field(default_factory=list)
     product_ids: list[str] = Field(default_factory=list)
     product_slugs: list[str] = Field(default_factory=list)
+    access_role: str | None = Field(
+        default=None,
+        description="Authenticated access role for this collection (`owner` or `editor`) when context applies.",
+    )
+    is_owner: bool | None = Field(
+        default=None,
+        description="Whether the authenticated user is the collection owner when context applies.",
+    )
     created_at: ApiTimestamp
     updated_at: ApiTimestamp
 

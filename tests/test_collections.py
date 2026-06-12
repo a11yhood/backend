@@ -154,29 +154,51 @@ class TestGetUserCollections:
         assert len(data) >= 1
         assert any(c["id"] == collection_id for c in data)
         assert all(test_user["id"] not in c["editor_ids"] for c in data if c["id"] == collection_id)
+        assert all(c["access_role"] == "owner" for c in data if c["id"] == collection_id)
+        assert all(c["is_owner"] is True for c in data if c["id"] == collection_id)
 
-    def test_get_user_collections_only_own(self, client, test_user, test_user_2, auth_headers):
-        """Test that user only sees their own collections"""
+    def test_get_user_collections_includes_owned_and_editor_managed(
+        self, client, test_user, test_user_2, auth_headers
+    ):
+        """Test that user sees both owned and editor-managed collections."""
         # Create collection for user 1
-        client.post(
+        owner_response = client.post(
             "/api/collections",
             headers=auth_headers(test_user),
             json={"name": "User 1 Collection", "is_public": True},
         )
+        owner_collection = owner_response.json()
 
         # Create collection for user 2
-        client.post(
+        editor_response = client.post(
             "/api/collections",
             headers=auth_headers(test_user_2),
             json={"name": "User 2 Collection", "is_public": True},
         )
+        editor_collection = editor_response.json()
 
-        # User 1 should only see their own
+        # Grant user 1 editor access to user 2's collection
+        add_editor_response = client.post(
+            f"/api/collections/{editor_collection['id']}/editors/{test_user['id']}",
+            headers=auth_headers(test_user_2),
+        )
+        assert add_editor_response.status_code == 200
+
+        # User 1 should see both owned and editor-managed collections
         response = client.get("/api/collections", headers=auth_headers(test_user))
         assert response.status_code == 200
         collections = response.json()
-        assert len(collections) == 1
-        assert collections[0]["name"] == "User 1 Collection"
+        assert len(collections) == 2
+
+        by_id = {collection["id"]: collection for collection in collections}
+        assert owner_collection["id"] in by_id
+        assert editor_collection["id"] in by_id
+
+        assert by_id[owner_collection["id"]]["access_role"] == "owner"
+        assert by_id[owner_collection["id"]]["is_owner"] is True
+
+        assert by_id[editor_collection["id"]]["access_role"] == "editor"
+        assert by_id[editor_collection["id"]]["is_owner"] is False
 
     def test_get_user_collections_empty(self, client, test_user, auth_headers):
         """Test getting collections when user has none"""

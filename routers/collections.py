@@ -532,21 +532,67 @@ async def get_user_collections(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Get all collections for the authenticated user"""
+    """Get collections the authenticated user can manage.
+
+    Returns both:
+    - collections owned by the user (`access_role=owner`)
+    - collections where the user is an assigned editor (`access_role=editor`)
+    """
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     user_id = current_user.get("id")
 
-    # Fetch collections from database
-    response = (
+    owned_response = (
         db.table("collections")
         .select("*")
         .eq("user_id", user_id)
-        .order("created_at", desc=True)
         .execute()
     )
-    collections = response.data or []
+
+    editor_links_response = (
+        db.table("collection_editors")
+        .select("collection_id")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    editor_collection_ids = [
+        row["collection_id"]
+        for row in (editor_links_response.data or [])
+        if row.get("collection_id")
+    ]
+
+    editor_collections: list[dict] = []
+    if editor_collection_ids:
+        editor_collections_response = (
+            db.table("collections")
+            .select("*")
+            .in_("id", editor_collection_ids)
+            .execute()
+        )
+        editor_collections = editor_collections_response.data or []
+
+    collections_by_id: dict[str, dict] = {}
+    for collection in (owned_response.data or []):
+        collection_id = collection.get("id")
+        if collection_id:
+            collection["access_role"] = "owner"
+            collection["is_owner"] = True
+            collections_by_id[collection_id] = collection
+
+    for collection in editor_collections:
+        collection_id = collection.get("id")
+        if not collection_id:
+            continue
+        if collection_id in collections_by_id:
+            # Owner precedence for any data inconsistencies where owner is also listed as editor.
+            continue
+        collection["access_role"] = "editor"
+        collection["is_owner"] = False
+        collections_by_id[collection_id] = collection
+
+    collections = list(collections_by_id.values())
+    collections.sort(key=lambda collection: collection.get("created_at") or "", reverse=True)
 
     # Populate relationship fields in bulk to avoid N+1 round-trips.
     _populate_collection_relationships_bulk(db, collections)
