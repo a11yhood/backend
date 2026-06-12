@@ -8,6 +8,15 @@ Read this first when operating on the repo. It summarizes conventions, helper ut
 - Unit tests may use `monkeypatch`/`unittest.mock` for isolated logic.
 - When adding features, update coverage docs so tests map to behavior.
 - Default to snake_case
+- For bug fixes, prefer root-cause fixes over symptom-only targeted patches.
+
+## Bug Fix Strategy (Root Cause First)
+- Do not stop at the first observable symptom. Trace the behavior through request handlers, shared helpers, data model assumptions, and docs/contracts.
+- Prefer canonical fixes at the source of truth (shared helper, normalization layer, contract definition) rather than patching one endpoint/callsite.
+- Use targeted fixes only as a temporary mitigation when a root-cause change is too risky for the current scope; if so, document why and add a follow-up task.
+- Add or update a regression test that reproduces the original bug at the contract level.
+- Update API and behavior documentation when endpoint semantics or invariants are clarified.
+- Before finalizing, verify no contradictory behavior remains across related endpoints or payload representations.
 
 ## Environment Modes (read before running anything)
 - **Dev/Test (Supabase test project + seeds):** `./start-dev.sh --seed` loads `.env.test`, connects to the shared test Supabase project, and seeds data via `seed_scripts/seed_all.py`. Safe for local work and scrapers; no real OAuth.
