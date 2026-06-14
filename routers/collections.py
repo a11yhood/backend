@@ -23,6 +23,7 @@ from models.collections import (
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
+from services.ratings import compute_display_rating
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 logger = logging.getLogger(__name__)
@@ -369,14 +370,7 @@ def _compute_display_rating(
     source_rating: float | None,
     user_rating_count: int = 0,
 ) -> float | None:
-    if user_average is not None and source_rating is not None:
-        weight = max(int(user_rating_count or 0), 1)
-        return ((user_average * weight) + source_rating) / (weight + 1)
-    if user_average is not None:
-        return user_average
-    if source_rating is not None:
-        return source_rating
-    return None
+    return compute_display_rating(user_average, source_rating, user_rating_count)
 
 
 def _build_display_rating_map(db, products: list[dict]) -> dict[str, dict]:

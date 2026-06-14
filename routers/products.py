@@ -26,6 +26,7 @@ from services.image_references import (
     resolve_image_metadata,
     sync_image_alt_if_missing,
 )
+from services.ratings import compute_display_rating
 from services.sources import extract_domain, find_source_for_domain
 
 router = APIRouter(prefix="/api/products", tags=["products"])
@@ -440,8 +441,7 @@ def _apply_product_filters(query, db, filters: dict[str, Any]):
 
     if filters.get("min_rating") is not None:
         min_rating = filters["min_rating"]
-        # Include products where either computed rating or source rating meets threshold.
-        query = query.or_(f"computed_rating.gte.{min_rating},source_rating.gte.{min_rating}")
+        query = query.gte("computed_rating", min_rating)
 
     return query
 
@@ -597,16 +597,7 @@ def _compute_display_rating(
     source_rating: float | None,
     user_rating_count: int = 0,
 ) -> float | None:
-    if user_average is not None and source_rating is not None:
-        # Internal ratings get weight based on how many A11yhood ratings exist.
-        # External rating contributes one blended vote after source-specific conversion.
-        weight = max(int(user_rating_count or 0), 1)
-        return ((user_average * weight) + source_rating) / (weight + 1)
-    if user_average is not None:
-        return user_average
-    if source_rating is not None:
-        return source_rating
-    return None
+    return compute_display_rating(user_average, source_rating, user_rating_count)
 
 
 def build_display_rating_map(db, products: list[dict]) -> dict[str, dict]:
