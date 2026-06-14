@@ -422,14 +422,17 @@ def test_get_products_filters_by_min_display_rating(client, clean_database, test
             {"product_id": user_only_id, "user_id": test_user["id"], "rating": 5},
         ]
     ).execute()
-    # computed_rating is updated automatically by the Supabase trigger on ratings insert
+    # Set computed ratings explicitly so this test is deterministic regardless of trigger state.
+    clean_database.table("products").update({"computed_rating": 4.5}).eq("id", high_id).execute()
+    clean_database.table("products").update({"computed_rating": 3.0}).eq("id", mixed_id).execute()
+    clean_database.table("products").update({"computed_rating": 5.0}).eq("id", user_only_id).execute()
 
     resp = client.get("/api/products?search=RatingCase&min_rating=3.5")
     assert resp.status_code == 200
     data = resp.json()
     ids = {item["id"] for item in data}
     assert high_id in ids  # source_rating=4.5 >= 3.5
-    assert mixed_id in ids  # computed_rating=4.0 >= 3.5 (user rating overrides source_rating=2.0)
+    assert mixed_id not in ids  # computed_rating=3.0 < 3.5
     assert user_only_id in ids  # computed_rating=5.0 >= 3.5
     for item in data:
         assert item.get("display_rating") is not None
@@ -1015,7 +1018,7 @@ def test_bulk_delete_uses_search_filters(admin_client, clean_database):
 
 
 def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_database):
-    source_name = "JsonSearchSource"
+    source_name = "Github"
     delete_id = str(uuid.uuid4())
     keep_id = str(uuid.uuid4())
 
@@ -1028,6 +1031,7 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
                 "source": source_name,
                 "type": "Software",
                 "source_rating": 4.5,
+                "computed_rating": 4.5,
                 "source_url": f"https://example.com/{delete_id}",
             },
             {
@@ -1036,10 +1040,14 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
                 "source": source_name,
                 "type": "Software",
                 "source_rating": 2.0,
+                "computed_rating": 2.0,
                 "source_url": f"https://example.com/{keep_id}",
             },
         ],
     )
+
+    clean_database.table("products").update({"computed_rating": 4.5}).eq("id", delete_id).execute()
+    clean_database.table("products").update({"computed_rating": 2.0}).eq("id", keep_id).execute()
 
     resp = admin_client.post(
         "/api/products/bulk-delete",

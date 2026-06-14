@@ -47,6 +47,7 @@ def test_safe_float_handles_valid_and_invalid_values():
 
 def test_compute_display_rating_behaves_like_products_logic():
     assert collections_router._compute_display_rating(4.0, 2.0) == 3.0
+    assert collections_router._compute_display_rating(4.0, 2.0, 3) == pytest.approx(3.5)
     assert collections_router._compute_display_rating(4.0, None) == 4.0
     assert collections_router._compute_display_rating(None, 2.0) == 2.0
     assert collections_router._compute_display_rating(None, None) is None

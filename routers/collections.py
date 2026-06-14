@@ -23,6 +23,7 @@ from models.collections import (
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
+from services.ratings import compute_display_rating
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 logger = logging.getLogger(__name__)
@@ -365,15 +366,11 @@ def _safe_float(value) -> float | None:
 
 
 def _compute_display_rating(
-    user_average: float | None, source_rating: float | None
+    user_average: float | None,
+    source_rating: float | None,
+    user_rating_count: int = 0,
 ) -> float | None:
-    if user_average is not None and source_rating is not None:
-        return (user_average + source_rating) / 2
-    if user_average is not None:
-        return user_average
-    if source_rating is not None:
-        return source_rating
-    return None
+    return compute_display_rating(user_average, source_rating, user_rating_count)
 
 
 def _build_display_rating_map(db, products: list[dict]) -> dict[str, dict]:
@@ -407,12 +404,13 @@ def _build_display_rating_map(db, products: list[dict]) -> dict[str, dict]:
         if not pid:
             continue
         agg = aggregates.get(pid, {"sum": 0.0, "count": 0})
-        user_avg = (agg["sum"] / agg["count"]) if agg["count"] else None
+        user_count = int(agg["count"]) if agg.get("count") else 0
+        user_avg = (agg["sum"] / user_count) if user_count else None
         source_rating_val = _safe_float(product.get("source_rating"))
-        display_rating = _compute_display_rating(user_avg, source_rating_val)
+        display_rating = _compute_display_rating(user_avg, source_rating_val, user_count)
         ratings_map[pid] = {
             "average_rating": user_avg,
-            "rating_count": agg.get("count", 0),
+            "rating_count": user_count,
             "display_rating": display_rating,
         }
     return ratings_map

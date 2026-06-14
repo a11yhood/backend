@@ -45,6 +45,7 @@ def test_normalize_list_handles_csv_and_lists():
 
 def test_compute_display_rating_fallbacks_and_average():
     assert products_router._compute_display_rating(4.0, 2.0) == 3.0
+    assert products_router._compute_display_rating(4.0, 2.0, 3) == pytest.approx(3.5)
     assert products_router._compute_display_rating(4.0, None) == 4.0
     assert products_router._compute_display_rating(None, 2.0) == 2.0
     assert products_router._compute_display_rating(None, None) is None
@@ -141,4 +142,4 @@ def test_apply_product_filters_adds_expected_clauses():
     assert ("eq", "created_by", "user-1") in query.calls
     assert ("eq", "banned", False) in query.calls
     assert ("gte", "source_last_updated", "2026-01-01T00:00:00+00:00") in query.calls
-    assert ("or", "computed_rating.gte.4.0,source_rating.gte.4.0") in query.calls
+    assert ("gte", "computed_rating", 4.0) in query.calls

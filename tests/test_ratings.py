@@ -97,3 +97,25 @@ def test_delete_rating_owner_or_admin(auth_client, clean_database, test_user, te
 
     response = auth_client.delete(f"/api/ratings/{rating['id']}")
     assert response.status_code == 204
+
+
+def test_delete_rating_by_product_user(auth_client, clean_database, test_user, test_product):
+    clean_database.table("ratings").insert(
+        {
+            "product_id": test_product["id"],
+            "user_id": test_user["id"],
+            "rating": 4,
+        }
+    ).execute()
+
+    response = auth_client.delete(f"/api/ratings/{test_product['id']}/{test_user['id']}")
+    assert response.status_code == 204
+
+    remaining = (
+        clean_database.table("ratings")
+        .select("id")
+        .eq("product_id", test_product["id"])
+        .eq("user_id", test_user["id"])
+        .execute()
+    )
+    assert remaining.data == []

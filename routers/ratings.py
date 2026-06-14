@@ -174,3 +174,25 @@ async def upsert_rating_by_product_user(
             raise HTTPException(status_code=400, detail="Failed to create rating")
 
         return response.data[0]
+
+
+@router.delete("/{product_id}/{user_id}", status_code=204)
+async def delete_rating_by_product_user(
+    product_id: str,
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Delete a rating by product and user (owner or admin only)."""
+    if current_user["id"] != user_id and current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this rating")
+
+    existing = (
+        db.table("ratings").select("*").eq("product_id", product_id).eq("user_id", user_id).execute()
+    )
+
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Rating not found")
+
+    db.table("ratings").delete().eq("product_id", product_id).eq("user_id", user_id).execute()
+    return None
