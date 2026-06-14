@@ -178,7 +178,7 @@ async def create_collection_from_search(
     if collection_data.description and len(collection_data.description) > 1000:
         raise HTTPException(status_code=400, detail="Description must be 1000 characters or less")
 
-    filters = prepare_product_filters(db, None, collection_data, allow_aliases=True)
+    filters = prepare_product_filters(db, current_user, collection_data, allow_aliases=True)
     product_ids = fetch_filtered_product_ids(db, filters, sort_field="created_at", sort_desc=True)
 
     # Generate slug and create the collection

@@ -8,14 +8,14 @@ class ProductQueryDefinition(BaseModel):
     types: list[str] | None = Field(None, description="Type filter for search")
     tags: list[str] | None = Field(None, description="Tag filter for search")
     tags_mode: str = Field(
-        default="or", pattern=r"^(?i)(or|and)$", description="Tag filter mode: or or and"
+        default="or", pattern=r"(?i)^(or|and)$", description="Tag filter mode: or or and"
     )
     min_rating: float | None = Field(None, ge=0, le=5, description="Minimum rating filter")
     updated_since: str | None = Field(
         None, description="Filter products updated at source since this date (ISO format)"
     )
     max_age: int | None = Field(None, description="Filter products updated in the last N days")
-    search: str | None = Field(None, description="Text search on product name")
+    search: str | None = Field(None, description="Text search across product name, description, and tag names")
     created_by: str | None = Field(None, description="Filter products by creator user ID")
     editor_id: str | None = Field(None, description="Filter products by editor user ID")
     include_banned: bool = Field(

@@ -373,7 +373,7 @@ def _build_product_query_definition(
         None, alias="tags", description="Filter products that have any of these tag names"
     ),
     tags_mode: str = Query(
-        "or", pattern="^(?i)(or|and)$", description="Tag filter mode: or (default) or and"
+        "or", pattern="(?i)^(or|and)$", description="Tag filter mode: or (default) or and"
     ),
     min_rating: float | None = Query(None, ge=0, le=5, description="Minimum display rating"),
     updated_since: str | None = Query(
