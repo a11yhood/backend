@@ -9,7 +9,7 @@ import logging
 import os
 import uuid
 from collections.abc import Iterable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -29,12 +29,24 @@ from services.image_references import (
 )
 from services.product_queries import (
     apply_product_filters as _shared_apply_product_filters,
-    canonicalize_sources as _canonicalize_sources,
+)
+from services.product_queries import (
+    canonicalize_sources as _shared_canonicalize_sources,
+)
+from services.product_queries import (
     fetch_filtered_product_ids as _shared_fetch_filtered_product_ids,
+)
+from services.product_queries import (
     get_product_ids_for_tags,
-    normalize_query_list as _normalize_list,
+)
+from services.product_queries import (
+    normalize_query_list as _shared_normalize_list,
+)
+from services.product_queries import (
     prepare_product_filters as _shared_prepare_product_filters,
-    without_min_rating as _without_min_rating,
+)
+from services.product_queries import (
+    without_min_rating as _shared_without_min_rating,
 )
 from services.ratings import compute_display_rating
 from services.sources import extract_domain, find_source_for_domain
@@ -92,24 +104,7 @@ def _build_manual_edit_metadata(current_user_id: str | None) -> dict[str, str]:
 
 
 def _normalize_list(values: Iterable[str] | str | None) -> list[str]:
-    """Flatten query params supporting comma-separated and repeated values."""
-    normalized: list[str] = []
-    if values is None:
-        return normalized
-    if isinstance(values, str):
-        raw_values = [values]
-    else:
-        raw_values = values
-    for v in raw_values:
-        if v is None:
-            continue
-        if not isinstance(v, str):
-            v = str(v)
-        for part in v.split(","):
-            item = part.strip()
-            if item:
-                normalized.append(item)
-    return normalized
+    return _shared_normalize_list(values)
 
 
 def _looks_like_uuid(value: str) -> bool:
@@ -124,36 +119,7 @@ def _looks_like_uuid(value: str) -> bool:
 
 
 def _canonicalize_sources(db, values: list[str]) -> list[str]:
-    """Map incoming source filter values to canonical names from supported_sources (case-insensitive).
-
-    Example: 'github' -> 'Github' if supported_sources.name is 'Github'.
-    Falls back to original input when no match is found.
-    """
-    if not values:
-        return []
-    try:
-        rows = db.table("supported_sources").select("name").execute()
-        name_map = {
-            str(r.get("name")).strip().lower(): str(r.get("name")).strip()
-            for r in (rows.data or [])
-            if r.get("name")
-        }
-        canon: list[str] = []
-        for v in values:
-            key = str(v).strip().lower()
-            canon.append(name_map.get(key, v))
-        # Deduplicate while preserving order
-        seen = set()
-        unique: list[str] = []
-        for c in canon:
-            if c not in seen:
-                seen.add(c)
-                unique.append(c)
-        return unique
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.error(f"Exception: {type(e).__name__}: {str(e)}")
-        return values
+    return _shared_canonicalize_sources(db, values)
 
 
 def _get_supported_source_name_map(db) -> dict[str, str]:
@@ -386,6 +352,10 @@ def _fetch_filtered_product_ids(db, filters: dict[str, Any]) -> list[str]:
         sort_desc=True,
         apply_filters=_apply_product_filters,
     )
+
+
+def _without_min_rating(filters: dict[str, Any]) -> dict[str, Any]:
+    return _shared_without_min_rating(filters)
 
 
 def _build_product_query_definition(

@@ -132,6 +132,69 @@ class TestCreateCollection:
         )
         assert not any(row["user_id"] == test_user["id"] for row in (editors.data or []))
 
+    def test_create_collection_from_search_uses_shared_text_and_tag_search(
+        self, client, test_user, auth_headers, clean_database
+    ):
+        description_id = str(uuid.uuid4())
+        tagged_id = str(uuid.uuid4())
+        other_id = str(uuid.uuid4())
+        tag_id = str(uuid.uuid4())
+
+        clean_database.table("tags").insert({"id": tag_id, "name": "Mobility"}).execute()
+        clean_database.table("products").insert(
+            [
+                {
+                    "id": description_id,
+                    "name": "Plain Product",
+                    "description": "Improves wheelchair comfort",
+                    "source": "Github",
+                    "type": "Software",
+                    "slug": f"plain-product-{description_id[:8]}",
+                    "source_url": "https://github.com/example/plain-collection-search",
+                },
+                {
+                    "id": tagged_id,
+                    "name": "Tagged Product",
+                    "description": "No direct text hit",
+                    "source": "Thingiverse",
+                    "type": "Fabrication",
+                    "slug": f"tagged-product-{tagged_id[:8]}",
+                    "source_url": "https://www.thingiverse.com/thing:mobility-collection-search",
+                },
+                {
+                    "id": other_id,
+                    "name": "Unrelated Product",
+                    "description": "No match here",
+                    "source": "Ravelry",
+                    "type": "Knitting",
+                    "slug": f"unrelated-product-{other_id[:8]}",
+                    "source_url": "https://www.ravelry.com/patterns/library/unrelated-collection-search",
+                },
+            ]
+        ).execute()
+        clean_database.table("product_tags").insert(
+            {
+                "product_id": tagged_id,
+                "tag_id": tag_id,
+            }
+        ).execute()
+
+        response = client.post(
+            "/api/collections/from-search",
+            headers=auth_headers(test_user),
+            json={"name": "Wheelchair Search", "search": "wheelchair"},
+        )
+        assert response.status_code == 201
+        assert response.json()["product_ids"] == [description_id]
+
+        response = client.post(
+            "/api/collections/from-search",
+            headers=auth_headers(test_user),
+            json={"name": "Mobility Search", "search": "mobility"},
+        )
+        assert response.status_code == 201
+        assert response.json()["product_ids"] == [tagged_id]
+
 
 class TestGetUserCollections:
     """Tests for Story 6.2: User Views Their Collections"""

@@ -20,10 +20,10 @@ from models.collections import (
     CollectionUpdate,
     ProductIdsRequest,
 )
-from services.product_queries import fetch_filtered_product_ids, prepare_product_filters
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
+from services.product_queries import fetch_filtered_product_ids, prepare_product_filters
 from services.ratings import compute_display_rating
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
@@ -221,6 +221,8 @@ async def create_collection_from_search(
 
     # Return canonical response assembled from junction table data
     return _get_collection_with_products(db, collection_id)
+
+
 def _safe_float(value) -> float | None:
     try:
         return float(value) if value is not None else None

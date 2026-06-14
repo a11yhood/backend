@@ -172,7 +172,7 @@ def apply_product_filters(
             f"name.ilike.%{search_term}%",
             f"description.ilike.%{search_term}%",
         ]
-        tag_search_product_ids = search_tag_lookup(db, search_term)
+        tag_search_product_ids = search_tag_lookup(db, search_term) if db is not None else set()
         if tag_search_product_ids:
             product_ids_clause = ",".join(sorted(tag_search_product_ids))
             or_clauses.append(f"id.in.({product_ids_clause})")
