@@ -196,6 +196,58 @@ def test_count_products_with_search(client, clean_database):
     assert data["count"] == 1  # Only p1 matches "voice"
 
 
+def test_count_products_with_search_matches_description_and_tags(client, clean_database):
+    description_id = str(uuid.uuid4())
+    tagged_id = str(uuid.uuid4())
+    other_id = str(uuid.uuid4())
+    tag_id = str(uuid.uuid4())
+
+    clean_database.table("tags").insert({"id": tag_id, "name": "Mobility"}).execute()
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": description_id,
+                "name": "Plain Product",
+                "description": "Improves wheelchair comfort",
+                "source": "Github",
+                "type": "Software",
+                "source_url": "https://github.com/example/plain",
+            },
+            {
+                "id": tagged_id,
+                "name": "Tagged Product",
+                "description": "No direct text hit",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "source_url": "https://www.thingiverse.com/thing:mobility",
+            },
+            {
+                "id": other_id,
+                "name": "Unrelated Product",
+                "description": "No match here",
+                "source": "Ravelry",
+                "type": "Knitting",
+                "source_url": "https://www.ravelry.com/patterns/library/unrelated",
+            },
+        ],
+    )
+    clean_database.table("product_tags").insert(
+        {
+            "product_id": tagged_id,
+            "tag_id": tag_id,
+        }
+    ).execute()
+
+    response = client.get("/api/products/count?search=wheelchair")
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+
+    response = client.get("/api/products/count?search=mobility")
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+
+
 def test_get_products_with_filters(client, clean_database, test_product):
     p1_id = str(uuid.uuid4())
     p2_id = str(uuid.uuid4())
@@ -287,6 +339,62 @@ def test_get_products_filtered_by_tags(client, clean_database):
     ids = {item["id"] for item in data}
     assert product_id in ids
     assert other_product_id not in ids
+
+
+def test_get_products_search_matches_description_and_tags(client, clean_database):
+    description_id = str(uuid.uuid4())
+    tagged_id = str(uuid.uuid4())
+    other_id = str(uuid.uuid4())
+    tag_id = str(uuid.uuid4())
+
+    clean_database.table("tags").insert({"id": tag_id, "name": "Mobility"}).execute()
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": description_id,
+                "name": "Plain Product",
+                "description": "Improves wheelchair comfort",
+                "source": "Github",
+                "type": "Software",
+                "source_url": "https://github.com/example/plain-search",
+            },
+            {
+                "id": tagged_id,
+                "name": "Tagged Product",
+                "description": "No direct text hit",
+                "source": "Thingiverse",
+                "type": "Fabrication",
+                "source_url": "https://www.thingiverse.com/thing:mobility-search",
+            },
+            {
+                "id": other_id,
+                "name": "Unrelated Product",
+                "description": "No match here",
+                "source": "Ravelry",
+                "type": "Knitting",
+                "source_url": "https://www.ravelry.com/patterns/library/unrelated-search",
+            },
+        ],
+    )
+    clean_database.table("product_tags").insert(
+        {
+            "product_id": tagged_id,
+            "tag_id": tag_id,
+        }
+    ).execute()
+
+    response = client.get("/api/products?search=wheelchair")
+    assert response.status_code == 200
+    ids = {item["id"] for item in response.json()}
+    assert description_id in ids
+    assert tagged_id not in ids
+
+    response = client.get("/api/products?search=mobility")
+    assert response.status_code == 200
+    ids = {item["id"] for item in response.json()}
+    assert tagged_id in ids
+    assert other_id not in ids
 
 
 def test_get_products_supports_multiple_source_params(client, clean_database):

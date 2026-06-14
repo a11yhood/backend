@@ -3,6 +3,7 @@
 import pytest
 
 from routers import collections as collections_router
+from services.product_queries import get_product_ids_for_tags
 
 pytestmark = pytest.mark.unit
 
@@ -69,7 +70,7 @@ def test_get_product_ids_for_tags_or_mode():
         ],
     )
 
-    ids = collections_router._get_product_ids_for_tags(db, ["TagA", "TagB"], mode="or")
+    ids = get_product_ids_for_tags(db, ["TagA", "TagB"], mode="or")
     assert ids == {"p1", "p2"}
 
 
@@ -83,7 +84,7 @@ def test_get_product_ids_for_tags_and_mode_requires_all_tags():
         ],
     )
 
-    ids = collections_router._get_product_ids_for_tags(db, ["TagA", "TagB"], mode="and")
+    ids = get_product_ids_for_tags(db, ["TagA", "TagB"], mode="and")
     assert ids == {"p1"}
 
 

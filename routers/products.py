@@ -9,7 +9,7 @@ import logging
 import os
 import uuid
 from collections.abc import Iterable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -17,6 +17,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from config import settings
+from models.product_queries import BulkDeleteRequest, ProductQueryDefinition
 from models.products import ProductCreate, ProductResponse, ProductUpdate
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db, wait_for_row_visibility
@@ -25,6 +26,27 @@ from services.image_references import (
     get_or_create_image_id,
     resolve_image_metadata,
     sync_image_alt_if_missing,
+)
+from services.product_queries import (
+    apply_product_filters as _shared_apply_product_filters,
+)
+from services.product_queries import (
+    canonicalize_sources as _shared_canonicalize_sources,
+)
+from services.product_queries import (
+    fetch_filtered_product_ids as _shared_fetch_filtered_product_ids,
+)
+from services.product_queries import (
+    get_product_ids_for_tags,
+)
+from services.product_queries import (
+    normalize_query_list as _shared_normalize_list,
+)
+from services.product_queries import (
+    prepare_product_filters as _shared_prepare_product_filters,
+)
+from services.product_queries import (
+    without_min_rating as _shared_without_min_rating,
 )
 from services.ratings import compute_display_rating
 from services.sources import extract_domain, find_source_for_domain
@@ -82,24 +104,7 @@ def _build_manual_edit_metadata(current_user_id: str | None) -> dict[str, str]:
 
 
 def _normalize_list(values: Iterable[str] | str | None) -> list[str]:
-    """Flatten query params supporting comma-separated and repeated values."""
-    normalized: list[str] = []
-    if values is None:
-        return normalized
-    if isinstance(values, str):
-        raw_values = [values]
-    else:
-        raw_values = values
-    for v in raw_values:
-        if v is None:
-            continue
-        if not isinstance(v, str):
-            v = str(v)
-        for part in v.split(","):
-            item = part.strip()
-            if item:
-                normalized.append(item)
-    return normalized
+    return _shared_normalize_list(values)
 
 
 def _looks_like_uuid(value: str) -> bool:
@@ -114,36 +119,7 @@ def _looks_like_uuid(value: str) -> bool:
 
 
 def _canonicalize_sources(db, values: list[str]) -> list[str]:
-    """Map incoming source filter values to canonical names from supported_sources (case-insensitive).
-
-    Example: 'github' -> 'Github' if supported_sources.name is 'Github'.
-    Falls back to original input when no match is found.
-    """
-    if not values:
-        return []
-    try:
-        rows = db.table("supported_sources").select("name").execute()
-        name_map = {
-            str(r.get("name")).strip().lower(): str(r.get("name")).strip()
-            for r in (rows.data or [])
-            if r.get("name")
-        }
-        canon: list[str] = []
-        for v in values:
-            key = str(v).strip().lower()
-            canon.append(name_map.get(key, v))
-        # Deduplicate while preserving order
-        seen = set()
-        unique: list[str] = []
-        for c in canon:
-            if c not in seen:
-                seen.add(c)
-                unique.append(c)
-        return unique
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.error(f"Exception: {type(e).__name__}: {str(e)}")
-        return values
+    return _shared_canonicalize_sources(db, values)
 
 
 def _get_supported_source_name_map(db) -> dict[str, str]:
@@ -317,22 +293,6 @@ async def _enrich_manual_product_metadata(
             pass
 
 
-class BulkDeleteRequest(BaseModel):
-    source: str | list[str] | None = None
-    sources: str | list[str] | None = None
-    type: str | list[str] | None = None
-    types: str | list[str] | None = None
-    tags: str | list[str] | None = None
-    tags_mode: str | None = None
-    min_rating: float | None = None
-    updated_since: str | None = None
-    max_age: int | None = None
-    search: str | None = None
-    created_by: str | None = None
-    include_banned: bool | None = None
-    product_ids: str | list[str] | None = None
-
-
 def _prepare_product_filters(
     db,
     current_user: dict | None,
@@ -352,128 +312,107 @@ def _prepare_product_filters(
     include_banned: bool = False,
     allow_aliases: bool = True,
 ) -> dict[str, Any]:
-    if max_age is not None:
-        updated_since = (datetime.now(UTC) - timedelta(days=max_age)).isoformat()
-
-    tag_mode = (tags_mode or "or").lower()
-    if tag_mode not in {"or", "and"}:
-        raise HTTPException(status_code=400, detail="tags_mode must be 'or' or 'and'")
-
-    if allow_aliases:
-        source_values = set(_normalize_list(source) + _normalize_list(sources))
-        type_values = set(_normalize_list(type) + _normalize_list(types))
-    else:
-        if _normalize_list(sources):
-            raise HTTPException(
-                status_code=400,
-                detail="Use repeated 'source' parameters; 'sources' is not supported",
-            )
-        if _normalize_list(types):
-            raise HTTPException(
-                status_code=400,
-                detail="Use repeated 'type' parameters; 'types' is not supported",
-            )
-        source_values = set(_normalize_list(source))
-        type_values = set(_normalize_list(type))
-
-    source_values = set(_canonicalize_sources(db, list(source_values)))
-    tag_values = _normalize_list(tags)
-
-    if include_banned:
-        if not current_user or current_user.get("role") not in {"admin", "moderator"}:
-            raise HTTPException(
-                status_code=403, detail="Moderator or admin role required to view banned products"
-            )
-
-    return {
-        "source_values": source_values,
-        "type_values": type_values,
-        "tag_values": tag_values,
-        "tag_mode": tag_mode,
-        "min_rating": min_rating,
-        "updated_since": updated_since,
-        "search": search,
-        "created_by": created_by,
-        "editor_id": editor_id,
-        "include_banned": include_banned,
-    }
+    query_definition = ProductQueryDefinition(
+        source=_normalize_list(source),
+        sources=_normalize_list(sources),
+        type=_normalize_list(type),
+        types=_normalize_list(types),
+        tags=_normalize_list(tags),
+        tags_mode=tags_mode,
+        min_rating=min_rating,
+        updated_since=updated_since,
+        max_age=max_age,
+        search=search,
+        created_by=created_by,
+        editor_id=editor_id,
+        include_banned=include_banned,
+    )
+    return _shared_prepare_product_filters(
+        db,
+        current_user,
+        query_definition,
+        allow_aliases=allow_aliases,
+    )
 
 
 def _apply_product_filters(query, db, filters: dict[str, Any]):
-    source_values = filters.get("source_values", set())
-    type_values = filters.get("type_values", set())
-    tag_values = filters.get("tag_values", [])
-
-    if source_values:
-        query = query.in_("source", list(source_values))
-
-    if type_values:
-        query = query.in_("type", list(type_values))
-
-    if tag_values:
-        product_ids_with_tags = get_product_ids_for_tags(db, tag_values, filters.get("tag_mode", "or"))
-        if not product_ids_with_tags:
-            return None
-        query = query.in_("id", list(product_ids_with_tags))
-
-    if filters.get("search"):
-        query = query.ilike("name", f"%{filters['search']}%")
-
-    if filters.get("created_by"):
-        query = query.eq("created_by", filters["created_by"])
-
-    if filters.get("editor_id"):
-        editor_rows = (
-            db.table("product_editors").select("product_id").eq("user_id", filters["editor_id"]).execute()
-        )
-        editor_product_ids = [
-            row["product_id"] for row in (editor_rows.data or []) if row.get("product_id")
-        ]
-        if not editor_product_ids:
-            return None
-        query = query.in_("id", editor_product_ids)
-
-    if not filters.get("include_banned", False):
-        query = query.eq("banned", False)
-
-    if filters.get("updated_since") is not None:
-        query = query.gte("source_last_updated", filters["updated_since"])
-
-    if filters.get("min_rating") is not None:
-        min_rating = filters["min_rating"]
-        query = query.gte("computed_rating", min_rating)
-
-    return query
+    return _shared_apply_product_filters(
+        query,
+        db,
+        filters,
+        tag_lookup=get_product_ids_for_tags,
+    )
 
 
 def _fetch_filtered_product_ids(db, filters: dict[str, Any]) -> list[str]:
-    query = _apply_product_filters(db.table("products").select("id"), db, filters)
-    if query is None:
-        return []
-
-    if getattr(db, "backend", None) != "supabase":
-        resp = query.execute()
-        return [row["id"] for row in (resp.data or []) if row.get("id")]
-
-    ids: list[str] = []
-    page_size = 500
-    offset = 0
-    while True:
-        resp = query.range(offset, offset + page_size - 1).execute()
-        rows = resp.data or []
-        if not rows:
-            break
-        ids.extend([row["id"] for row in rows if row.get("id")])
-        if len(rows) < page_size:
-            break
-        offset += page_size
-    return ids
+    return _shared_fetch_filtered_product_ids(
+        db,
+        filters,
+        sort_field="created_at",
+        sort_desc=True,
+        apply_filters=_apply_product_filters,
+    )
 
 
 def _without_min_rating(filters: dict[str, Any]) -> dict[str, Any]:
-    base_filters = dict(filters)
-    base_filters["min_rating"] = None
-    return base_filters
+    return _shared_without_min_rating(filters)
+
+
+def _build_product_query_definition(
+    source: list[str] | None = Query(
+        None, alias="source", description="Comma-separated or repeated source values"
+    ),
+    sources: list[str] | None = Query(
+        None, description="Comma-separated or repeated source values"
+    ),
+    type: list[str] | None = Query(
+        None, alias="type", description="Comma-separated or repeated type values"
+    ),
+    types: list[str] | None = Query(None, description="Comma-separated or repeated type values"),
+    tags: list[str] | None = Query(
+        None, alias="tags", description="Filter products that have any of these tag names"
+    ),
+    tags_mode: str = Query(
+        "or", pattern="(?i)^(or|and)$", description="Tag filter mode: or (default) or and"
+    ),
+    min_rating: float | None = Query(None, ge=0, le=5, description="Minimum display rating"),
+    updated_since: str | None = Query(
+        None, description="Filter products updated at source since this date (ISO format)"
+    ),
+    max_age: int | None = Query(None, description="Filter products updated in the last N days"),
+    search: str | None = None,
+    created_by: str | None = None,
+    editor_id: str | None = None,
+    include_banned: bool = Query(False, description="Include banned products (admin/mod only)"),
+) -> ProductQueryDefinition:
+    return ProductQueryDefinition(
+        source=source,
+        sources=sources,
+        type=type,
+        types=types,
+        tags=tags,
+        tags_mode=tags_mode,
+        min_rating=min_rating,
+        updated_since=updated_since,
+        max_age=max_age,
+        search=search,
+        created_by=created_by,
+        editor_id=editor_id,
+        include_banned=include_banned,
+    )
+
+
+def _merge_product_queries(
+    query_filters: ProductQueryDefinition,
+    payload: ProductQueryDefinition | None,
+) -> ProductQueryDefinition:
+    if payload is None:
+        return query_filters
+
+    merged = query_filters.model_dump()
+    for field_name in payload.model_fields_set:
+        merged[field_name] = getattr(payload, field_name)
+    return ProductQueryDefinition(**merged)
 
 
 @router.get("/sources")
@@ -554,35 +493,6 @@ async def get_product_sources(
         logger = logging.getLogger(__name__)
         logger.error(f"Exception: {e}")
         return {"sources": []}
-
-
-def get_product_ids_for_tags(db, tag_names: list[str], mode: str = "or") -> set[str]:
-    """Return product IDs that match provided tag names using OR/AND semantics."""
-    if not tag_names:
-        return set()
-    tag_rows = db.table("tags").select("id,name").in_("name", tag_names).execute()
-    tag_map = {
-        row["name"]: row["id"] for row in (tag_rows.data or []) if row.get("id") and row.get("name")
-    }
-    tag_ids = [tag_map[name] for name in tag_names if name in tag_map]
-    if not tag_ids:
-        return set()
-
-    pt_rows = db.table("product_tags").select("product_id, tag_id").in_("tag_id", tag_ids).execute()
-    if not pt_rows.data:
-        return set()
-
-    if mode == "and":
-        required = set(tag_ids)
-        product_tag_map: dict[str, set[str]] = {}
-        for row in pt_rows.data:
-            pid = row.get("product_id")
-            tid = row.get("tag_id")
-            if pid and tid:
-                product_tag_map.setdefault(pid, set()).add(tid)
-        return {pid for pid, tids in product_tag_map.items() if required.issubset(tids)}
-
-    return {row["product_id"] for row in pt_rows.data if row.get("product_id")}
 
 
 def _safe_float(value) -> float | None:
@@ -881,33 +791,7 @@ async def get_tags(
 
 @router.get("", response_model=list[ProductResponse])
 async def get_products(
-    source: list[str] | None = Query(
-        None, alias="source", description="Comma-separated or repeated source values"
-    ),
-    sources: list[str] | None = Query(
-        None, description="Comma-separated or repeated source values"
-    ),
-    type: list[str] | None = Query(
-        None, alias="type", description="Comma-separated or repeated type values"
-    ),
-    types: list[str] | None = Query(None, description="Comma-separated or repeated type values"),
-    tags: list[str] | None = Query(
-        None, alias="tags", description="Filter products that have any of these tag names"
-    ),
-    tags_mode: str = Query(
-        "or", pattern="^(?i)(or|and)$", description="Tag filter mode: or (default) or and"
-    ),
-    min_rating: float | None = Query(
-        None, ge=0, le=5, description="Minimum display rating (user or source)"
-    ),
-    updated_since: str | None = Query(
-        None, description="Filter products updated at source since this date (ISO format)"
-    ),
-    max_age: int | None = Query(None, description="Filter products updated in the last N days"),
-    search: str | None = None,
-    created_by: str | None = None,
-    editor_id: str | None = None,
-    include_banned: bool = Query(False, description="Include banned products (admin/mod only)"),
+    query_definition: ProductQueryDefinition = Depends(_build_product_query_definition),
     include_ratings: bool = Query(
         False,
         description="Include rating data (average_rating, rating_count, display_rating). Set to true only when displaying ratings.",
@@ -931,24 +815,7 @@ async def get_products(
     Returns denormalized response with editor_ids and tags attached to each product.
     Query supports filtering by source platform, type, text search, and creator.
     """
-    filters = _prepare_product_filters(
-        db,
-        current_user,
-        source=source,
-        sources=sources,
-        type=type,
-        types=types,
-        tags=tags,
-        tags_mode=tags_mode,
-        min_rating=min_rating,
-        updated_since=updated_since,
-        max_age=max_age,
-        search=search,
-        created_by=created_by,
-        editor_id=editor_id,
-        include_banned=include_banned,
-        allow_aliases=True,
-    )
+    filters = _shared_prepare_product_filters(db, current_user, query_definition, allow_aliases=True)
 
     query = _apply_product_filters(db.table("products").select("*"), db, filters)
     if query is None:
@@ -1055,33 +922,7 @@ async def get_products(
 
 @router.get("/count")
 async def count_products(
-    source: list[str] | None = Query(
-        None, alias="source", description="Comma-separated or repeated source values"
-    ),
-    sources: list[str] | None = Query(
-        None, description="Comma-separated or repeated source values"
-    ),
-    type: list[str] | None = Query(
-        None, alias="type", description="Comma-separated or repeated type values"
-    ),
-    types: list[str] | None = Query(None, description="Comma-separated or repeated type values"),
-    tags: list[str] | None = Query(
-        None, alias="tags", description="Filter products that have any of these tag names"
-    ),
-    tags_mode: str = Query(
-        "or", pattern="^(?i)(or|and)$", description="Tag filter mode: or (default) or and"
-    ),
-    min_rating: float | None = Query(
-        None, ge=0, le=5, description="Minimum display rating (user or source)"
-    ),
-    updated_since: str | None = Query(
-        None, description="Filter products updated at source since this date (ISO format)"
-    ),
-    max_age: int | None = Query(None, description="Filter products updated in the last N days"),
-    search: str | None = None,
-    created_by: str | None = None,
-    editor_id: str | None = None,
-    include_banned: bool = Query(False, description="Include banned products (admin/mod only)"),
+    query_definition: ProductQueryDefinition = Depends(_build_product_query_definition),
     current_user: dict | None = Depends(get_current_user_optional),
     db=Depends(get_db),
 ):
@@ -1090,24 +931,7 @@ async def count_products(
     Returns {count: int} to help frontend paginate through all matching products.
     Applies same filters as /api/products but returns only the count.
     """
-    filters = _prepare_product_filters(
-        db,
-        current_user,
-        source=source,
-        sources=sources,
-        type=type,
-        types=types,
-        tags=tags,
-        tags_mode=tags_mode,
-        min_rating=min_rating,
-        updated_since=updated_since,
-        max_age=max_age,
-        search=search,
-        created_by=created_by,
-        editor_id=editor_id,
-        include_banned=include_banned,
-        allow_aliases=True,
-    )
+    filters = _shared_prepare_product_filters(db, current_user, query_definition, allow_aliases=True)
 
     total = None
     try:
@@ -1854,32 +1678,7 @@ async def delete_product(
 
 @router.post("/bulk-delete", status_code=200)
 async def bulk_delete_products(
-    source: list[str] | None = Query(
-        None, alias="source", description="Comma-separated or repeated source values"
-    ),
-    sources: list[str] | None = Query(
-        None, description="Comma-separated or repeated source values"
-    ),
-    type: list[str] | None = Query(
-        None, alias="type", description="Comma-separated or repeated type values"
-    ),
-    types: list[str] | None = Query(None, description="Comma-separated or repeated type values"),
-    tags: list[str] | None = Query(
-        None, alias="tags", description="Filter products that have any of these tag names"
-    ),
-    tags_mode: str = Query(
-        "or", pattern="^(?i)(or|and)$", description="Tag filter mode: or (default) or and"
-    ),
-    min_rating: float | None = Query(
-        None, ge=0, le=5, description="Minimum display rating (user or source)"
-    ),
-    updated_since: str | None = Query(
-        None, description="Filter products updated at source since this date (ISO format)"
-    ),
-    max_age: int | None = Query(None, description="Filter products updated in the last N days"),
-    search: str | None = None,
-    created_by: str | None = None,
-    include_banned: bool = Query(False, description="Include banned products (admin/mod only)"),
+    query_definition: ProductQueryDefinition = Depends(_build_product_query_definition),
     product_ids: list[str] | None = Query(None, description="Specific product IDs to delete"),
     payload: BulkDeleteRequest | None = Body(
         None, description="Optional JSON body mirroring query params"
@@ -1910,29 +1709,11 @@ async def bulk_delete_products(
     normalized_product_ids = _normalize_list(product_ids) + _normalize_list(
         payload.product_ids if payload else None
     )
-    filters = _prepare_product_filters(
+    merged_query = _merge_product_queries(query_definition, payload)
+    filters = _shared_prepare_product_filters(
         db,
         current_user,
-        source=_normalize_list(source) + _normalize_list(payload.source if payload else None),
-        sources=_normalize_list(sources) + _normalize_list(payload.sources if payload else None),
-        type=_normalize_list(type) + _normalize_list(payload.type if payload else None),
-        types=_normalize_list(types) + _normalize_list(payload.types if payload else None),
-        tags=_normalize_list(tags) + _normalize_list(payload.tags if payload else None),
-        tags_mode=(
-            payload.tags_mode if payload and "tags_mode" in payload.model_fields_set else tags_mode
-        ),
-        min_rating=payload.min_rating if payload and payload.min_rating is not None else min_rating,
-        updated_since=payload.updated_since
-        if payload and payload.updated_since is not None
-        else updated_since,
-        max_age=payload.max_age if payload and payload.max_age is not None else max_age,
-        search=payload.search if payload and payload.search is not None else search,
-        created_by=payload.created_by if payload and payload.created_by is not None else created_by,
-        include_banned=(
-            payload.include_banned
-            if payload and "include_banned" in payload.model_fields_set
-            else include_banned
-        ),
+        merged_query,
         allow_aliases=False,
     )
 

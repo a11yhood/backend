@@ -138,7 +138,10 @@ def test_apply_product_filters_adds_expected_clauses():
     assert result is query
     assert ("in", "source", ["Github"]) in query.calls
     assert ("in", "type", ["Software"]) in query.calls
-    assert ("ilike", "name", "%screen%") in query.calls
+    assert (
+        "or",
+        "name.ilike.%screen%,description.ilike.%screen%",
+    ) in query.calls
     assert ("eq", "created_by", "user-1") in query.calls
     assert ("eq", "banned", False) in query.calls
     assert ("gte", "source_last_updated", "2026-01-01T00:00:00+00:00") in query.calls
