@@ -1018,7 +1018,7 @@ def test_bulk_delete_uses_search_filters(admin_client, clean_database):
 
 
 def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_database):
-    source_name = "JsonSearchSource"
+    source_name = "Github"
     delete_id = str(uuid.uuid4())
     keep_id = str(uuid.uuid4())
 
@@ -1045,6 +1045,9 @@ def test_bulk_delete_accepts_search_filters_in_json_body(admin_client, clean_dat
             },
         ],
     )
+
+    clean_database.table("products").update({"computed_rating": 4.5}).eq("id", delete_id).execute()
+    clean_database.table("products").update({"computed_rating": 2.0}).eq("id", keep_id).execute()
 
     resp = admin_client.post(
         "/api/products/bulk-delete",
