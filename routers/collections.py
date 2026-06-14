@@ -20,6 +20,7 @@ from models.collections import (
     CollectionUpdate,
     ProductIdsRequest,
 )
+from services.product_queries import fetch_filtered_product_ids, prepare_product_filters
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
@@ -177,115 +178,8 @@ async def create_collection_from_search(
     if collection_data.description and len(collection_data.description) > 1000:
         raise HTTPException(status_code=400, detail="Description must be 1000 characters or less")
 
-    # Build search query using the same logic as GET /api/products
-    query = db.table("products").select("id")
-
-    # Normalize source filters
-    source_values = set()
-    if collection_data.source:
-        source_values.update(collection_data.source)
-    if collection_data.sources:
-        source_values.update(collection_data.sources)
-
-    # Canonicalize sources
-    if source_values:
-        try:
-            rows = db.table("supported_sources").select("name").execute()
-            name_map = {
-                str(r.get("name")).strip().lower(): str(r.get("name")).strip()
-                for r in (rows.data or [])
-                if r.get("name")
-            }
-            canonical_sources = []
-            for v in source_values:
-                key = str(v).strip().lower()
-                canonical_sources.append(name_map.get(key, v))
-            # Deduplicate while preserving order
-            seen = set()
-            source_values = []
-            for c in canonical_sources:
-                if c not in seen:
-                    seen.add(c)
-                    source_values.append(c)
-        except Exception as e:
-            logger.error(f"error: {type(e).__name__}: {str(e)}")
-            source_values = list(source_values)
-
-        query = query.in_("source", source_values)
-
-    # Normalize type filters
-    type_values = set()
-    if collection_data.type:
-        type_values.update(collection_data.type)
-    if collection_data.types:
-        type_values.update(collection_data.types)
-
-    if type_values:
-        query = query.in_("type", list(type_values))
-
-    # Handle tags
-    if collection_data.tags:
-        tag_mode = collection_data.tags_mode.lower()
-        product_ids_with_tags = _get_product_ids_for_tags(db, collection_data.tags, tag_mode)
-        if not product_ids_with_tags:
-            # No products match the tag filter, create empty collection
-            product_ids = []
-        else:
-            # Apply text search and other filters to tag-filtered products
-            query = query.in_("id", list(product_ids_with_tags))
-
-            if collection_data.search:
-                query = query.ilike("name", f"%{collection_data.search}%")
-
-            if collection_data.min_rating is not None:
-                # For min_rating, we'll filter in Python after fetching all matches
-                # since we need rating data
-                query = query.eq("banned", False)
-                query = query.order("created_at", desc=True)
-                response = query.execute()
-                products = response.data or []
-
-                if products and collection_data.min_rating is not None:
-                    # Build rating map
-                    product_ids = [p.get("id") for p in products if p.get("id")]
-                    if product_ids:
-                        ratings_map = _build_display_rating_map(db, products)
-                        product_ids = [
-                            p.get("id")
-                            for p in products
-                            if p.get("id")
-                            and _rating_meets_threshold(p, ratings_map, collection_data.min_rating)
-                        ]
-                    else:
-                        product_ids = []
-                else:
-                    product_ids = [p.get("id") for p in products if p.get("id")]
-            else:
-                query = query.eq("banned", False)
-                query = query.order("created_at", desc=True)
-                response = query.execute()
-                products = response.data or []
-                product_ids = [p.get("id") for p in products if p.get("id")]
-    else:
-        # No tag filter, apply other filters directly
-        if collection_data.search:
-            query = query.ilike("name", f"%{collection_data.search}%")
-
-        query = query.eq("banned", False)
-        query = query.order("created_at", desc=True)
-        response = query.execute()
-        products = response.data or []
-        product_ids = [p.get("id") for p in products if p.get("id")]
-
-        # Apply min_rating filter if specified
-        if collection_data.min_rating is not None and product_ids:
-            ratings_map = _build_display_rating_map(db, products)
-            product_ids = [
-                p.get("id")
-                for p in products
-                if p.get("id")
-                and _rating_meets_threshold(p, ratings_map, collection_data.min_rating)
-            ]
+    filters = prepare_product_filters(db, None, collection_data, allow_aliases=True)
+    product_ids = fetch_filtered_product_ids(db, filters, sort_field="created_at", sort_desc=True)
 
     # Generate slug and create the collection
     slug = generate_id_with_uniqueness_check(collection_data.name, db, "collections", column="slug")
@@ -327,37 +221,6 @@ async def create_collection_from_search(
 
     # Return canonical response assembled from junction table data
     return _get_collection_with_products(db, collection_id)
-
-
-def _get_product_ids_for_tags(db, tag_names: list[str], mode: str = "or") -> set[str]:
-    """Return product IDs that match provided tag names using OR/AND semantics."""
-    if not tag_names:
-        return set()
-    tag_rows = db.table("tags").select("id,name").in_("name", tag_names).execute()
-    tag_map = {
-        row["name"]: row["id"] for row in (tag_rows.data or []) if row.get("id") and row.get("name")
-    }
-    tag_ids = [tag_map[name] for name in tag_names if name in tag_map]
-    if not tag_ids:
-        return set()
-
-    pt_rows = db.table("product_tags").select("product_id, tag_id").in_("tag_id", tag_ids).execute()
-    if not pt_rows.data:
-        return set()
-
-    if mode == "and":
-        required = set(tag_ids)
-        product_tag_map: dict[str, set[str]] = {}
-        for row in pt_rows.data:
-            pid = row.get("product_id")
-            tid = row.get("tag_id")
-            if pid and tid:
-                product_tag_map.setdefault(pid, set()).add(tid)
-        return {pid for pid, tids in product_tag_map.items() if required.issubset(tids)}
-
-    return {row["product_id"] for row in pt_rows.data if row.get("product_id")}
-
-
 def _safe_float(value) -> float | None:
     try:
         return float(value) if value is not None else None

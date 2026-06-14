@@ -1,6 +1,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from models.product_queries import ProductQueryDefinition
 from services.timestamps import ApiTimestamp
 
 
@@ -29,19 +30,8 @@ class CollectionEditorsResponse(BaseModel):
     editor_ids: list[str] = Field(default_factory=list)
 
 
-class CollectionFromSearchCreate(CollectionBase):
+class CollectionFromSearchCreate(CollectionBase, ProductQueryDefinition):
     """Create a collection from search results."""
-
-    source: list[str] | None = Field(None, description="Source filter for search")
-    sources: list[str] | None = Field(None, description="Source filter for search")
-    type: list[str] | None = Field(None, description="Type filter for search")
-    types: list[str] | None = Field(None, description="Type filter for search")
-    tags: list[str] | None = Field(None, description="Tag filter for search")
-    tags_mode: str = Field(
-        default="or", pattern=r"^(?i)(or|and)$", description="Tag filter mode: or or and"
-    )
-    search: str | None = Field(None, description="Text search on product name")
-    min_rating: float | None = Field(None, ge=0, le=5, description="Minimum rating filter")
 
 
 class CollectionResponse(CollectionBase):
