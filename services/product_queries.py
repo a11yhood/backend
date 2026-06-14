@@ -71,6 +71,22 @@ def get_product_ids_for_tags(db, tag_names: list[str], mode: str = "or") -> set[
     return {row["product_id"] for row in pt_rows.data if row.get("product_id")}
 
 
+def get_product_ids_for_tag_search(db, search_term: str) -> set[str]:
+    """Return product IDs linked to tags whose names match a free-text search term."""
+    if not search_term:
+        return set()
+
+    tag_rows = db.table("tags").select("id").ilike("name", f"%{search_term}%").execute()
+    tag_ids = [row["id"] for row in (tag_rows.data or []) if row.get("id")]
+    if not tag_ids:
+        return set()
+
+    product_tag_rows = (
+        db.table("product_tags").select("product_id").in_("tag_id", tag_ids).execute()
+    )
+    return {row["product_id"] for row in (product_tag_rows.data or []) if row.get("product_id")}
+
+
 def prepare_product_filters(
     db,
     current_user: dict | None,
@@ -126,7 +142,14 @@ def prepare_product_filters(
     }
 
 
-def apply_product_filters(query, db, filters: dict[str, Any], *, tag_lookup=get_product_ids_for_tags):
+def apply_product_filters(
+    query,
+    db,
+    filters: dict[str, Any],
+    *,
+    tag_lookup=get_product_ids_for_tags,
+    search_tag_lookup=get_product_ids_for_tag_search,
+):
     source_values = filters.get("source_values", set())
     type_values = filters.get("type_values", set())
     tag_values = filters.get("tag_values", [])
@@ -144,7 +167,16 @@ def apply_product_filters(query, db, filters: dict[str, Any], *, tag_lookup=get_
         query = query.in_("id", list(product_ids_with_tags))
 
     if filters.get("search"):
-        query = query.ilike("name", f"%{filters['search']}%")
+        search_term = filters["search"]
+        or_clauses = [
+            f"name.ilike.%{search_term}%",
+            f"description.ilike.%{search_term}%",
+        ]
+        tag_search_product_ids = search_tag_lookup(db, search_term)
+        if tag_search_product_ids:
+            product_ids_clause = ",".join(sorted(tag_search_product_ids))
+            or_clauses.append(f"id.in.({product_ids_clause})")
+        query = query.or_(",".join(or_clauses))
 
     if filters.get("created_by"):
         query = query.eq("created_by", filters["created_by"])
