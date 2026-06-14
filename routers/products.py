@@ -593,10 +593,15 @@ def _safe_float(value) -> float | None:
 
 
 def _compute_display_rating(
-    user_average: float | None, source_rating: float | None
+    user_average: float | None,
+    source_rating: float | None,
+    user_rating_count: int = 0,
 ) -> float | None:
     if user_average is not None and source_rating is not None:
-        return (user_average + source_rating) / 2
+        # Internal ratings get weight based on how many A11yhood ratings exist.
+        # External rating contributes one blended vote after source-specific conversion.
+        weight = max(int(user_rating_count or 0), 1)
+        return ((user_average * weight) + source_rating) / (weight + 1)
     if user_average is not None:
         return user_average
     if source_rating is not None:
@@ -636,12 +641,13 @@ def build_display_rating_map(db, products: list[dict]) -> dict[str, dict]:
         if not pid:
             continue
         agg = aggregates.get(pid, {"sum": 0.0, "count": 0})
-        user_avg = (agg["sum"] / agg["count"]) if agg["count"] else None
+        user_count = int(agg["count"]) if agg.get("count") else 0
+        user_avg = (agg["sum"] / user_count) if user_count else None
         source_rating_val = _safe_float(product.get("source_rating"))
-        display_rating = _compute_display_rating(user_avg, source_rating_val)
+        display_rating = _compute_display_rating(user_avg, source_rating_val, user_count)
         ratings_map[pid] = {
             "average_rating": user_avg,
-            "rating_count": agg.get("count", 0),
+            "rating_count": user_count,
             "display_rating": display_rating,
         }
     return ratings_map
