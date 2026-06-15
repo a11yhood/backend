@@ -11,10 +11,12 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import TypeAdapter
 
 from models.collections import (
     CollectionCreate,
     CollectionEditorsResponse,
+    CollectionEntry,
     CollectionFromSearchCreate,
     CollectionResponse,
     CollectionUpdate,
@@ -28,6 +30,8 @@ from services.ratings import compute_display_rating
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 logger = logging.getLogger(__name__)
+_COLLECTION_ENTRIES_TABLE_AVAILABLE: bool | None = None
+_COLLECTION_ENTRY_ADAPTER = TypeAdapter(CollectionEntry)
 
 
 def _looks_like_uuid(value: str) -> bool:
@@ -82,6 +86,131 @@ def _extract_non_owner_editor_ids(editor_rows: list[dict], owner_user_id: str | 
         for row in editor_rows
         if row.get("user_id") and row.get("user_id") != owner_user_id
     ]
+
+
+def _collection_entries_table_available(db) -> bool:
+    global _COLLECTION_ENTRIES_TABLE_AVAILABLE
+    if _COLLECTION_ENTRIES_TABLE_AVAILABLE is not None:
+        return _COLLECTION_ENTRIES_TABLE_AVAILABLE
+
+    try:
+        db.table("collection_entries").select("id").limit(1).execute()
+        _COLLECTION_ENTRIES_TABLE_AVAILABLE = True
+    except Exception:
+        _COLLECTION_ENTRIES_TABLE_AVAILABLE = False
+    return _COLLECTION_ENTRIES_TABLE_AVAILABLE
+
+
+def _entries_from_product_ids(product_ids: list[str]) -> list[dict]:
+    return [
+        {"kind": "product", "product_id": product_id, "position": position}
+        for position, product_id in enumerate(product_ids)
+    ]
+
+
+def _sync_collection_products_from_entries(db, collection_id: str, entries: list[CollectionEntry]) -> None:
+    product_entries = [entry for entry in entries if getattr(entry, "kind", None) == "product"]
+
+    db.table("collection_products").delete().eq("collection_id", collection_id).execute()
+    if not product_entries:
+        return
+
+    rows = [
+        {
+            "collection_id": collection_id,
+            "product_id": entry.product_id,
+            "position": idx,
+        }
+        for idx, entry in enumerate(product_entries)
+    ]
+    db.table("collection_products").insert(rows).execute()
+
+
+def _replace_collection_entries(db, collection_id: str, entries: list[CollectionEntry]) -> None:
+    if not _collection_entries_table_available(db):
+        non_product_entries = [entry for entry in entries if getattr(entry, "kind", None) != "product"]
+        if non_product_entries:
+            raise HTTPException(
+                status_code=400,
+                detail="Non-product collection entries require the collection_entries migration",
+            )
+        _sync_collection_products_from_entries(db, collection_id, entries)
+        return
+
+    db.table("collection_entries").delete().eq("collection_id", collection_id).execute()
+
+    if entries:
+        entry_rows = []
+        for idx, entry in enumerate(entries):
+            row = {
+                "collection_id": collection_id,
+                "kind": entry.kind,
+                "position": idx,
+                "label": entry.label,
+                "product_id": None,
+                "collection_ref_id": None,
+                "blog_post_id": None,
+                "query_json": None,
+            }
+            if entry.kind == "product":
+                row["product_id"] = entry.product_id
+            elif entry.kind == "collection":
+                row["collection_ref_id"] = entry.collection_id
+            elif entry.kind == "blogPost":
+                row["blog_post_id"] = entry.blog_post_id
+            elif entry.kind == "query":
+                row["query_json"] = entry.query.model_dump(exclude_none=True)
+            entry_rows.append(row)
+
+        db.table("collection_entries").insert(entry_rows).execute()
+
+    _sync_collection_products_from_entries(db, collection_id, entries)
+
+
+def _load_collection_entries_map(db, collection_ids: list[str]) -> dict[str, list[dict]]:
+    if not collection_ids:
+        return {}
+
+    if not _collection_entries_table_available(db):
+        return {}
+
+    try:
+        response = (
+            db.table("collection_entries")
+            .select(
+                "collection_id,kind,position,label,product_id,collection_ref_id,blog_post_id,query_json"
+            )
+            .in_("collection_id", collection_ids)
+            .order("position")
+            .execute()
+        )
+    except Exception:
+        return {}
+
+    entries_map: dict[str, list[dict]] = {}
+    for row in (response.data or []):
+        collection_id = row.get("collection_id")
+        if not collection_id:
+            continue
+
+        entry = {
+            "kind": row.get("kind"),
+            "position": row.get("position") or 0,
+            "label": row.get("label"),
+        }
+        kind = row.get("kind")
+        if kind == "product":
+            entry["product_id"] = row.get("product_id")
+        elif kind == "collection":
+            entry["collection_id"] = row.get("collection_ref_id")
+        elif kind == "blogPost":
+            entry["blog_post_id"] = row.get("blog_post_id")
+        elif kind == "query":
+            entry["query"] = row.get("query_json") or {}
+
+        entries_map.setdefault(collection_id, []).append(entry)
+
+    return entries_map
 
 
 @router.post("", response_model=CollectionResponse, status_code=201)
@@ -145,9 +274,20 @@ async def create_collection(
         wait_for_row_visibility(db, "collections", "id", created_collection["id"])
         or created_collection
     )
+    entries_payload = collection_data.entries or []
+    if entries_payload:
+        _replace_collection_entries(db, created_collection["id"], entries_payload)
+
     created_collection["editor_ids"] = []
-    created_collection["product_ids"] = []
-    created_collection["product_slugs"] = []
+    product_entries = [entry for entry in entries_payload if entry.kind == "product"]
+    product_ids = [entry.product_id for entry in product_entries]
+    id_to_slug: dict[str, str] = {}
+    if product_ids:
+        products_resp = db.table("products").select("id, slug").in_("id", product_ids).execute()
+        id_to_slug = {p["id"]: p["slug"] for p in (products_resp.data or []) if p.get("id")}
+    created_collection["product_ids"] = product_ids
+    created_collection["product_slugs"] = [id_to_slug.get(product_id, "") for product_id in product_ids]
+    created_collection["entries"] = [entry.model_dump(exclude_none=True) for entry in entries_payload]
     return created_collection
 
 
@@ -180,6 +320,7 @@ async def create_collection_from_search(
 
     filters = prepare_product_filters(db, current_user, collection_data, allow_aliases=True)
     product_ids = fetch_filtered_product_ids(db, filters, sort_field="created_at", sort_desc=True)
+    entries_payload = _entries_from_product_ids(product_ids)
 
     # Generate slug and create the collection
     slug = generate_id_with_uniqueness_check(collection_data.name, db, "collections", column="slug")
@@ -201,23 +342,26 @@ async def create_collection_from_search(
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to create collection")
 
-    # Insert products into junction table
-    if product_ids:
-        junction_records = [
-            {"collection_id": collection_id, "product_id": pid, "position": idx}
-            for idx, pid in enumerate(product_ids)
-        ]
+    try:
+        _replace_collection_entries(
+            db,
+            collection_id,
+            [_COLLECTION_ENTRY_ADAPTER.validate_python(entry) for entry in entries_payload],
+        )
+    except Exception as exc:
+        # Best effort cleanup to avoid orphaned collection rows
         try:
-            db.table("collection_products").insert(junction_records).execute()
-        except Exception as exc:
-            # Best effort cleanup to avoid orphaned collection rows
-            try:
-                db.table("collections").delete().eq("id", collection_id).execute()
-            except Exception:
-                pass
-            raise HTTPException(
-                status_code=500, detail=f"Failed to populate collection from search: {str(exc)}"
-            )
+            db.table("collections").delete().eq("id", collection_id).execute()
+        except Exception:
+            pass
+
+        if isinstance(exc, HTTPException):
+            raise exc
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to populate collection from search: {str(exc)}",
+        )
 
     # Return canonical response assembled from junction table data
     return _get_collection_with_products(db, collection_id)
@@ -343,12 +487,18 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
             continue
         product_rows_by_collection.setdefault(collection_id, []).append(row)
 
+    entry_map = _load_collection_entries_map(db, collection_ids)
+
     all_product_ids = {
         row["product_id"]
         for rows in product_rows_by_collection.values()
         for row in rows
         if row.get("product_id")
     }
+    for rows in entry_map.values():
+        for entry in rows:
+            if entry.get("kind") == "product" and entry.get("product_id"):
+                all_product_ids.add(entry["product_id"])
     id_to_slug: dict[str, str] = {}
     if all_product_ids:
         products_resp = db.table("products").select("id, slug").in_("id", list(all_product_ids)).execute()
@@ -360,6 +510,7 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
             collection["editor_ids"] = []
             collection["product_ids"] = []
             collection["product_slugs"] = []
+            collection["entries"] = []
             continue
 
         editor_rows = editors_by_collection.get(collection_id, [])
@@ -368,11 +519,26 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
             owner_by_collection.get(collection_id),
         )
 
-        product_rows = sorted(
-            product_rows_by_collection.get(collection_id, []),
-            key=lambda row: (row.get("position") is None, row.get("position", 0)),
-        )
-        product_ids = [row["product_id"] for row in product_rows if row.get("product_id")]
+        stored_entries = entry_map.get(collection_id, [])
+        if stored_entries:
+            entries = sorted(
+                stored_entries,
+                key=lambda entry: (entry.get("position") is None, entry.get("position", 0)),
+            )
+            collection["entries"] = entries
+            product_ids = [
+                entry["product_id"]
+                for entry in entries
+                if entry.get("kind") == "product" and entry.get("product_id")
+            ]
+        else:
+            product_rows = sorted(
+                product_rows_by_collection.get(collection_id, []),
+                key=lambda row: (row.get("position") is None, row.get("position", 0)),
+            )
+            product_ids = [row["product_id"] for row in product_rows if row.get("product_id")]
+            collection["entries"] = _entries_from_product_ids(product_ids)
+
         collection["product_ids"] = product_ids
         collection["product_slugs"] = [id_to_slug.get(pid, None) for pid in product_ids]
 
@@ -575,6 +741,9 @@ async def update_collection(
 
     if not response.data:
         raise HTTPException(status_code=404, detail="Collection not found")
+
+    if collection_data.entries is not None:
+        _replace_collection_entries(db, collection_id, collection_data.entries)
 
     return _get_collection_with_products(db, collection_id)
 

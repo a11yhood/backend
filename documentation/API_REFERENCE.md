@@ -1101,10 +1101,48 @@ Collection responses use snake_case field names:
   "product_slugs": [
     "accessible-keyboard"
   ],
+  "entries": [
+    {
+      "kind": "product",
+      "position": 0,
+      "product_id": "2bf24db6-0a4f-4b2f-9005-8f4cf66d31ab"
+    },
+    {
+      "kind": "query",
+      "position": 1,
+      "query": {
+        "search": "wheelchair",
+        "source": "Github"
+      }
+    }
+  ],
   "created_at": "2026-06-01T20:44:12+00:00",
   "updated_at": "2026-06-01T20:45:01+00:00"
 }
 ```
+
+### Collection Entries Contract
+
+`entries` is the canonical ordered list of collection contents. Supported entry kinds:
+
+- `product`: requires `product_id`
+- `collection`: requires `collection_id`
+- `blogPost`: requires `blog_post_id`
+- `query`: requires `query` object (same shape as product query filters)
+
+Optional entry fields:
+
+- `position` (integer, default `0`)
+- `label` (string, max length 255)
+
+Response consistency guarantees:
+
+- Entry order is preserved across `POST /api/collections`, `PUT /api/collections/{collection_slug}`, and subsequent `GET` responses.
+- `product_ids` is always the ordered projection of product-kind entries from `entries`.
+- `product_slugs` is index-aligned with `product_ids`.
+- For authenticated `GET /api/collections`, role markers are stable regardless of entry types:
+  - owned: `access_role = owner`, `is_owner = true`
+  - editor-managed: `access_role = editor`, `is_owner = false`
 
 ### Get Authenticated User Collections
 
@@ -1150,11 +1188,29 @@ POST /api/collections
 {
   "name": "My Favorites",
   "description": "Products I love",
-  "is_public": false
+  "is_public": false,
+  "entries": [
+    {
+      "kind": "collection",
+      "collection_id": "67c3c92c-8963-401d-bd95-53aa6dfeb9a2"
+    },
+    {
+      "kind": "product",
+      "product_id": "2bf24db6-0a4f-4b2f-9005-8f4cf66d31ab"
+    },
+    {
+      "kind": "query",
+      "query": {
+        "search": "mobility",
+        "source": "Github"
+      }
+    }
+  ]
 }
 ```
 
 The owner is tracked in `user_id` and is not duplicated in `editor_ids`.
+If `entries` is omitted, an empty entries list is returned.
 
 ### Create Collection From Search
 
@@ -1163,6 +1219,8 @@ POST /api/collections/from-search
 ```
 
 Creates a collection and populates products using product search filters.
+The created collection returns canonical `entries` with product-kind entries for search results,
+plus projected `product_ids` and `product_slugs`.
 
 ### Update Collection
 
@@ -1177,9 +1235,24 @@ PUT /api/collections/{collection_slug}
 {
   "name": "Updated Name",
   "description": "Updated description",
-  "is_public": true
+  "is_public": true,
+  "entries": [
+    {
+      "kind": "product",
+      "product_id": "2bf24db6-0a4f-4b2f-9005-8f4cf66d31ab"
+    },
+    {
+      "kind": "query",
+      "query": {
+        "search": "assistive",
+        "source": "Github"
+      }
+    }
+  ]
 }
 ```
+
+When `entries` is provided, the collection entry set is replaced atomically.
 
 ### Delete Collection
 
