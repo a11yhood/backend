@@ -574,11 +574,28 @@ class TestGetPublicCollections:
             headers=auth_headers(test_user),
             json={"name": "Patterns Library", "is_public": True},
         )
+        client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={
+                "name": "Hidden Title",
+                "description": "Contains a wheelchair-friendly roundup",
+                "is_public": True,
+            },
+        )
 
         response = client.get("/api/collections/public?search=yarn")
         assert response.status_code == 200
         collections = response.json()
-        assert any("Yarn" in c["name"] for c in collections)
+        assert any("yarn" in c["name"].lower() for c in collections)
+
+        description_response = client.get("/api/collections/public?search=wheelchair")
+        assert description_response.status_code == 200
+        description_collections = description_response.json()
+        assert any(
+            c["description"] == "Contains a wheelchair-friendly roundup"
+            for c in description_collections
+        )
 
     def test_public_collections_with_sort(self, client, test_user, auth_headers):
         """Test sorting public collections"""

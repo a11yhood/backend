@@ -653,7 +653,12 @@ async def get_public_collections(
     # Filter by search if provided
     if search:
         search_lower = search.lower()
-        collections = [c for c in collections if search_lower in c.get("name", "").lower()]
+        collections = [
+            c
+            for c in collections
+            if search_lower in c.get("name", "").lower()
+            or search_lower in (c.get("description") or "").lower()
+        ]
 
     if editor_id:
         collections = [

@@ -1166,7 +1166,7 @@ GET /api/collections/public?search=yarn
 
 **Query Parameters:**
 - `sort_by` (optional): `created_at` (default), `product_count`, or `updated_at`
-- `search` (optional): Case-insensitive filter by collection name
+- `search` (optional): Case-insensitive filter by collection name or description
 - `editor_id` (optional): Filter public collections where the user is owner or assigned editor
 
 ### Get Single Collection
