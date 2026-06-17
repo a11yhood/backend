@@ -352,8 +352,12 @@ async def create_collection_from_search(
         # Best effort cleanup to avoid orphaned collection rows
         try:
             db.table("collections").delete().eq("id", collection_id).execute()
-        except Exception:
-            pass
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Failed to cleanup collection %s after populate error: %s",
+                collection_id,
+                cleanup_exc,
+            )
 
         if isinstance(exc, HTTPException):
             raise exc
