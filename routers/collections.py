@@ -34,6 +34,18 @@ _COLLECTION_ENTRIES_TABLE_AVAILABLE: bool | None = None
 _COLLECTION_ENTRY_ADAPTER = TypeAdapter(CollectionEntry)
 
 
+def _is_collection_entries_missing_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "collection_entries" in message
+        and (
+            "does not exist" in message
+            or "undefined table" in message
+            or "42p01" in message
+        )
+    )
+
+
 def _looks_like_uuid(value: str) -> bool:
     """Check if a string looks like a UUID."""
     try:
@@ -96,8 +108,15 @@ def _collection_entries_table_available(db) -> bool:
     try:
         db.table("collection_entries").select("id").limit(1).execute()
         _COLLECTION_ENTRIES_TABLE_AVAILABLE = True
-    except Exception:
-        _COLLECTION_ENTRIES_TABLE_AVAILABLE = False
+    except Exception as exc:
+        if _is_collection_entries_missing_error(exc):
+            _COLLECTION_ENTRIES_TABLE_AVAILABLE = False
+        else:
+            logger.warning(
+                "collection_entries availability check failed transiently; not caching false: %s",
+                exc,
+            )
+            raise
     return _COLLECTION_ENTRIES_TABLE_AVAILABLE
 
 
@@ -136,6 +155,21 @@ def _replace_collection_entries(db, collection_id: str, entries: list[Collection
             )
         _sync_collection_products_from_entries(db, collection_id, entries)
         return
+
+    entries_payload = [entry.model_dump(exclude_none=True) for entry in entries]
+
+    try:
+        db.rpc(
+            "replace_collection_entries",
+            {
+                "p_collection_id": collection_id,
+                "p_entries": entries_payload,
+            },
+        ).execute()
+        return
+    except Exception:
+        # Compatibility fallback for environments where the RPC migration is not applied yet.
+        pass
 
     db.table("collection_entries").delete().eq("collection_id", collection_id).execute()
 
@@ -276,7 +310,18 @@ async def create_collection(
     )
     entries_payload = collection_data.entries or []
     if entries_payload:
-        _replace_collection_entries(db, created_collection["id"], entries_payload)
+        try:
+            _replace_collection_entries(db, created_collection["id"], entries_payload)
+        except Exception:
+            try:
+                db.table("collections").delete().eq("id", created_collection["id"]).execute()
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to clean up collection %s after entry replacement error: %s",
+                    created_collection["id"],
+                    cleanup_exc,
+                )
+            raise
 
     created_collection["editor_ids"] = []
     product_entries = [entry for entry in entries_payload if entry.kind == "product"]

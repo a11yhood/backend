@@ -255,6 +255,49 @@ class TestCreateCollection:
             "product",
         ]
 
+    def test_create_collection_cleans_up_row_when_entry_replacement_fails(
+        self, client, test_user, auth_headers, monkeypatch, clean_database
+    ):
+        from routers import collections as collections_router
+
+        def fail_replace(*_args, **_kwargs):
+            raise RuntimeError("simulated replacement failure")
+
+        monkeypatch.setattr(collections_router, "_replace_collection_entries", fail_replace)
+
+        product_id = str(uuid.uuid4())
+        clean_database.table("products").insert(
+            {
+                "id": product_id,
+                "name": "Cleanup Failure Product",
+                "description": "Created to trigger a failed collection replacement",
+                "source": "Github",
+                "type": "Software",
+                "slug": f"cleanup-failure-product-{product_id[:8]}",
+                "source_url": f"https://github.com/example/cleanup-{product_id[:8]}",
+                "created_by": test_user["id"],
+            }
+        ).execute()
+
+        unique_name = f"Cleanup Failure {uuid.uuid4().hex[:8]}"
+        with pytest.raises(RuntimeError, match="simulated replacement failure"):
+            client.post(
+                "/api/collections",
+                headers=auth_headers(test_user),
+                json={
+                    "name": unique_name,
+                    "entries": [{"kind": "product", "product_id": product_id}],
+                },
+            )
+
+        collection_rows = (
+            clean_database.table("collections")
+            .select("id, name")
+            .eq("name", unique_name)
+            .execute()
+        )
+        assert collection_rows.data == []
+
     def test_update_collection_with_mixed_entries_preserves_order(
         self, client, test_user, test_product, auth_headers
     ):

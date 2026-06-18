@@ -40,6 +40,37 @@ class _FakeDB:
         raise AssertionError(f"Unexpected table: {name}")
 
 
+class _CollectionEntriesQuery:
+    def __init__(self, mode: str):
+        self.mode = mode
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args, **_kwargs):
+        return self
+
+    def execute(self):
+        if self.mode == "missing":
+            raise Exception('relation "collection_entries" does not exist')
+        if self.mode == "transient":
+            raise Exception("connection timeout")
+        return _FakeResponse([{"id": "ok"}])
+
+
+class _CollectionEntriesDB:
+    def __init__(self, modes: list[str]):
+        self.modes = modes
+        self.calls = 0
+
+    def table(self, name: str):
+        if name != "collection_entries":
+            raise AssertionError(f"Unexpected table: {name}")
+        mode = self.modes[min(self.calls, len(self.modes) - 1)]
+        self.calls += 1
+        return _CollectionEntriesQuery(mode)
+
+
 def test_safe_float_handles_valid_and_invalid_values():
     assert collections_router._safe_float("4.5") == 4.5
     assert collections_router._safe_float(3) == 3.0
@@ -91,3 +122,23 @@ def test_get_product_ids_for_tags_and_mode_requires_all_tags():
 def test_looks_like_uuid_helper():
     assert collections_router._looks_like_uuid("123e4567-e89b-12d3-a456-426614174000") is True
     assert collections_router._looks_like_uuid("not-a-uuid") is False
+
+
+def test_collection_entries_table_available_caches_missing_table_only(monkeypatch):
+    monkeypatch.setattr(collections_router, "_COLLECTION_ENTRIES_TABLE_AVAILABLE", None)
+    db = _CollectionEntriesDB(["missing", "ok"])
+
+    assert collections_router._collection_entries_table_available(db) is False
+    assert collections_router._collection_entries_table_available(db) is False
+    assert db.calls == 1
+
+
+def test_collection_entries_table_available_does_not_cache_transient_failures(monkeypatch):
+    monkeypatch.setattr(collections_router, "_COLLECTION_ENTRIES_TABLE_AVAILABLE", None)
+    db = _CollectionEntriesDB(["transient", "ok"])
+
+    with pytest.raises(Exception, match="timeout"):
+        collections_router._collection_entries_table_available(db)
+
+    assert collections_router._COLLECTION_ENTRIES_TABLE_AVAILABLE is None
+    assert collections_router._collection_entries_table_available(db) is True
