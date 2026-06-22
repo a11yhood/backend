@@ -120,6 +120,29 @@ def _collection_entries_table_available(db) -> bool:
     return _COLLECTION_ENTRIES_TABLE_AVAILABLE
 
 
+def _validate_no_duplicate_entries(entries: list) -> None:
+    """Raise 400 if the entries list contains duplicates by kind+id."""
+    seen: dict[str, set[str]] = {}
+    for entry in entries:
+        kind = getattr(entry, "kind", None)
+        if kind == "product":
+            key = getattr(entry, "product_id", None)
+        elif kind == "collection":
+            key = getattr(entry, "collection_id", None)
+        elif kind == "blogPost":
+            key = getattr(entry, "blog_post_id", None)
+        else:
+            continue
+        if key is None:
+            continue
+        if key in seen.get(kind, set()):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Duplicate {kind} entry: {key}",
+            )
+        seen.setdefault(kind, set()).add(key)
+
+
 def _entries_from_product_ids(product_ids: list[str]) -> list[dict]:
     return [
         {"kind": "product", "product_id": product_id, "position": position}
@@ -310,6 +333,7 @@ async def create_collection(
     )
     entries_payload = collection_data.entries or []
     if entries_payload:
+        _validate_no_duplicate_entries(entries_payload)
         try:
             _replace_collection_entries(db, created_collection["id"], entries_payload)
         except Exception:
@@ -797,6 +821,7 @@ async def update_collection(
         raise HTTPException(status_code=404, detail="Collection not found")
 
     if collection_data.entries is not None:
+        _validate_no_duplicate_entries(collection_data.entries)
         _replace_collection_entries(db, collection_id, collection_data.entries)
 
     return _get_collection_with_products(db, collection_id)
@@ -966,8 +991,7 @@ async def add_product_to_collection(
         .execute()
     )
     if existing_resp.data:
-        # Product already in collection, return collection unchanged
-        return _get_collection_with_products(db, collection_id)
+        raise HTTPException(status_code=409, detail="Product is already in this collection")
 
     # Get current position for new product
     position_result = (
@@ -1129,8 +1153,15 @@ async def add_multiple_products_to_collection(
     )
     existing_product_ids = {p["product_id"] for p in (current_resp.data or [])}
 
-    # Add new products to junction table (avoiding duplicates)
-    new_products = [pid for pid in deduplicated_product_ids if pid not in existing_product_ids]
+    # Reject if any products are already in the collection
+    already_present = [pid for pid in deduplicated_product_ids if pid in existing_product_ids]
+    if already_present:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Products already in collection: {', '.join(already_present)}",
+        )
+
+    new_products = deduplicated_product_ids
 
     if new_products:
         # Get current max position

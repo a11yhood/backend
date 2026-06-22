@@ -69,6 +69,11 @@ supabase/
 # Local database backups
 backups/
 
+# Certificates
+certs/
+nginx/
+NGINX_SETUP.md
+
 # Local helper scripts (not tracked)
 deploy-prod-image.sh
 # pixi environments

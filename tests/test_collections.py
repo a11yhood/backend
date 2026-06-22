@@ -337,6 +337,68 @@ class TestCreateCollection:
         ]
         assert updated["product_ids"] == [test_product["id"]]
 
+    def test_create_collection_duplicate_product_entries_rejected(
+        self, client, test_user, test_product, auth_headers
+    ):
+        """Test that creating a collection with duplicate product entries returns 400"""
+        response = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={
+                "name": "Dup Products",
+                "entries": [
+                    {"kind": "product", "product_id": test_product["id"]},
+                    {"kind": "product", "product_id": test_product["id"]},
+                ],
+            },
+        )
+        assert response.status_code == 400
+
+    def test_create_collection_duplicate_collection_entries_rejected(
+        self, client, test_user, auth_headers
+    ):
+        """Test that creating a collection with duplicate nested-collection entries returns 400"""
+        nested = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Nested Dup Target"},
+        ).json()
+
+        response = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={
+                "name": "Dup Collections",
+                "entries": [
+                    {"kind": "collection", "collection_id": nested["id"]},
+                    {"kind": "collection", "collection_id": nested["id"]},
+                ],
+            },
+        )
+        assert response.status_code == 400
+
+    def test_update_collection_duplicate_entries_rejected(
+        self, client, test_user, test_product, auth_headers
+    ):
+        """Test that updating a collection with duplicate entries returns 400"""
+        collection_id = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Update Dup"},
+        ).json()["id"]
+
+        response = client.put(
+            f"/api/collections/{collection_id}",
+            headers=auth_headers(test_user),
+            json={
+                "entries": [
+                    {"kind": "product", "product_id": test_product["id"]},
+                    {"kind": "product", "product_id": test_product["id"]},
+                ]
+            },
+        )
+        assert response.status_code == 400
+
 
 class TestGetUserCollections:
     """Tests for Story 6.2: User Views Their Collections"""
@@ -1218,6 +1280,24 @@ class TestAddMultipleProductsToCollection:
         )
         assert response.status_code == 403
 
+    def test_bulk_add_duplicate_product_rejected(self, client, test_user, test_product, auth_headers):
+        """Test that bulk-adding a product already in the collection returns 409"""
+        collection_id = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "Bulk No Dup"}
+        ).json()["id"]
+
+        client.post(
+            f"/api/collections/{collection_id}/products/{test_product['id']}",
+            headers=auth_headers(test_user),
+        )
+
+        response = client.post(
+            f"/api/collections/{collection_id}/products",
+            headers=auth_headers(test_user),
+            json={"product_ids": [test_product["id"]]},
+        )
+        assert response.status_code == 409
+
 
 class TestProductCollections:
     """Tests for GET /api/products/{slug}/collections endpoint"""
@@ -1367,28 +1447,23 @@ class TestJunctionTableBehavior:
         data = response.json()
         assert data["product_ids"] == product_ids
 
-    def test_duplicate_product_prevented(self, client, test_user, test_product, auth_headers):
-        """Test that adding the same product twice doesn't create duplicates"""
+    def test_duplicate_product_rejected(self, client, test_user, test_product, auth_headers):
+        """Test that adding the same product twice returns 409"""
         collection = client.post(
             "/api/collections", headers=auth_headers(test_user), json={"name": "No Duplicates"}
         ).json()
 
-        # Add product twice
-        client.post(
+        first = client.post(
             f"/api/collections/{collection['id']}/products/{test_product['id']}",
             headers=auth_headers(test_user),
         )
-        client.post(
-            f"/api/collections/{collection['id']}/products/{test_product['id']}",
-            headers=auth_headers(test_user),
-        )
+        assert first.status_code == 200
 
-        # Should only appear once
-        response = client.get(
-            f"/api/collections/{collection['id']}", headers=auth_headers(test_user)
+        second = client.post(
+            f"/api/collections/{collection['id']}/products/{test_product['id']}",
+            headers=auth_headers(test_user),
         )
-        data = response.json()
-        assert data["product_ids"].count(test_product["id"]) == 1
+        assert second.status_code == 409
 
     def test_junction_table_cascade_delete(
         self, client, test_user, test_product, auth_headers, sqlite_db
