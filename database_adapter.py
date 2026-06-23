@@ -23,7 +23,6 @@ _supabase_auth_token: ContextVar[str | None] = ContextVar("supabase_auth_token",
 _ROW_LIMIT_EXEMPT_TABLES = {
     "auth.users",
     "auth.sessions",
-    "collection_products",
     "collection_editors",
     "user_roles",
     "supported_sources",
@@ -92,7 +91,6 @@ class DatabaseAdapter:
     # Tables to clean during test teardown, ordered so dependents come first.
     _TEST_TABLES_ORDER = [
         # Junction / child tables (no standalone id or CASCADE targets)
-        "collection_products",
         "collection_entries",
         "collection_editors",
         "product_tags",
@@ -116,8 +114,6 @@ class DatabaseAdapter:
     ]
 
     _TEST_TABLE_FILTERS = {
-        # Composite PK; no standalone id column.
-        "collection_products": ("collection_id", "00000000-0000-0000-0000-000000000000"),
         # Some schemas keep scraper_search_terms without a stable id column.
         "scraper_search_terms": ("search_term", ""),
         # supported_sources is keyed by domain in test and production schemas.

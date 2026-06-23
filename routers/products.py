@@ -1053,11 +1053,11 @@ async def get_product_collections(
 
     product_id = product_resp.data[0]["id"]
 
-    # Get collection IDs from junction table
     junction_resp = (
-        db.table("collection_products")
+        db.table("collection_entries")
         .select("collection_id")
         .eq("product_id", product_id)
+        .eq("kind", "product")
         .execute()
     )
     collection_ids = [row["collection_id"] for row in (junction_resp.data or [])]

@@ -1479,9 +1479,9 @@ class TestJunctionTableBehavior:
             headers=auth_headers(test_user),
         )
 
-        # Verify junction entry exists
+        # Verify entry exists in collection_entries
         junction_check = (
-            sqlite_db.table("collection_products")
+            sqlite_db.table("collection_entries")
             .select("*")
             .eq("collection_id", collection["id"])
             .execute()
@@ -1491,9 +1491,9 @@ class TestJunctionTableBehavior:
         # Delete collection
         client.delete(f"/api/collections/{collection['id']}", headers=auth_headers(test_user))
 
-        # Verify junction entry removed (CASCADE)
+        # Verify entry removed (ON DELETE CASCADE from collections)
         junction_check = (
-            sqlite_db.table("collection_products")
+            sqlite_db.table("collection_entries")
             .select("*")
             .eq("collection_id", collection["id"])
             .execute()

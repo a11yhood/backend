@@ -30,20 +30,7 @@ from services.ratings import compute_display_rating
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 logger = logging.getLogger(__name__)
-_COLLECTION_ENTRIES_TABLE_AVAILABLE: bool | None = None
 _COLLECTION_ENTRY_ADAPTER = TypeAdapter(CollectionEntry)
-
-
-def _is_collection_entries_missing_error(exc: Exception) -> bool:
-    message = str(exc).lower()
-    return (
-        "collection_entries" in message
-        and (
-            "does not exist" in message
-            or "undefined table" in message
-            or "42p01" in message
-        )
-    )
 
 
 def _is_rpc_not_found_error(exc: Exception) -> bool:
@@ -113,26 +100,6 @@ def _extract_non_owner_editor_ids(editor_rows: list[dict], owner_user_id: str | 
     ]
 
 
-def _collection_entries_table_available(db) -> bool:
-    global _COLLECTION_ENTRIES_TABLE_AVAILABLE
-    if _COLLECTION_ENTRIES_TABLE_AVAILABLE is not None:
-        return _COLLECTION_ENTRIES_TABLE_AVAILABLE
-
-    try:
-        db.table("collection_entries").select("id").limit(1).execute()
-        _COLLECTION_ENTRIES_TABLE_AVAILABLE = True
-    except Exception as exc:
-        if _is_collection_entries_missing_error(exc):
-            # Don't cache False — the migration may be applied while the server is running.
-            return False
-        logger.warning(
-            "collection_entries availability check failed transiently; not caching: %s",
-            exc,
-        )
-        raise
-    return _COLLECTION_ENTRIES_TABLE_AVAILABLE
-
-
 def _validate_no_duplicate_entries(entries: list) -> None:
     """Raise 400 if the entries list contains duplicates by kind+id."""
     seen: dict[str, set[str]] = {}
@@ -157,54 +124,28 @@ def _validate_no_duplicate_entries(entries: list) -> None:
 
 
 def _existing_product_ids_in_collection(db, collection_id: str) -> set[str]:
-    """Return product IDs already in the collection, checking collection_entries when available."""
-    if _collection_entries_table_available(db):
-        try:
-            resp = (
-                db.table("collection_entries")
-                .select("product_id")
-                .eq("collection_id", collection_id)
-                .eq("kind", "product")
-                .execute()
-            )
-            return {row["product_id"] for row in (resp.data or []) if row.get("product_id")}
-        except Exception:
-            pass
+    """Return product IDs already in the collection."""
     resp = (
-        db.table("collection_products")
+        db.table("collection_entries")
         .select("product_id")
         .eq("collection_id", collection_id)
+        .eq("kind", "product")
         .execute()
     )
     return {row["product_id"] for row in (resp.data or []) if row.get("product_id")}
 
 
 def _get_next_entry_position(db, collection_id: str) -> int:
-    """Return the next available position for a new entry, using collection_entries when available."""
-    if _collection_entries_table_available(db):
-        try:
-            resp = (
-                db.table("collection_entries")
-                .select("position")
-                .eq("collection_id", collection_id)
-                .order("position", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if resp.data:
-                return (resp.data[0].get("position") or 0) + 1
-            return 0
-        except Exception:
-            pass
+    """Return the next available position for a new entry."""
     resp = (
-        db.table("collection_products")
+        db.table("collection_entries")
         .select("position")
         .eq("collection_id", collection_id)
         .order("position", desc=True)
         .limit(1)
         .execute()
     )
-    return (resp.data[0]["position"] + 1) if resp.data else 0
+    return ((resp.data[0].get("position") or 0) + 1) if resp.data else 0
 
 
 def _entries_from_product_ids(product_ids: list[str]) -> list[dict]:
@@ -214,35 +155,7 @@ def _entries_from_product_ids(product_ids: list[str]) -> list[dict]:
     ]
 
 
-def _sync_collection_products_from_entries(db, collection_id: str, entries: list[CollectionEntry]) -> None:
-    product_entries = [entry for entry in entries if getattr(entry, "kind", None) == "product"]
-
-    db.table("collection_products").delete().eq("collection_id", collection_id).execute()
-    if not product_entries:
-        return
-
-    rows = [
-        {
-            "collection_id": collection_id,
-            "product_id": entry.product_id,
-            "position": idx,
-        }
-        for idx, entry in enumerate(product_entries)
-    ]
-    db.table("collection_products").insert(rows).execute()
-
-
 def _replace_collection_entries(db, collection_id: str, entries: list[CollectionEntry]) -> None:
-    if not _collection_entries_table_available(db):
-        non_product_entries = [entry for entry in entries if getattr(entry, "kind", None) != "product"]
-        if non_product_entries:
-            raise HTTPException(
-                status_code=400,
-                detail="Non-product collection entries require the collection_entries migration",
-            )
-        _sync_collection_products_from_entries(db, collection_id, entries)
-        return
-
     entries_payload = [entry.model_dump(exclude_none=True) for entry in entries]
 
     try:
@@ -286,14 +199,9 @@ def _replace_collection_entries(db, collection_id: str, entries: list[Collection
 
         db.table("collection_entries").insert(entry_rows).execute()
 
-    _sync_collection_products_from_entries(db, collection_id, entries)
-
 
 def _load_collection_entries_map(db, collection_ids: list[str]) -> dict[str, list[dict]]:
     if not collection_ids:
-        return {}
-
-    if not _collection_entries_table_available(db):
         return {}
 
     try:
@@ -618,31 +526,14 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
             continue
         editors_by_collection.setdefault(collection_id, []).append(row)
 
-    junction_resp = (
-        db.table("collection_products")
-        .select("collection_id, product_id, position")
-        .in_("collection_id", collection_ids)
-        .execute()
-    )
-    product_rows_by_collection: dict[str, list[dict]] = {}
-    for row in (junction_resp.data or []):
-        collection_id = row.get("collection_id")
-        if not collection_id:
-            continue
-        product_rows_by_collection.setdefault(collection_id, []).append(row)
-
     entry_map = _load_collection_entries_map(db, collection_ids)
 
     all_product_ids = {
-        row["product_id"]
-        for rows in product_rows_by_collection.values()
-        for row in rows
-        if row.get("product_id")
+        entry["product_id"]
+        for rows in entry_map.values()
+        for entry in rows
+        if entry.get("kind") == "product" and entry.get("product_id")
     }
-    for rows in entry_map.values():
-        for entry in rows:
-            if entry.get("kind") == "product" and entry.get("product_id"):
-                all_product_ids.add(entry["product_id"])
     id_to_slug: dict[str, str] = {}
     if all_product_ids:
         products_resp = db.table("products").select("id, slug").in_("id", list(all_product_ids)).execute()
@@ -663,25 +554,16 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
             owner_by_collection.get(collection_id),
         )
 
-        stored_entries = entry_map.get(collection_id, [])
-        if stored_entries:
-            entries = sorted(
-                stored_entries,
-                key=lambda entry: (entry.get("position") is None, entry.get("position", 0)),
-            )
-            collection["entries"] = entries
-            product_ids = [
-                entry["product_id"]
-                for entry in entries
-                if entry.get("kind") == "product" and entry.get("product_id")
-            ]
-        else:
-            product_rows = sorted(
-                product_rows_by_collection.get(collection_id, []),
-                key=lambda row: (row.get("position") is None, row.get("position", 0)),
-            )
-            product_ids = [row["product_id"] for row in product_rows if row.get("product_id")]
-            collection["entries"] = _entries_from_product_ids(product_ids)
+        entries = sorted(
+            entry_map.get(collection_id, []),
+            key=lambda entry: (entry.get("position") is None, entry.get("position", 0)),
+        )
+        collection["entries"] = entries
+        product_ids = [
+            entry["product_id"]
+            for entry in entries
+            if entry.get("kind") == "product" and entry.get("product_id")
+        ]
 
         collection["product_ids"] = product_ids
         collection["product_slugs"] = [id_to_slug.get(pid, None) for pid in product_ids]
@@ -1011,13 +893,6 @@ async def delete_collection(
             status_code=403, detail="Only owners and editors can delete this collection"
         )
 
-    # Delete join table links first when available
-    try:
-        db.table("collection_products").delete().eq("collection_id", collection.get("id")).execute()
-    except Exception:
-        pass
-
-    # Delete from database
     db.table("collections").delete().eq("id", collection.get("id")).execute()
 
     return None
@@ -1060,22 +935,17 @@ async def add_product_to_collection(
 
     next_position = _get_next_entry_position(db, collection_id)
 
-    if _collection_entries_table_available(db):
-        db.table("collection_entries").insert(
-            {
-                "collection_id": collection_id,
-                "kind": "product",
-                "position": next_position,
-                "label": None,
-                "product_id": product_id,
-                "collection_ref_id": None,
-                "blog_post_id": None,
-                "query_json": None,
-            }
-        ).execute()
-
-    db.table("collection_products").insert(
-        {"collection_id": collection_id, "product_id": product_id, "position": next_position}
+    db.table("collection_entries").insert(
+        {
+            "collection_id": collection_id,
+            "kind": "product",
+            "position": next_position,
+            "label": None,
+            "product_id": product_id,
+            "collection_ref_id": None,
+            "blog_post_id": None,
+            "query_json": None,
+        }
     ).execute()
 
     db.table("collections").update({"updated_at": datetime.now(UTC).isoformat()}).eq(
@@ -1117,14 +987,9 @@ async def remove_product_from_collection(
             status_code=403, detail="Only owners and editors can modify this collection"
         )
 
-    if _collection_entries_table_available(db):
-        db.table("collection_entries").delete().eq("collection_id", collection_id).eq(
-            "kind", "product"
-        ).eq("product_id", product_id).execute()
-
-    db.table("collection_products").delete().eq("collection_id", collection_id).eq(
-        "product_id", product_id
-    ).execute()
+    db.table("collection_entries").delete().eq("collection_id", collection_id).eq(
+        "kind", "product"
+    ).eq("product_id", product_id).execute()
 
     db.table("collections").update({"updated_at": datetime.now(UTC).isoformat()}).eq(
         "id", collection_id
@@ -1152,12 +1017,9 @@ async def remove_all_products_from_collection(
             status_code=403, detail="Only owners and editors can modify this collection"
         )
 
-    if _collection_entries_table_available(db):
-        db.table("collection_entries").delete().eq("collection_id", collection_id).eq(
-            "kind", "product"
-        ).execute()
-
-    db.table("collection_products").delete().eq("collection_id", collection_id).execute()
+    db.table("collection_entries").delete().eq("collection_id", collection_id).eq(
+        "kind", "product"
+    ).execute()
 
     db.table("collections").update({"updated_at": datetime.now(UTC).isoformat()}).eq(
         "id", collection_id
@@ -1227,27 +1089,20 @@ async def add_multiple_products_to_collection(
     if deduplicated_product_ids:
         next_position = _get_next_entry_position(db, collection_id)
 
-        if _collection_entries_table_available(db):
-            entry_rows = [
-                {
-                    "collection_id": collection_id,
-                    "kind": "product",
-                    "position": next_position + idx,
-                    "label": None,
-                    "product_id": pid,
-                    "collection_ref_id": None,
-                    "blog_post_id": None,
-                    "query_json": None,
-                }
-                for idx, pid in enumerate(deduplicated_product_ids)
-            ]
-            db.table("collection_entries").insert(entry_rows).execute()
-
-        junction_records = [
-            {"collection_id": collection_id, "product_id": pid, "position": next_position + idx}
+        entry_rows = [
+            {
+                "collection_id": collection_id,
+                "kind": "product",
+                "position": next_position + idx,
+                "label": None,
+                "product_id": pid,
+                "collection_ref_id": None,
+                "blog_post_id": None,
+                "query_json": None,
+            }
             for idx, pid in enumerate(deduplicated_product_ids)
         ]
-        db.table("collection_products").insert(junction_records).execute()
+        db.table("collection_entries").insert(entry_rows).execute()
 
         db.table("collections").update({"updated_at": datetime.now(UTC).isoformat()}).eq(
             "id", collection_id
