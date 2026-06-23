@@ -18,8 +18,8 @@ from pydantic import BaseModel, Field
 
 from config import settings
 from models.product_queries import BulkDeleteRequest, ProductQueryDefinition
-from routers.collections import _populate_collection_relationships_bulk
 from models.products import ProductCreate, ProductResponse, ProductUpdate
+from routers.collections import _populate_collection_relationships_bulk
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
