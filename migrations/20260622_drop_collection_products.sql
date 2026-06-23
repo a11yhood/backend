@@ -64,5 +64,18 @@ $$;
 REVOKE ALL ON FUNCTION public.replace_collection_entries(UUID, JSONB) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.replace_collection_entries(UUID, JSONB) TO service_role;
 
+-- Backfill any collection_products rows that were added after the initial
+-- collection_entries migration ran but before this branch was deployed.
+-- The old Python code wrote to collection_products only; rows created in that
+-- window would be lost if we drop without a second backfill pass.
+INSERT INTO public.collection_entries (collection_id, kind, position, product_id)
+SELECT cp.collection_id, 'product', COALESCE(cp.position, 0), cp.product_id
+FROM public.collection_products cp
+LEFT JOIN public.collection_entries ce
+    ON  ce.collection_id = cp.collection_id
+    AND ce.kind          = 'product'
+    AND ce.product_id    = cp.product_id
+WHERE ce.id IS NULL;
+
 -- Drop the legacy junction table (CASCADE removes RLS policies and indexes).
 DROP TABLE IF EXISTS public.collection_products CASCADE;
