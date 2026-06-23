@@ -695,8 +695,7 @@ def test_duplicate_rating_prevents_race_condition(auth_client, test_product):
 
 
 def test_collection_cannot_be_added_twice(auth_client, test_product):
-    """Verify adding same product twice to collection is idempotent"""
-    # Create collection
+    """Verify adding same product twice to collection returns 409"""
     col_response = auth_client.post(
         "/api/collections",
         json={"name": "Test Collection"},
@@ -704,22 +703,15 @@ def test_collection_cannot_be_added_twice(auth_client, test_product):
     assert col_response.status_code == 201
     collection_id = col_response.json()["id"]
 
-    # Add product first time
     response1 = auth_client.post(
         f"/api/collections/{collection_id}/products/{test_product['id']}",
     )
     assert response1.status_code == 200
 
-    # Add same product second time (should be idempotent)
     response2 = auth_client.post(
         f"/api/collections/{collection_id}/products/{test_product['id']}",
     )
-    assert response2.status_code == 200
-
-    # Both should succeed, product appears once
-    collection = response2.json()
-    product_count = collection["product_ids"].count(test_product["id"])
-    assert product_count == 1
+    assert response2.status_code == 409
 
 
 # ============================================================================

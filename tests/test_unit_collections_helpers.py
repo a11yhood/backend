@@ -124,13 +124,43 @@ def test_looks_like_uuid_helper():
     assert collections_router._looks_like_uuid("not-a-uuid") is False
 
 
-def test_collection_entries_table_available_caches_missing_table_only(monkeypatch):
+def test_is_rpc_not_found_error_matches_expected_messages():
+    assert collections_router._is_rpc_not_found_error(
+        Exception("Could not find the function replace_collection_entries")
+    ) is True
+    assert collections_router._is_rpc_not_found_error(
+        Exception("PGRST202: function not found")
+    ) is True
+    assert collections_router._is_rpc_not_found_error(
+        Exception("could not find function replace_collection_entries(p_collection_id)")
+    ) is True
+    assert collections_router._is_rpc_not_found_error(
+        Exception("connection timeout")
+    ) is False
+    assert collections_router._is_rpc_not_found_error(
+        Exception("permission denied for table collection_entries")
+    ) is False
+
+
+def test_collection_entries_table_available_does_not_cache_missing_table(monkeypatch):
     monkeypatch.setattr(collections_router, "_COLLECTION_ENTRIES_TABLE_AVAILABLE", None)
-    db = _CollectionEntriesDB(["missing", "ok"])
+    db = _CollectionEntriesDB(["missing", "missing", "ok"])
 
     assert collections_router._collection_entries_table_available(db) is False
     assert collections_router._collection_entries_table_available(db) is False
-    assert db.calls == 1
+    # Both calls probed the DB — missing result is never cached
+    assert db.calls == 2
+
+
+def test_collection_entries_table_available_caches_true_after_migration(monkeypatch):
+    monkeypatch.setattr(collections_router, "_COLLECTION_ENTRIES_TABLE_AVAILABLE", None)
+    db = _CollectionEntriesDB(["missing", "ok", "ok"])
+
+    assert collections_router._collection_entries_table_available(db) is False
+    assert collections_router._collection_entries_table_available(db) is True
+    # Third call uses the cache — only two DB probes total
+    assert collections_router._collection_entries_table_available(db) is True
+    assert db.calls == 2
 
 
 def test_collection_entries_table_available_does_not_cache_transient_failures(monkeypatch):

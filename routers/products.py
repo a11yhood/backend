@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from config import settings
 from models.product_queries import BulkDeleteRequest, ProductQueryDefinition
+from routers.collections import _populate_collection_relationships_bulk
 from models.products import ProductCreate, ProductResponse, ProductUpdate
 from services.auth import get_current_user, get_current_user_optional
 from services.database import get_db, wait_for_row_visibility
@@ -1074,19 +1075,7 @@ async def get_product_collections(
         c for c in collections if c.get("is_public") or (user_id and c.get("user_id") == user_id)
     ]
 
-    # Populate product_ids and product_slugs for each collection
-    for collection in filtered_collections:
-        products_resp = (
-            db.table("collection_products")
-            .select("product_id, products(slug)")
-            .eq("collection_id", collection["id"])
-            .order("position")
-            .execute()
-        )
-        collection["product_ids"] = [p["product_id"] for p in (products_resp.data or [])]
-        collection["product_slugs"] = [
-            p["products"]["slug"] if p.get("products") else None for p in (products_resp.data or [])
-        ]
+    _populate_collection_relationships_bulk(db, filtered_collections)
 
     return filtered_collections
 

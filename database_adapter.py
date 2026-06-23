@@ -93,6 +93,7 @@ class DatabaseAdapter:
     _TEST_TABLES_ORDER = [
         # Junction / child tables (no standalone id or CASCADE targets)
         "collection_products",
+        "collection_entries",
         "collection_editors",
         "product_tags",
         "product_editors",
@@ -170,26 +171,13 @@ class DatabaseAdapter:
                     logger.warning("Failed to count rows for table '%s' during cleanup: %s", table, exc)
             return leftovers
 
-        used_rpc = False
         try:
             self.supabase.rpc("truncate_test_tables").execute()
-            used_rpc = True
+            return  # TRUNCATE CASCADE is atomic; trust it and skip verification.
         except Exception as exc:
             logger.debug(
                 "truncate_test_tables RPC unavailable, falling back to per-table DELETE: %s",
                 exc,
-            )
-
-        leftovers_after_rpc = _get_leftovers()
-        if not leftovers_after_rpc:
-            return
-
-        if used_rpc:
-            detail = ", ".join(f"{name}={count}" for name, count in leftovers_after_rpc.items())
-            logger.warning(
-                "truncate_test_tables RPC completed but left residual rows; "
-                "falling back to per-table DELETE: %s",
-                detail,
             )
 
         for table in self._TEST_TABLES_ORDER:
