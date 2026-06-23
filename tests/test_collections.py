@@ -195,6 +195,210 @@ class TestCreateCollection:
         assert response.status_code == 201
         assert response.json()["product_ids"] == [tagged_id]
 
+    def test_create_collection_with_mixed_entries_preserves_order_in_round_trip(
+        self, client, test_user, test_product, auth_headers, clean_database
+    ):
+        nested_collection = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Nested Collection"},
+        )
+        assert nested_collection.status_code == 201
+        nested_collection_id = nested_collection.json()["id"]
+
+        second_product_id = str(uuid.uuid4())
+        clean_database.table("products").insert(
+            {
+                "id": second_product_id,
+                "name": "Second Product",
+                "description": "Secondary product for mixed entries",
+                "source": "Github",
+                "type": "Software",
+                "slug": f"second-product-{second_product_id[:8]}",
+                "source_url": f"https://github.com/example/second-product-{second_product_id[:8]}",
+                "created_by": test_user["id"],
+            }
+        ).execute()
+
+        payload_entries = [
+            {"kind": "collection", "collection_id": nested_collection_id},
+            {"kind": "product", "product_id": second_product_id},
+            {"kind": "query", "query": {"search": "wheelchair", "source": "Github"}},
+            {"kind": "product", "product_id": test_product["id"]},
+        ]
+
+        response = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={
+                "name": "Mixed Entries Collection",
+                "entries": payload_entries,
+            },
+        )
+        assert response.status_code == 201
+        created = response.json()
+        assert [entry["kind"] for entry in created["entries"]] == [
+            "collection",
+            "product",
+            "query",
+            "product",
+        ]
+        assert created["product_ids"] == [second_product_id, test_product["id"]]
+
+        details = client.get(f"/api/collections/{created['id']}", headers=auth_headers(test_user))
+        assert details.status_code == 200
+        detailed = details.json()
+        assert [entry["kind"] for entry in detailed["entries"]] == [
+            "collection",
+            "product",
+            "query",
+            "product",
+        ]
+
+    def test_create_collection_cleans_up_row_when_entry_replacement_fails(
+        self, client, test_user, auth_headers, monkeypatch, clean_database
+    ):
+        from routers import collections as collections_router
+
+        def fail_replace(*_args, **_kwargs):
+            raise RuntimeError("simulated replacement failure")
+
+        monkeypatch.setattr(collections_router, "_replace_collection_entries", fail_replace)
+
+        product_id = str(uuid.uuid4())
+        clean_database.table("products").insert(
+            {
+                "id": product_id,
+                "name": "Cleanup Failure Product",
+                "description": "Created to trigger a failed collection replacement",
+                "source": "Github",
+                "type": "Software",
+                "slug": f"cleanup-failure-product-{product_id[:8]}",
+                "source_url": f"https://github.com/example/cleanup-{product_id[:8]}",
+                "created_by": test_user["id"],
+            }
+        ).execute()
+
+        unique_name = f"Cleanup Failure {uuid.uuid4().hex[:8]}"
+        with pytest.raises(RuntimeError, match="simulated replacement failure"):
+            client.post(
+                "/api/collections",
+                headers=auth_headers(test_user),
+                json={
+                    "name": unique_name,
+                    "entries": [{"kind": "product", "product_id": product_id}],
+                },
+            )
+
+        collection_rows = (
+            clean_database.table("collections")
+            .select("id, name")
+            .eq("name", unique_name)
+            .execute()
+        )
+        assert collection_rows.data == []
+
+    def test_update_collection_with_mixed_entries_preserves_order(
+        self, client, test_user, test_product, auth_headers
+    ):
+        nested_collection = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Nested For Update"},
+        )
+        assert nested_collection.status_code == 201
+        nested_collection_id = nested_collection.json()["id"]
+
+        base_collection = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Update Mixed Entries"},
+        )
+        assert base_collection.status_code == 201
+        collection_id = base_collection.json()["id"]
+
+        update_response = client.put(
+            f"/api/collections/{collection_id}",
+            headers=auth_headers(test_user),
+            json={
+                "entries": [
+                    {"kind": "product", "product_id": test_product["id"]},
+                    {"kind": "query", "query": {"search": "mobility", "source": "Github"}},
+                    {"kind": "collection", "collection_id": nested_collection_id},
+                ]
+            },
+        )
+        assert update_response.status_code == 200
+        updated = update_response.json()
+        assert [entry["kind"] for entry in updated["entries"]] == [
+            "product",
+            "query",
+            "collection",
+        ]
+        assert updated["product_ids"] == [test_product["id"]]
+
+    def test_create_collection_duplicate_product_entries_rejected(
+        self, client, test_user, test_product, auth_headers
+    ):
+        """Test that creating a collection with duplicate product entries returns 400"""
+        response = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={
+                "name": "Dup Products",
+                "entries": [
+                    {"kind": "product", "product_id": test_product["id"]},
+                    {"kind": "product", "product_id": test_product["id"]},
+                ],
+            },
+        )
+        assert response.status_code == 400
+
+    def test_create_collection_duplicate_collection_entries_rejected(
+        self, client, test_user, auth_headers
+    ):
+        """Test that creating a collection with duplicate nested-collection entries returns 400"""
+        nested = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Nested Dup Target"},
+        ).json()
+
+        response = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={
+                "name": "Dup Collections",
+                "entries": [
+                    {"kind": "collection", "collection_id": nested["id"]},
+                    {"kind": "collection", "collection_id": nested["id"]},
+                ],
+            },
+        )
+        assert response.status_code == 400
+
+    def test_update_collection_duplicate_entries_rejected(
+        self, client, test_user, test_product, auth_headers
+    ):
+        """Test that updating a collection with duplicate entries returns 400"""
+        collection_id = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Update Dup"},
+        ).json()["id"]
+
+        response = client.put(
+            f"/api/collections/{collection_id}",
+            headers=auth_headers(test_user),
+            json={
+                "entries": [
+                    {"kind": "product", "product_id": test_product["id"]},
+                    {"kind": "product", "product_id": test_product["id"]},
+                ]
+            },
+        )
+        assert response.status_code == 400
+
 
 class TestGetUserCollections:
     """Tests for Story 6.2: User Views Their Collections"""
@@ -279,6 +483,166 @@ class TestGetUserCollections:
         assert response.status_code == 401
 
 
+class TestCollectionResponseContracts:
+    """Contract tests for mixed-entry response consistency across endpoints."""
+
+    @staticmethod
+    def _assert_product_entries_match_product_ids(collection: dict) -> None:
+        product_entry_ids = [
+            entry["product_id"]
+            for entry in (collection.get("entries") or [])
+            if entry.get("kind") == "product" and entry.get("product_id")
+        ]
+        assert collection.get("product_ids") == product_entry_ids
+        assert len(collection.get("product_slugs") or []) == len(collection.get("product_ids") or [])
+
+    def test_mixed_entry_contract_consistent_across_create_get_and_list(
+        self, client, test_user, test_product, auth_headers, clean_database
+    ):
+        nested = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Contract Nested"},
+        )
+        assert nested.status_code == 201
+        nested_id = nested.json()["id"]
+
+        second_product_id = str(uuid.uuid4())
+        clean_database.table("products").insert(
+            {
+                "id": second_product_id,
+                "name": "Contract Product",
+                "description": "Second product for contract test",
+                "source": "Github",
+                "type": "Software",
+                "slug": f"contract-product-{second_product_id[:8]}",
+                "source_url": f"https://github.com/example/contract-{second_product_id[:8]}",
+                "created_by": test_user["id"],
+            }
+        ).execute()
+
+        entries = [
+            {"kind": "collection", "collection_id": nested_id},
+            {"kind": "product", "product_id": second_product_id},
+            {"kind": "query", "query": {"search": "mobility", "source": "Github"}},
+            {"kind": "product", "product_id": test_product["id"]},
+        ]
+
+        created_response = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Contract Mixed Collection", "entries": entries},
+        )
+        assert created_response.status_code == 201
+        created = created_response.json()
+
+        expected_kind_order = ["collection", "product", "query", "product"]
+        assert [entry["kind"] for entry in created["entries"]] == expected_kind_order
+        self._assert_product_entries_match_product_ids(created)
+
+        detail_response = client.get(
+            f"/api/collections/{created['id']}",
+            headers=auth_headers(test_user),
+        )
+        assert detail_response.status_code == 200
+        detail = detail_response.json()
+        assert [entry["kind"] for entry in detail["entries"]] == expected_kind_order
+        self._assert_product_entries_match_product_ids(detail)
+
+        mine_response = client.get("/api/collections", headers=auth_headers(test_user))
+        assert mine_response.status_code == 200
+        mine = next(item for item in mine_response.json() if item["id"] == created["id"])
+        assert [entry["kind"] for entry in mine["entries"]] == expected_kind_order
+        self._assert_product_entries_match_product_ids(mine)
+
+        public_response = client.get("/api/collections/public")
+        assert public_response.status_code == 200
+        public_item = next(item for item in public_response.json() if item["id"] == created["id"])
+        assert [entry["kind"] for entry in public_item["entries"]] == expected_kind_order
+        self._assert_product_entries_match_product_ids(public_item)
+
+    def test_get_user_collections_preserves_access_markers_with_mixed_entries(
+        self, client, test_user, test_user_2, test_product, auth_headers
+    ):
+        owner_collection_resp = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={
+                "name": "Owner Mixed",
+                "entries": [{"kind": "product", "product_id": test_product["id"]}],
+            },
+        )
+        assert owner_collection_resp.status_code == 201
+        owner_collection = owner_collection_resp.json()
+
+        editor_collection_resp = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user_2),
+            json={
+                "name": "Editor Mixed",
+                "entries": [
+                    {"kind": "query", "query": {"search": "assistive", "source": "Github"}},
+                    {"kind": "product", "product_id": test_product["id"]},
+                ],
+            },
+        )
+        assert editor_collection_resp.status_code == 201
+        editor_collection = editor_collection_resp.json()
+
+        add_editor_response = client.post(
+            f"/api/collections/{editor_collection['id']}/editors/{test_user['id']}",
+            headers=auth_headers(test_user_2),
+        )
+        assert add_editor_response.status_code == 200
+
+        response = client.get("/api/collections", headers=auth_headers(test_user))
+        assert response.status_code == 200
+        by_id = {item["id"]: item for item in response.json()}
+
+        assert by_id[owner_collection["id"]]["access_role"] == "owner"
+        assert by_id[owner_collection["id"]]["is_owner"] is True
+        self._assert_product_entries_match_product_ids(by_id[owner_collection["id"]])
+
+        assert by_id[editor_collection["id"]]["access_role"] == "editor"
+        assert by_id[editor_collection["id"]]["is_owner"] is False
+        self._assert_product_entries_match_product_ids(by_id[editor_collection["id"]])
+
+    def test_update_entries_contract_keeps_order_and_product_coherence(
+        self, client, test_user, test_product, auth_headers
+    ):
+        nested = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Nested For Contract Update"},
+        )
+        assert nested.status_code == 201
+
+        base = client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={"name": "Update Contract Base"},
+        )
+        assert base.status_code == 201
+        collection_id = base.json()["id"]
+
+        updated_response = client.put(
+            f"/api/collections/{collection_id}",
+            headers=auth_headers(test_user),
+            json={
+                "entries": [
+                    {"kind": "query", "query": {"search": "wheelchair", "source": "Github"}},
+                    {"kind": "product", "product_id": test_product["id"]},
+                    {"kind": "collection", "collection_id": nested.json()["id"]},
+                ]
+            },
+        )
+        assert updated_response.status_code == 200
+        updated = updated_response.json()
+
+        assert [entry["kind"] for entry in updated["entries"]] == ["query", "product", "collection"]
+        self._assert_product_entries_match_product_ids(updated)
+
+
 class TestGetPublicCollections:
     """Tests for Story 6.3: Browse Public Collections"""
 
@@ -315,11 +679,28 @@ class TestGetPublicCollections:
             headers=auth_headers(test_user),
             json={"name": "Patterns Library", "is_public": True},
         )
+        client.post(
+            "/api/collections",
+            headers=auth_headers(test_user),
+            json={
+                "name": "Hidden Title",
+                "description": "Contains a wheelchair-friendly roundup",
+                "is_public": True,
+            },
+        )
 
         response = client.get("/api/collections/public?search=yarn")
         assert response.status_code == 200
         collections = response.json()
-        assert any("Yarn" in c["name"] for c in collections)
+        assert any("yarn" in c["name"].lower() for c in collections)
+
+        description_response = client.get("/api/collections/public?search=wheelchair")
+        assert description_response.status_code == 200
+        description_collections = description_response.json()
+        assert any(
+            c["description"] == "Contains a wheelchair-friendly roundup"
+            for c in description_collections
+        )
 
     def test_public_collections_with_sort(self, client, test_user, auth_headers):
         """Test sorting public collections"""
@@ -899,6 +1280,24 @@ class TestAddMultipleProductsToCollection:
         )
         assert response.status_code == 403
 
+    def test_bulk_add_duplicate_product_rejected(self, client, test_user, test_product, auth_headers):
+        """Test that bulk-adding a product already in the collection returns 409"""
+        collection_id = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "Bulk No Dup"}
+        ).json()["id"]
+
+        client.post(
+            f"/api/collections/{collection_id}/products/{test_product['id']}",
+            headers=auth_headers(test_user),
+        )
+
+        response = client.post(
+            f"/api/collections/{collection_id}/products",
+            headers=auth_headers(test_user),
+            json={"product_ids": [test_product["id"]]},
+        )
+        assert response.status_code == 409
+
 
 class TestProductCollections:
     """Tests for GET /api/products/{slug}/collections endpoint"""
@@ -1048,28 +1447,23 @@ class TestJunctionTableBehavior:
         data = response.json()
         assert data["product_ids"] == product_ids
 
-    def test_duplicate_product_prevented(self, client, test_user, test_product, auth_headers):
-        """Test that adding the same product twice doesn't create duplicates"""
+    def test_duplicate_product_rejected(self, client, test_user, test_product, auth_headers):
+        """Test that adding the same product twice returns 409"""
         collection = client.post(
             "/api/collections", headers=auth_headers(test_user), json={"name": "No Duplicates"}
         ).json()
 
-        # Add product twice
-        client.post(
+        first = client.post(
             f"/api/collections/{collection['id']}/products/{test_product['id']}",
             headers=auth_headers(test_user),
         )
-        client.post(
-            f"/api/collections/{collection['id']}/products/{test_product['id']}",
-            headers=auth_headers(test_user),
-        )
+        assert first.status_code == 200
 
-        # Should only appear once
-        response = client.get(
-            f"/api/collections/{collection['id']}", headers=auth_headers(test_user)
+        second = client.post(
+            f"/api/collections/{collection['id']}/products/{test_product['id']}",
+            headers=auth_headers(test_user),
         )
-        data = response.json()
-        assert data["product_ids"].count(test_product["id"]) == 1
+        assert second.status_code == 409
 
     def test_junction_table_cascade_delete(
         self, client, test_user, test_product, auth_headers, sqlite_db
@@ -1085,9 +1479,9 @@ class TestJunctionTableBehavior:
             headers=auth_headers(test_user),
         )
 
-        # Verify junction entry exists
+        # Verify entry exists in collection_entries
         junction_check = (
-            sqlite_db.table("collection_products")
+            sqlite_db.table("collection_entries")
             .select("*")
             .eq("collection_id", collection["id"])
             .execute()
@@ -1097,9 +1491,9 @@ class TestJunctionTableBehavior:
         # Delete collection
         client.delete(f"/api/collections/{collection['id']}", headers=auth_headers(test_user))
 
-        # Verify junction entry removed (CASCADE)
+        # Verify entry removed (ON DELETE CASCADE from collections)
         junction_check = (
-            sqlite_db.table("collection_products")
+            sqlite_db.table("collection_entries")
             .select("*")
             .eq("collection_id", collection["id"])
             .execute()

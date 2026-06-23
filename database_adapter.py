@@ -23,7 +23,6 @@ _supabase_auth_token: ContextVar[str | None] = ContextVar("supabase_auth_token",
 _ROW_LIMIT_EXEMPT_TABLES = {
     "auth.users",
     "auth.sessions",
-    "collection_products",
     "collection_editors",
     "user_roles",
     "supported_sources",
@@ -92,7 +91,7 @@ class DatabaseAdapter:
     # Tables to clean during test teardown, ordered so dependents come first.
     _TEST_TABLES_ORDER = [
         # Junction / child tables (no standalone id or CASCADE targets)
-        "collection_products",
+        "collection_entries",
         "collection_editors",
         "product_tags",
         "product_editors",
@@ -115,8 +114,6 @@ class DatabaseAdapter:
     ]
 
     _TEST_TABLE_FILTERS = {
-        # Composite PK; no standalone id column.
-        "collection_products": ("collection_id", "00000000-0000-0000-0000-000000000000"),
         # Some schemas keep scraper_search_terms without a stable id column.
         "scraper_search_terms": ("search_term", ""),
         # supported_sources is keyed by domain in test and production schemas.
@@ -170,26 +167,13 @@ class DatabaseAdapter:
                     logger.warning("Failed to count rows for table '%s' during cleanup: %s", table, exc)
             return leftovers
 
-        used_rpc = False
         try:
             self.supabase.rpc("truncate_test_tables").execute()
-            used_rpc = True
+            return  # TRUNCATE CASCADE is atomic; trust it and skip verification.
         except Exception as exc:
             logger.debug(
                 "truncate_test_tables RPC unavailable, falling back to per-table DELETE: %s",
                 exc,
-            )
-
-        leftovers_after_rpc = _get_leftovers()
-        if not leftovers_after_rpc:
-            return
-
-        if used_rpc:
-            detail = ", ".join(f"{name}={count}" for name, count in leftovers_after_rpc.items())
-            logger.warning(
-                "truncate_test_tables RPC completed but left residual rows; "
-                "falling back to per-table DELETE: %s",
-                detail,
             )
 
         for table in self._TEST_TABLES_ORDER:

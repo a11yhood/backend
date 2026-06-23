@@ -11,10 +11,12 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import TypeAdapter
 
 from models.collections import (
     CollectionCreate,
     CollectionEditorsResponse,
+    CollectionEntry,
     CollectionFromSearchCreate,
     CollectionResponse,
     CollectionUpdate,
@@ -28,6 +30,20 @@ from services.ratings import compute_display_rating
 
 router = APIRouter(prefix="/api/collections", tags=["collections"])
 logger = logging.getLogger(__name__)
+_COLLECTION_ENTRY_ADAPTER = TypeAdapter(CollectionEntry)
+
+
+def _is_rpc_not_found_error(exc: Exception) -> bool:
+    """True when the DB reports that the replace_collection_entries RPC does not exist."""
+    message = str(exc).lower()
+    return (
+        "replace_collection_entries" in message
+        or "pgrst202" in message
+        or (
+            "could not find" in message
+            and "function" in message
+        )
+    )
 
 
 def _looks_like_uuid(value: str) -> bool:
@@ -84,6 +100,150 @@ def _extract_non_owner_editor_ids(editor_rows: list[dict], owner_user_id: str | 
     ]
 
 
+def _validate_no_duplicate_entries(entries: list) -> None:
+    """Raise 400 if the entries list contains duplicates by kind+id."""
+    seen: dict[str, set[str]] = {}
+    for entry in entries:
+        kind = getattr(entry, "kind", None)
+        if kind == "product":
+            key = getattr(entry, "product_id", None)
+        elif kind == "collection":
+            key = getattr(entry, "collection_id", None)
+        elif kind == "blogPost":
+            key = getattr(entry, "blog_post_id", None)
+        else:
+            continue
+        if key is None:
+            continue
+        if key in seen.get(kind, set()):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Duplicate {kind} entry: {key}",
+            )
+        seen.setdefault(kind, set()).add(key)
+
+
+def _existing_product_ids_in_collection(db, collection_id: str) -> set[str]:
+    """Return product IDs already in the collection."""
+    resp = (
+        db.table("collection_entries")
+        .select("product_id")
+        .eq("collection_id", collection_id)
+        .eq("kind", "product")
+        .execute()
+    )
+    return {row["product_id"] for row in (resp.data or []) if row.get("product_id")}
+
+
+def _get_next_entry_position(db, collection_id: str) -> int:
+    """Return the next available position for a new entry."""
+    resp = (
+        db.table("collection_entries")
+        .select("position")
+        .eq("collection_id", collection_id)
+        .order("position", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return ((resp.data[0].get("position") or 0) + 1) if resp.data else 0
+
+
+def _entries_from_product_ids(product_ids: list[str]) -> list[dict]:
+    return [
+        {"kind": "product", "product_id": product_id, "position": position}
+        for position, product_id in enumerate(product_ids)
+    ]
+
+
+def _replace_collection_entries(db, collection_id: str, entries: list[CollectionEntry]) -> None:
+    entries_payload = [entry.model_dump(exclude_none=True) for entry in entries]
+
+    try:
+        db.rpc(
+            "replace_collection_entries",
+            {
+                "p_collection_id": collection_id,
+                "p_entries": entries_payload,
+            },
+        ).execute()
+        return
+    except Exception as exc:
+        if not _is_rpc_not_found_error(exc):
+            raise
+        # RPC not yet deployed — fall through to manual path.
+
+    db.table("collection_entries").delete().eq("collection_id", collection_id).execute()
+
+    if entries:
+        entry_rows = []
+        for idx, entry in enumerate(entries):
+            row = {
+                "collection_id": collection_id,
+                "kind": entry.kind,
+                "position": idx,
+                "label": entry.label,
+                "product_id": None,
+                "collection_ref_id": None,
+                "blog_post_id": None,
+                "query_json": None,
+            }
+            if entry.kind == "product":
+                row["product_id"] = entry.product_id
+            elif entry.kind == "collection":
+                row["collection_ref_id"] = entry.collection_id
+            elif entry.kind == "blogPost":
+                row["blog_post_id"] = entry.blog_post_id
+            elif entry.kind == "query":
+                row["query_json"] = entry.query.model_dump(exclude_none=True)
+            entry_rows.append(row)
+
+        db.table("collection_entries").insert(entry_rows).execute()
+
+
+def _load_collection_entries_map(db, collection_ids: list[str]) -> dict[str, list[dict]]:
+    if not collection_ids:
+        return {}
+
+    try:
+        response = (
+            db.table("collection_entries")
+            .select(
+                "collection_id,kind,position,label,product_id,collection_ref_id,blog_post_id,query_json"
+            )
+            .in_("collection_id", collection_ids)
+            .order("position")
+            .execute()
+        )
+    except Exception as exc:
+        logger.warning("Failed to load collection entries for %s: %s", collection_ids, exc)
+        return {}
+
+    entries_map: dict[str, list[dict]] = {}
+    for row in (response.data or []):
+        collection_id = row.get("collection_id")
+        if not collection_id:
+            continue
+
+        entry = {
+            "kind": row.get("kind"),
+            "position": row.get("position") or 0,
+            "label": row.get("label"),
+        }
+        kind = row.get("kind")
+        if kind == "product":
+            entry["product_id"] = row.get("product_id")
+        elif kind == "collection":
+            entry["collection_id"] = row.get("collection_ref_id")
+        elif kind == "blogPost":
+            entry["blog_post_id"] = row.get("blog_post_id")
+        elif kind == "query":
+            entry["query"] = row.get("query_json") or {}
+
+        entries_map.setdefault(collection_id, []).append(entry)
+
+    return entries_map
+
+
 @router.post("", response_model=CollectionResponse, status_code=201)
 async def create_collection(
     collection_data: CollectionCreate,
@@ -107,6 +267,9 @@ async def create_collection(
 
     if collection_data.description and len(collection_data.description) > 1000:
         raise HTTPException(status_code=400, detail="Description must be 1000 characters or less")
+
+    if collection_data.entries:
+        _validate_no_duplicate_entries(collection_data.entries)
 
     # Generate UUID primary key and slug
     slug = generate_id_with_uniqueness_check(collection_data.name, db, "collections", column="slug")
@@ -145,10 +308,22 @@ async def create_collection(
         wait_for_row_visibility(db, "collections", "id", created_collection["id"])
         or created_collection
     )
-    created_collection["editor_ids"] = []
-    created_collection["product_ids"] = []
-    created_collection["product_slugs"] = []
-    return created_collection
+    entries_payload = collection_data.entries or []
+    if entries_payload:
+        try:
+            _replace_collection_entries(db, created_collection["id"], entries_payload)
+        except Exception:
+            try:
+                db.table("collections").delete().eq("id", created_collection["id"]).execute()
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to clean up collection %s after entry replacement error: %s",
+                    created_collection["id"],
+                    cleanup_exc,
+                )
+            raise
+
+    return _get_collection_with_products(db, created_collection["id"])
 
 
 @router.post("/from-search", response_model=CollectionResponse, status_code=201)
@@ -180,6 +355,7 @@ async def create_collection_from_search(
 
     filters = prepare_product_filters(db, current_user, collection_data, allow_aliases=True)
     product_ids = fetch_filtered_product_ids(db, filters, sort_field="created_at", sort_desc=True)
+    entries_payload = _entries_from_product_ids(product_ids)
 
     # Generate slug and create the collection
     slug = generate_id_with_uniqueness_check(collection_data.name, db, "collections", column="slug")
@@ -195,29 +371,49 @@ async def create_collection_from_search(
         "is_public": collection_data.is_public,
     }
 
+    if user_id and not wait_for_row_visibility(db, "users", "id", user_id, select="id", attempts=2):
+        db.table("users").upsert(
+            {
+                "id": user_id,
+                "github_id": current_user.get("github_id") or f"rehydrated-{user_id[:8]}",
+                "username": current_user.get("username") or f"user_{user_id[:8]}",
+                "display_name": current_user.get("display_name") or user_name,
+                "email": current_user.get("email") or f"{user_id[:8]}@a11yhood.test",
+                "role": current_user.get("role") or "user",
+            },
+            on_conflict="id",
+        ).execute()
+
     # Insert collection into database
     response = db.table("collections").insert(collection).execute()
 
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to create collection")
 
-    # Insert products into junction table
-    if product_ids:
-        junction_records = [
-            {"collection_id": collection_id, "product_id": pid, "position": idx}
-            for idx, pid in enumerate(product_ids)
-        ]
+    try:
+        _replace_collection_entries(
+            db,
+            collection_id,
+            [_COLLECTION_ENTRY_ADAPTER.validate_python(entry) for entry in entries_payload],
+        )
+    except Exception as exc:
+        # Best effort cleanup to avoid orphaned collection rows
         try:
-            db.table("collection_products").insert(junction_records).execute()
-        except Exception as exc:
-            # Best effort cleanup to avoid orphaned collection rows
-            try:
-                db.table("collections").delete().eq("id", collection_id).execute()
-            except Exception:
-                pass
-            raise HTTPException(
-                status_code=500, detail=f"Failed to populate collection from search: {str(exc)}"
+            db.table("collections").delete().eq("id", collection_id).execute()
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Failed to cleanup collection %s after populate error: %s",
+                collection_id,
+                cleanup_exc,
             )
+
+        if isinstance(exc, HTTPException):
+            raise exc
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to populate collection from search: {str(exc)}",
+        )
 
     # Return canonical response assembled from junction table data
     return _get_collection_with_products(db, collection_id)
@@ -330,24 +526,13 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
             continue
         editors_by_collection.setdefault(collection_id, []).append(row)
 
-    junction_resp = (
-        db.table("collection_products")
-        .select("collection_id, product_id, position")
-        .in_("collection_id", collection_ids)
-        .execute()
-    )
-    product_rows_by_collection: dict[str, list[dict]] = {}
-    for row in (junction_resp.data or []):
-        collection_id = row.get("collection_id")
-        if not collection_id:
-            continue
-        product_rows_by_collection.setdefault(collection_id, []).append(row)
+    entry_map = _load_collection_entries_map(db, collection_ids)
 
     all_product_ids = {
-        row["product_id"]
-        for rows in product_rows_by_collection.values()
-        for row in rows
-        if row.get("product_id")
+        entry["product_id"]
+        for rows in entry_map.values()
+        for entry in rows
+        if entry.get("kind") == "product" and entry.get("product_id")
     }
     id_to_slug: dict[str, str] = {}
     if all_product_ids:
@@ -360,6 +545,7 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
             collection["editor_ids"] = []
             collection["product_ids"] = []
             collection["product_slugs"] = []
+            collection["entries"] = []
             continue
 
         editor_rows = editors_by_collection.get(collection_id, [])
@@ -368,11 +554,17 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
             owner_by_collection.get(collection_id),
         )
 
-        product_rows = sorted(
-            product_rows_by_collection.get(collection_id, []),
-            key=lambda row: (row.get("position") is None, row.get("position", 0)),
+        entries = sorted(
+            entry_map.get(collection_id, []),
+            key=lambda entry: (entry.get("position") is None, entry.get("position", 0)),
         )
-        product_ids = [row["product_id"] for row in product_rows if row.get("product_id")]
+        collection["entries"] = entries
+        product_ids = [
+            entry["product_id"]
+            for entry in entries
+            if entry.get("kind") == "product" and entry.get("product_id")
+        ]
+
         collection["product_ids"] = product_ids
         collection["product_slugs"] = [id_to_slug.get(pid, None) for pid in product_ids]
 
@@ -487,7 +679,12 @@ async def get_public_collections(
     # Filter by search if provided
     if search:
         search_lower = search.lower()
-        collections = [c for c in collections if search_lower in c.get("name", "").lower()]
+        collections = [
+            c
+            for c in collections
+            if search_lower in c.get("name", "").lower()
+            or search_lower in (c.get("description") or "").lower()
+        ]
 
     if editor_id:
         collections = [
@@ -554,6 +751,9 @@ async def update_collection(
     if collection_data.description is not None and len(collection_data.description) > 1000:
         raise HTTPException(status_code=400, detail="Description must be 1000 characters or less")
 
+    if collection_data.entries is not None:
+        _validate_no_duplicate_entries(collection_data.entries)
+
     # Build update data
     collection_id = collection.get("id")
     update_data = {}
@@ -575,6 +775,9 @@ async def update_collection(
 
     if not response.data:
         raise HTTPException(status_code=404, detail="Collection not found")
+
+    if collection_data.entries is not None:
+        _replace_collection_entries(db, collection_id, collection_data.entries)
 
     return _get_collection_with_products(db, collection_id)
 
@@ -690,13 +893,6 @@ async def delete_collection(
             status_code=403, detail="Only owners and editors can delete this collection"
         )
 
-    # Delete join table links first when available
-    try:
-        db.table("collection_products").delete().eq("collection_id", collection.get("id")).execute()
-    except Exception:
-        pass
-
-    # Delete from database
     db.table("collections").delete().eq("id", collection.get("id")).execute()
 
     return None
@@ -734,40 +930,28 @@ async def add_product_to_collection(
 
     product_id = products.data[0].get("id")
 
-    # Check if product is already in collection (idempotent behavior)
-    existing_resp = (
-        db.table("collection_products")
-        .select("product_id")
-        .eq("collection_id", collection_id)
-        .eq("product_id", product_id)
-        .execute()
-    )
-    if existing_resp.data:
-        # Product already in collection, return collection unchanged
-        return _get_collection_with_products(db, collection_id)
+    if product_id in _existing_product_ids_in_collection(db, collection_id):
+        raise HTTPException(status_code=409, detail="Product is already in this collection")
 
-    # Get current position for new product
-    position_result = (
-        db.table("collection_products")
-        .select("position")
-        .eq("collection_id", collection_id)
-        .order("position", desc=True)
-        .limit(1)
-        .execute()
-    )
-    next_position = (position_result.data[0]["position"] + 1) if position_result.data else 0
+    next_position = _get_next_entry_position(db, collection_id)
 
-    # Add product to junction table
-    db.table("collection_products").insert(
-        {"collection_id": collection_id, "product_id": product_id, "position": next_position}
+    db.table("collection_entries").insert(
+        {
+            "collection_id": collection_id,
+            "kind": "product",
+            "position": next_position,
+            "label": None,
+            "product_id": product_id,
+            "collection_ref_id": None,
+            "blog_post_id": None,
+            "query_json": None,
+        }
     ).execute()
 
-    # Update collection timestamp
     db.table("collections").update({"updated_at": datetime.now(UTC).isoformat()}).eq(
         "id", collection_id
     ).execute()
 
-    # Return updated collection with product_ids
     return _get_collection_with_products(db, collection_id)
 
 
@@ -803,17 +987,14 @@ async def remove_product_from_collection(
             status_code=403, detail="Only owners and editors can modify this collection"
         )
 
-    # Remove product from junction table
-    db.table("collection_products").delete().eq("collection_id", collection_id).eq(
-        "product_id", product_id
-    ).execute()
+    db.table("collection_entries").delete().eq("collection_id", collection_id).eq(
+        "kind", "product"
+    ).eq("product_id", product_id).execute()
 
-    # Update collection timestamp
     db.table("collections").update({"updated_at": datetime.now(UTC).isoformat()}).eq(
         "id", collection_id
     ).execute()
 
-    # Return updated collection with product_ids
     return _get_collection_with_products(db, collection_id)
 
 
@@ -836,15 +1017,14 @@ async def remove_all_products_from_collection(
             status_code=403, detail="Only owners and editors can modify this collection"
         )
 
-    # Clear all products from junction table
-    db.table("collection_products").delete().eq("collection_id", collection_id).execute()
+    db.table("collection_entries").delete().eq("collection_id", collection_id).eq(
+        "kind", "product"
+    ).execute()
 
-    # Update collection timestamp
     db.table("collections").update({"updated_at": datetime.now(UTC).isoformat()}).eq(
         "id", collection_id
     ).execute()
 
-    # Return updated collection with empty product_ids
     return _get_collection_with_products(db, collection_id)
 
 
@@ -897,38 +1077,33 @@ async def add_multiple_products_to_collection(
             seen.add(pid)
             deduplicated_product_ids.append(pid)
 
-    # Get current product IDs from junction table
-    current_resp = (
-        db.table("collection_products")
-        .select("product_id")
-        .eq("collection_id", collection_id)
-        .execute()
-    )
-    existing_product_ids = {p["product_id"] for p in (current_resp.data or [])}
+    existing_product_ids = _existing_product_ids_in_collection(db, collection_id)
 
-    # Add new products to junction table (avoiding duplicates)
-    new_products = [pid for pid in deduplicated_product_ids if pid not in existing_product_ids]
-
-    if new_products:
-        # Get current max position
-        position_result = (
-            db.table("collection_products")
-            .select("position")
-            .eq("collection_id", collection_id)
-            .order("position", desc=True)
-            .limit(1)
-            .execute()
+    already_present = [pid for pid in deduplicated_product_ids if pid in existing_product_ids]
+    if already_present:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Products already in collection: {', '.join(already_present)}",
         )
-        next_position = (position_result.data[0]["position"] + 1) if position_result.data else 0
 
-        # Insert new products
-        junction_records = [
-            {"collection_id": collection_id, "product_id": pid, "position": next_position + idx}
-            for idx, pid in enumerate(new_products)
+    if deduplicated_product_ids:
+        next_position = _get_next_entry_position(db, collection_id)
+
+        entry_rows = [
+            {
+                "collection_id": collection_id,
+                "kind": "product",
+                "position": next_position + idx,
+                "label": None,
+                "product_id": pid,
+                "collection_ref_id": None,
+                "blog_post_id": None,
+                "query_json": None,
+            }
+            for idx, pid in enumerate(deduplicated_product_ids)
         ]
-        db.table("collection_products").insert(junction_records).execute()
+        db.table("collection_entries").insert(entry_rows).execute()
 
-        # Update collection timestamp
         db.table("collections").update({"updated_at": datetime.now(UTC).isoformat()}).eq(
             "id", collection_id
         ).execute()

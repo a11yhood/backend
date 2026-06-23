@@ -91,3 +91,23 @@ def test_get_product_ids_for_tags_and_mode_requires_all_tags():
 def test_looks_like_uuid_helper():
     assert collections_router._looks_like_uuid("123e4567-e89b-12d3-a456-426614174000") is True
     assert collections_router._looks_like_uuid("not-a-uuid") is False
+
+
+def test_is_rpc_not_found_error_matches_expected_messages():
+    assert collections_router._is_rpc_not_found_error(
+        Exception("Could not find the function replace_collection_entries")
+    ) is True
+    assert collections_router._is_rpc_not_found_error(
+        Exception("PGRST202: function not found")
+    ) is True
+    assert collections_router._is_rpc_not_found_error(
+        Exception("could not find function replace_collection_entries(p_collection_id)")
+    ) is True
+    assert collections_router._is_rpc_not_found_error(
+        Exception("connection timeout")
+    ) is False
+    assert collections_router._is_rpc_not_found_error(
+        Exception("permission denied for table collection_entries")
+    ) is False
+
+

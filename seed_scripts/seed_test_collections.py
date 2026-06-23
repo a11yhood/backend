@@ -121,9 +121,14 @@ def seed_collections():
                 continue
 
             product_id = prod_result.data[0]["id"]
-            db.table("collection_products").upsert(
-                {"collection_id": collection_id, "product_id": product_id},
-                on_conflict="collection_id,product_id",
+            db.table("collection_entries").upsert(
+                {
+                    "collection_id": collection_id,
+                    "kind": "product",
+                    "product_id": product_id,
+                    "position": 0,
+                },
+                on_conflict="collection_id,position",
             ).execute()
             print(f"  ✓ Added '{product_slug}' to collection '{collection_id}'")
         except Exception as e:

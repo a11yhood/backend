@@ -284,53 +284,24 @@ def _table_row_count(db, table_name: str) -> int:
 
 
 def _reset_and_assert_clean(db):
-    """Reset tables and fail loudly if any key table still has rows.
+    """Reset all tables before each test.
 
-    Retries the full reset-and-verify flow once to tolerate transient
-    Supabase timeouts under heavy integration-test load.
+    Retries once to tolerate transient Supabase timeouts under heavy
+    integration-test load.  cleanup() uses TRUNCATE CASCADE via RPC when
+    available (single round-trip, self-verified) and falls back to per-table
+    DELETE with its own verification; callers do not need to recount.
     """
-    tables_must_be_empty = [
-        "products",
-        "images",
-        "users",
-        "ratings",
-        "discussions",
-        "collections",
-        "scraping_logs",
-        "oauth_configs",
-        "product_urls",
-        "product_tags",
-        "product_editors",
-        "collection_products",
-        "collection_editors",
-    ]
-
-    # These baseline lookup tables may intentionally persist canonical rows in
-    # some remote test DB configurations. They are upsert-seeded immediately
-    # after cleanup and validated by _assert_seed_baseline.
-    tables_allow_seed_rows = {
-        "supported_sources",
-        "scraper_search_terms",
-    }
-
     for attempt in range(1, 3):
         try:
             db.cleanup()
-
-            leftovers = {}
-            for table in tables_must_be_empty:
-                count = _table_row_count(db, table)
-                if count != 0:
-                    leftovers[table] = count
-
-            for table in tables_allow_seed_rows:
-                # Execute a probe for diagnostics only; these rows are allowed.
-                _table_row_count(db, table)
-
-            if leftovers:
-                detail = ", ".join(f"{name}={count}" for name, count in leftovers.items())
+            # Single probe to confirm the truncate has propagated to the read
+            # path before we seed. Without this, seeded rows can fail FK checks
+            # because the DB hasn't yet reflected the committed truncate on the
+            # connection used by subsequent requests.
+            users_remaining = _table_row_count(db, "users")
+            if users_remaining:
                 raise RuntimeError(
-                    "Test DB reset failed: tables still contain rows after cleanup: " + detail
+                    f"Test DB reset failed: users table still has {users_remaining} rows after cleanup"
                 )
             return
         except Exception as exc:

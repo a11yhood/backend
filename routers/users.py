@@ -74,9 +74,10 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
         editors_by_collection.setdefault(collection_id, []).append(row)
 
     junction_resp = (
-        db.table("collection_products")
+        db.table("collection_entries")
         .select("collection_id, product_id, position")
         .in_("collection_id", collection_ids)
+        .eq("kind", "product")
         .execute()
     )
     product_rows_by_collection: dict[str, list[dict]] = {}
