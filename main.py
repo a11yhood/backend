@@ -73,6 +73,20 @@ def _should_run_scheduler() -> bool:
     return os.getenv("VERCEL") != "1"
 
 
+def _is_production(settings) -> bool:
+    """Single source of truth for whether the app is running in production.
+
+    Checks the ENVIRONMENT/ENV process env vars first, then falls back to the
+    loaded settings' ENVIRONMENT field (covers values set only via .env file,
+    which pydantic-settings does not mirror into os.environ).
+    """
+    if os.getenv("ENVIRONMENT", "").strip().lower() == "production":
+        return True
+    if os.getenv("ENV", "").strip().lower() == "production":
+        return True
+    return (settings.ENVIRONMENT or "").strip().lower() == "production"
+
+
 @app.on_event("startup")
 async def validate_security_configuration():
     """Validate critical security settings on startup.
@@ -92,10 +106,7 @@ async def validate_security_configuration():
 
 
     # Detect production environment from explicit environment flags.
-    is_production = (
-        os.getenv("ENVIRONMENT", "").strip().lower() == "production"
-        or os.getenv("ENV", "").strip().lower() == "production"
-    )
+    is_production = _is_production(local_settings)
 
     # CRITICAL: Prevent TEST_MODE in production
     if local_settings.TEST_MODE and is_production:
@@ -445,14 +456,7 @@ async def health_check():
     current_settings = load_settings_from_env()
 
     # Detect production environment
-    is_production = any([
-        current_settings.SUPABASE_URL and
-        "supabase.co" in current_settings.SUPABASE_URL and
-        "dummy" not in current_settings.SUPABASE_URL,
-
-        os.getenv("ENVIRONMENT") == "production",
-        os.getenv("ENV") == "production",
-    ])
+    is_production = _is_production(current_settings)
 
     return {
         "status": "healthy",
