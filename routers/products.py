@@ -147,12 +147,31 @@ def _canonicalize_source_value_db(db, value: str | None) -> str | None:
 
 
 def _get_product_by_identifier(db, identifier: str) -> dict | None:
-    """Fetch a product by ID or slug without triggering UUID parse errors."""
+    """Fetch a product by ID or slug without triggering UUID parse errors.
+
+    For read endpoints only. Mutating endpoints should use
+    _get_product_by_id() instead — see its docstring for why.
+    """
     if _looks_like_uuid(identifier):
         resp = db.table("products").select("*").eq("id", identifier).limit(1).execute()
         if resp.data:
             return resp.data[0]
     resp = db.table("products").select("*").eq("slug", identifier).limit(1).execute()
+    return resp.data[0] if resp.data else None
+
+
+def _get_product_by_id(db, product_id: str) -> dict | None:
+    """Fetch a product by its immutable UUID id only — no slug fallback.
+
+    Used by PUT/PATCH/DELETE on a single product. A slug is a display/routing
+    convenience, not a stable identity; accepting it on a write would let the
+    write silently retarget a different product if the slug were ever
+    reassigned. Reads (GET) use _get_product_by_identifier() instead, since
+    slug-friendly URLs are exactly what slugs are for.
+    """
+    if not _looks_like_uuid(product_id):
+        return None
+    resp = db.table("products").select("*").eq("id", product_id).limit(1).execute()
     return resp.data[0] if resp.data else None
 
 
@@ -1351,7 +1370,7 @@ async def update_product(
     Security: Enforces ownership via product_editors table OR admin role.
     Prevents unauthorized users from modifying products they don't manage.
     """
-    product_row = _get_product_by_identifier(db, product_id)
+    product_row = _get_product_by_id(db, product_id)
     if not product_row:
         raise HTTPException(status_code=404, detail="Product not found")
 
@@ -1462,7 +1481,7 @@ async def patch_product(
     db=Depends(get_db),
 ):
     """Partially update a product (manager or admin only)"""
-    product_row = _get_product_by_identifier(db, product_id)
+    product_row = _get_product_by_id(db, product_id)
     if not product_row:
         raise HTTPException(status_code=404, detail="Product not found")
 
@@ -1596,27 +1615,14 @@ async def delete_product(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    # Check if product exists first; accept either ID or slug for convenience.
-    # Avoid UUID parsing errors by only querying id when the input resembles a UUID.
-    resolved_id = None
-    if _looks_like_uuid(product_id):
-        check = db.table("products").select("id").eq("id", product_id).limit(1).execute()
-        if check.data:
-            resolved_id = check.data[0]["id"]
-    if not resolved_id:
-        slug_lookup = db.table("products").select("id").eq("slug", product_id).limit(1).execute()
-        if not slug_lookup.data:
-            raise HTTPException(status_code=404, detail="Product not found")
-        resolved_id = slug_lookup.data[0]["id"]
-    product_id = resolved_id
+    # Requires the UUID id, not a slug — see _get_product_by_id()'s docstring.
+    product_row = _get_product_by_id(db, product_id)
+    if not product_row:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product_id = product_row["id"]
 
     # Authorization check parity with update endpoints: creator/editor/admin/moderator.
-    product_row = db.table("products").select("id, created_by").eq("id", product_id).limit(1).execute()
-    if not product_row.data:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    row = product_row.data[0]
-    is_creator = row.get("created_by") == current_user["id"]
+    is_creator = product_row.get("created_by") == current_user["id"]
     role = current_user.get("role")
     is_admin_or_moderator = role in ("admin", "moderator")
 
