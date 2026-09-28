@@ -66,12 +66,11 @@ class ScraperSource(StrEnum):
     thingiverse = "thingiverse"
     ravelry = "ravelry"
     github = "github"
-    goat = "goat"
 
 
 class ScraperTriggerRequest(BaseModel):
     source: ScraperSource = Field(
-        ..., description="Platform to scrape: 'thingiverse', 'ravelry', 'github', 'goat'"
+        ..., description="Platform to scrape: 'thingiverse', 'ravelry', 'github'"
     )
     test_mode: bool = Field(False, description="If true, only scrape limited items for testing")
     test_limit: int = Field(5, description="Number of items to scrape in test mode", ge=1, le=50)

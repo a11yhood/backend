@@ -63,10 +63,6 @@ async def _run_scraper_and_log(
             )
         elif source == "github":
             result = await scraper_service.scrape_github(test_mode=test_mode, test_limit=test_limit)
-        elif source == "goat":
-            result = await scraper_service.scrape_goat(
-                access_token=access_token, test_mode=test_mode, test_limit=test_limit
-            )
         else:
             result = {
                 "source": source,
@@ -118,54 +114,78 @@ def _require_cron_secret(authorization: str | None) -> None:
 
 
 async def _run_scraper_now(db, source: str) -> dict:
-    """Run one source synchronously for scheduler contexts."""
+    """Run one source synchronously for scheduler contexts.
+
+    Always records a scraping_logs row, including on failure: this is the
+    Vercel Cron entry point, and a bare raise here previously meant a failed
+    cron run (missing OAuth token, network error, etc.) left no trace in
+    scraping_logs at all, since set_last_scrape_time was only ever reached on
+    the success path below.
+    """
     scraper_service = ScraperService(db)
 
-    access_token = None
-    if source in ["thingiverse", "ravelry", "github", "goat"]:
-        config_response = (
-            db.table("oauth_configs").select("access_token").eq("platform", source).execute()
-        )
+    try:
+        access_token = None
+        if source in ["thingiverse", "ravelry", "github"]:
+            config_response = (
+                db.table("oauth_configs").select("access_token").eq("platform", source).execute()
+            )
 
-        if source in ["thingiverse", "ravelry", "goat"]:
-            if not config_response.data:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"OAuth not configured for {source}. Please authorize in admin settings.",
-                )
+            if source in ["thingiverse", "ravelry"]:
+                if not config_response.data:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"OAuth not configured for {source}. Please authorize in admin settings.",
+                    )
 
-            access_token = config_response.data[0].get("access_token")
-            if not access_token:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"No access token found for {source}. Please authorize in admin settings.",
-                )
+                access_token = config_response.data[0].get("access_token")
+                if not access_token:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"No access token found for {source}. Please authorize in admin settings.",
+                    )
+            else:
+                if config_response.data:
+                    access_token = config_response.data[0].get("access_token") or None
+
+        if source == "thingiverse":
+            result = await scraper_service.scrape_thingiverse(access_token=access_token)
+        elif source == "ravelry":
+            result = await scraper_service.scrape_ravelry(access_token=access_token)
+        elif source == "github":
+            result = await scraper_service.scrape_github()
         else:
-            if config_response.data:
-                access_token = config_response.data[0].get("access_token") or None
+            raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
 
-    if source == "thingiverse":
-        result = await scraper_service.scrape_thingiverse(access_token=access_token)
-    elif source == "ravelry":
-        result = await scraper_service.scrape_ravelry(access_token=access_token)
-    elif source == "github":
-        result = await scraper_service.scrape_github()
-    elif source == "goat":
-        result = await scraper_service.scrape_goat(access_token=access_token)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
-
-    logger.info(
-        "Scheduled sync scraper run source=%s status=%s harness=%s found=%s added=%s updated=%s",
-        source,
-        result.get("status"),
-        result.get("harness", "unknown"),
-        result.get("products_found", 0),
-        result.get("products_added", 0),
-        result.get("products_updated", 0),
-    )
-    ScraperUtilities.set_last_scrape_time(db, result["source"], result, user_id="scheduled")
-    return result
+        logger.info(
+            "Scheduled sync scraper run source=%s status=%s harness=%s found=%s added=%s updated=%s",
+            source,
+            result.get("status"),
+            result.get("harness", "unknown"),
+            result.get("products_found", 0),
+            result.get("products_added", 0),
+            result.get("products_updated", 0),
+        )
+        ScraperUtilities.set_last_scrape_time(db, result["source"], result, user_id="scheduled")
+        return result
+    except Exception as e:
+        error_message = e.detail if isinstance(e, HTTPException) else str(e)
+        logger.error("Scheduled sync scraper run source=%s failed: %s", source, error_message)
+        ScraperUtilities.set_last_scrape_time(
+            db,
+            source,
+            {
+                "source": source,
+                "products_found": 0,
+                "products_added": 0,
+                "products_updated": 0,
+                "duration_seconds": 0,
+                "status": "error",
+                "error_message": str(error_message),
+            },
+            user_id="scheduled",
+        )
+        raise
 
 
 @router.post("/trigger", response_model=dict)
@@ -186,7 +206,7 @@ async def trigger_scraper(
 
     # Get OAuth token from database
     access_token = None
-    if request.source.value in ["thingiverse", "ravelry", "github", "goat"]:
+    if request.source.value in ["thingiverse", "ravelry", "github"]:
         config_response = (
             db.table("oauth_configs")
             .select("access_token")
@@ -194,7 +214,7 @@ async def trigger_scraper(
             .execute()
         )
 
-        if request.source.value in ["thingiverse", "ravelry", "goat"]:
+        if request.source.value in ["thingiverse", "ravelry"]:
             if not config_response.data:
                 raise HTTPException(
                     status_code=400,

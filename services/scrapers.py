@@ -2,6 +2,7 @@
 Backend scraper service - handles OAuth and coordinates scraping
 """
 
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -13,9 +14,10 @@ from scrapers.core.github_adapter import GitHubSourceAdapter
 from scrapers.core.ravelry_adapter import RavelrySourceAdapter
 from scrapers.core.thingiverse_adapter import ThingiverseSourceAdapter
 from scrapers.github import GitHubScraper
-from scrapers.goat import GOATScraper
 from scrapers.ravelry import RavelryScraper
 from scrapers.thingiverse import ThingiverseScraper
+
+logger = logging.getLogger(__name__)
 
 
 class ScraperOAuth:
@@ -94,17 +96,31 @@ class ScraperService:
             return default
         return value.strip().lower() in {"1", "true", "yes", "on"}
 
-    def _try_acquire_scrape_lock(self, source: str) -> bool:
+    # Sentinel lock_token used when the lock table itself is unreachable: the
+    # run proceeds (fails open) without ever writing a lock row, so release
+    # must recognize this value and skip the delete rather than matching
+    # some other run's real row.
+    _NO_LOCK_TOKEN = ""
+
+    def _try_acquire_scrape_lock(self, source: str) -> str | None:
         """Best-effort lock stopping two scrape runs for the same source from
         overlapping (e.g. an admin's manual trigger firing while the daily
         cron for that source is still running, or a retried cron invocation).
 
         Overlapping runs both pass the check-then-insert in
         scrapers/base_scraper.py's _product_exists()/_create_product() before
-        either commits, which trips idx_products_source_external_id. Returns
-        True when the lock was acquired (safe to proceed) and fails open (also
-        True) if the lock table itself is unreachable, so an unrelated outage
-        never blocks scraping.
+        either commits, which trips idx_products_source_external_id.
+
+        Returns the lock_token to pass to _release_scrape_lock when it's safe
+        to proceed (either a real token identifying the acquired row, or
+        _NO_LOCK_TOKEN when failing open because the lock table itself is
+        unreachable), or None when another run currently holds the lock.
+
+        The returned token matters for correctness, not just bookkeeping: a
+        run whose lock is reclaimed as stale (see below) must not have its
+        eventual release delete the *new* owner's row. Release only deletes
+        when the row's current lock_token still matches what this call
+        acquired, so a stale reclaim safely fences off the original owner.
         """
         try:
             stale_cutoff = (datetime.now(UTC) - self._SCRAPE_LOCK_STALE_AFTER).isoformat()
@@ -118,16 +134,22 @@ class ScraperService:
                 .upsert({"source": source}, on_conflict="source", ignore_duplicates=True)
                 .execute()
             )
-            return bool(result.data)
+            if not result.data:
+                return None
+            return result.data[0]["lock_token"]
         except Exception as e:
-            print(f"[ScraperService] Lock acquisition failed for '{source}', proceeding without it: {e}")
-            return True
+            logger.warning("Lock acquisition failed for '%s', proceeding without it: %s", source, e)
+            return self._NO_LOCK_TOKEN
 
-    def _release_scrape_lock(self, source: str) -> None:
+    def _release_scrape_lock(self, source: str, lock_token: str) -> None:
+        if lock_token == self._NO_LOCK_TOKEN:
+            return
         try:
-            self.supabase.table("scraper_locks").delete().eq("source", source).execute()
+            self.supabase.table("scraper_locks").delete().eq("source", source).eq(
+                "lock_token", lock_token
+            ).execute()
         except Exception as e:
-            print(f"[ScraperService] Failed to release scrape lock for '{source}': {e}")
+            logger.warning("Failed to release scrape lock for '%s': %s", source, e)
 
     @staticmethod
     def _scrape_skipped_result(source: str) -> dict[str, Any]:
@@ -481,7 +503,8 @@ class ScraperService:
         self, access_token: str | None, test_mode: bool = False, test_limit: int = 5
     ) -> dict[str, Any]:
         """Scrape Thingiverse for accessibility products."""
-        if not self._try_acquire_scrape_lock("thingiverse"):
+        lock_token = self._try_acquire_scrape_lock("thingiverse")
+        if lock_token is None:
             return self._scrape_skipped_result("Thingiverse")
         try:
             use_core_harness = self._truthy_env("THINGIVERSE_USE_CORE_HARNESS", True)
@@ -498,13 +521,14 @@ class ScraperService:
                 test_limit=test_limit,
             )
         finally:
-            self._release_scrape_lock("thingiverse")
+            self._release_scrape_lock("thingiverse", lock_token)
 
     async def scrape_ravelry(
         self, access_token: str, test_mode: bool = False, test_limit: int = 5
     ) -> dict[str, Any]:
         """Scrape Ravelry for accessibility patterns."""
-        if not self._try_acquire_scrape_lock("ravelry"):
+        lock_token = self._try_acquire_scrape_lock("ravelry")
+        if lock_token is None:
             return self._scrape_skipped_result("Ravelry")
         try:
             use_core_harness = self._truthy_env("RAVELRY_USE_CORE_HARNESS", True)
@@ -521,11 +545,12 @@ class ScraperService:
                 test_limit=test_limit,
             )
         finally:
-            self._release_scrape_lock("ravelry")
+            self._release_scrape_lock("ravelry", lock_token)
 
     async def scrape_github(self, test_mode: bool = False, test_limit: int = 5) -> dict[str, Any]:
         """Scrape GitHub for assistive technology repositories."""
-        if not self._try_acquire_scrape_lock("github"):
+        lock_token = self._try_acquire_scrape_lock("github")
+        if lock_token is None:
             return self._scrape_skipped_result("GitHub")
         try:
             use_core_harness = self._truthy_env("GITHUB_USE_CORE_HARNESS", True)
@@ -533,20 +558,5 @@ class ScraperService:
                 return await self._scrape_github_core(test_mode=test_mode, test_limit=test_limit)
             return await self._scrape_github_legacy(test_mode=test_mode, test_limit=test_limit)
         finally:
-            self._release_scrape_lock("github")
-
-    async def scrape_goat(
-        self, access_token: str | None = None, test_mode: bool = False, test_limit: int = 5
-    ) -> dict[str, Any]:
-        """Scrape LibraryThing for books with accessibility information"""
-        if not self._try_acquire_scrape_lock("goat"):
-            return self._scrape_skipped_result("GOAT")
-        scraper = GOATScraper(self.supabase, access_token=access_token)
-        # Note: GOAT scraper is primarily for URL-based scraping
-        # Search terms are not currently supported for bulk scraping
-        try:
-            result = await scraper.scrape(test_mode=test_mode, test_limit=test_limit)
-            return result
-        finally:
-            self._release_scrape_lock("goat")
+            self._release_scrape_lock("github", lock_token)
             await scraper.close()

@@ -230,22 +230,6 @@ async def _enrich_manual_product_metadata(
             "env_keys": ["RAVELRY_ACCESS_TOKEN", "RAVELRY_APP_KEY"],
             "requires_token": True,
         },
-        "goat": {
-            "platform": "goat",
-            "factory": lambda token: __import__(
-                "scrapers.goat", fromlist=["GOATScraper"]
-            ).GOATScraper(db, token),
-            "env_keys": ["GOAT_API_KEY", "LIBRARYTHING_API_KEY", "LIBRARYTHING_TOKEN"],
-            "requires_token": False,
-        },
-        "librarything": {
-            "platform": "goat",
-            "factory": lambda token: __import__(
-                "scrapers.goat", fromlist=["GOATScraper"]
-            ).GOATScraper(db, token),
-            "env_keys": ["GOAT_API_KEY", "LIBRARYTHING_API_KEY", "LIBRARYTHING_TOKEN"],
-            "requires_token": False,
-        },
     }
 
     config = scraper_map.get(source_key)
