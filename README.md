@@ -54,7 +54,6 @@ backend/
 ├── scrapers/              # Platform-specific scrapers
 │   ├── base_scraper.py
 │   ├── github.py
-│   ├── goat.py
 │   ├── ravelry.py
 │   ├── thingiverse.py
 │   └── scraper.py

@@ -559,4 +559,3 @@ class ScraperService:
             return await self._scrape_github_legacy(test_mode=test_mode, test_limit=test_limit)
         finally:
             self._release_scrape_lock("github", lock_token)
-            await scraper.close()

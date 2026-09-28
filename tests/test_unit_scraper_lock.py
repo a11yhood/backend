@@ -4,6 +4,7 @@ These use an in-memory fake for the scraper_locks table so the lock's actual
 acquire/release semantics (not just mocked return values) are exercised.
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -17,7 +18,7 @@ class _ScraperLocksTable:
     """In-memory stand-in for the scraper_locks table only."""
 
     def __init__(self):
-        self.rows: dict[str, str] = {}  # source -> locked_at (isoformat)
+        self.rows: dict[str, dict] = {}  # source -> {"locked_at": iso str, "lock_token": str}
 
     def delete(self):
         return _DeleteBuilder(self)
@@ -29,12 +30,12 @@ class _ScraperLocksTable:
 class _DeleteBuilder:
     def __init__(self, table):
         self._table = table
-        self._source = None
+        self._filters = {}
         self._lt = None
 
     def eq(self, column, value):
-        assert column == "source"
-        self._source = value
+        assert column in ("source", "lock_token")
+        self._filters[column] = value
         return self
 
     def lt(self, column, value):
@@ -44,9 +45,18 @@ class _DeleteBuilder:
 
     def execute(self):
         table = self._table
-        if self._source in table.rows and (self._lt is None or table.rows[self._source] < self._lt):
-            del table.rows[self._source]
-        return type("Response", (), {"data": []})()
+        source = self._filters.get("source")
+        row = table.rows.get(source)
+        if row is None:
+            return type("Response", (), {"data": []})()
+
+        if self._lt is not None and not (row["locked_at"] < self._lt):
+            return type("Response", (), {"data": []})()
+        if "lock_token" in self._filters and row["lock_token"] != self._filters["lock_token"]:
+            return type("Response", (), {"data": []})()
+
+        del table.rows[source]
+        return type("Response", (), {"data": [row]})()
 
 
 class _UpsertBuilder:
@@ -58,15 +68,16 @@ class _UpsertBuilder:
     def execute(self):
         table = self._table
         source = self._row["source"]
-        if source in table.rows:
-            if self._ignore_duplicates:
-                return type("Response", (), {"data": []})()
-            # merge-duplicates path is unused by ScraperService today.
-            table.rows[source] = datetime.now(UTC).isoformat()
-            return type("Response", (), {"data": [{"source": source}]})()
+        if source in table.rows and self._ignore_duplicates:
+            return type("Response", (), {"data": []})()
 
-        table.rows[source] = datetime.now(UTC).isoformat()
-        return type("Response", (), {"data": [{"source": source}]})()
+        new_row = {
+            "source": source,
+            "locked_at": datetime.now(UTC).isoformat(),
+            "lock_token": str(uuid.uuid4()),
+        }
+        table.rows[source] = new_row
+        return type("Response", (), {"data": [dict(new_row)]})()
 
 
 class _SupabaseStub:
@@ -81,25 +92,27 @@ class _SupabaseStub:
 
 def test_acquire_lock_succeeds_when_unheld():
     service = ScraperService(_SupabaseStub())
-    assert service._try_acquire_scrape_lock("thingiverse") is True
+    token = service._try_acquire_scrape_lock("thingiverse")
+    assert token is not None
+    assert token != ""
 
 
 def test_acquire_lock_fails_when_already_held():
     stub = _SupabaseStub()
     service = ScraperService(stub)
 
-    assert service._try_acquire_scrape_lock("thingiverse") is True
+    assert service._try_acquire_scrape_lock("thingiverse") is not None
     # A second, overlapping run for the same source must not proceed.
-    assert service._try_acquire_scrape_lock("thingiverse") is False
+    assert service._try_acquire_scrape_lock("thingiverse") is None
 
 
 def test_release_then_acquire_succeeds():
     stub = _SupabaseStub()
     service = ScraperService(stub)
 
-    assert service._try_acquire_scrape_lock("thingiverse") is True
-    service._release_scrape_lock("thingiverse")
-    assert service._try_acquire_scrape_lock("thingiverse") is True
+    token = service._try_acquire_scrape_lock("thingiverse")
+    service._release_scrape_lock("thingiverse", token)
+    assert service._try_acquire_scrape_lock("thingiverse") is not None
 
 
 def test_stale_lock_is_reclaimed():
@@ -107,21 +120,59 @@ def test_stale_lock_is_reclaimed():
     service = ScraperService(stub)
 
     stale_time = (datetime.now(UTC) - timedelta(minutes=45)).isoformat()
-    stub.scraper_locks.rows["thingiverse"] = stale_time
+    stub.scraper_locks.rows["thingiverse"] = {
+        "source": "thingiverse",
+        "locked_at": stale_time,
+        "lock_token": str(uuid.uuid4()),
+    }
 
     # Older than _SCRAPE_LOCK_STALE_AFTER, so it should be cleared and reacquired.
-    assert service._try_acquire_scrape_lock("thingiverse") is True
+    assert service._try_acquire_scrape_lock("thingiverse") is not None
+
+
+def test_stale_reclaim_fences_off_original_owner_release():
+    """Regression test: run A holds the lock past the stale window, run B
+    reclaims it, and A's later release must not evict B's still-active lock.
+    """
+    stub = _SupabaseStub()
+    service = ScraperService(stub)
+
+    token_a = service._try_acquire_scrape_lock("thingiverse")
+    assert token_a is not None
+
+    # Simulate A's lock aging past the stale threshold while A is still running.
+    stub.scraper_locks.rows["thingiverse"]["locked_at"] = (
+        datetime.now(UTC) - timedelta(minutes=45)
+    ).isoformat()
+
+    token_b = service._try_acquire_scrape_lock("thingiverse")
+    assert token_b is not None
+    assert token_b != token_a
+
+    # A finishes and releases using its own (stale) token: must be a no-op.
+    service._release_scrape_lock("thingiverse", token_a)
+
+    # B's lock must still be held, blocking a third overlapping run.
+    assert service._try_acquire_scrape_lock("thingiverse") is None
+
+    # B finishes and releases with its real token: now it's actually free.
+    service._release_scrape_lock("thingiverse", token_b)
+    assert service._try_acquire_scrape_lock("thingiverse") is not None
 
 
 def test_different_sources_do_not_contend():
     service = ScraperService(_SupabaseStub())
-    assert service._try_acquire_scrape_lock("thingiverse") is True
-    assert service._try_acquire_scrape_lock("ravelry") is True
+    assert service._try_acquire_scrape_lock("thingiverse") is not None
+    assert service._try_acquire_scrape_lock("ravelry") is not None
 
 
 async def test_scrape_thingiverse_skips_when_lock_held(monkeypatch):
     stub = _SupabaseStub()
-    stub.scraper_locks.rows["thingiverse"] = datetime.now(UTC).isoformat()
+    stub.scraper_locks.rows["thingiverse"] = {
+        "source": "thingiverse",
+        "locked_at": datetime.now(UTC).isoformat(),
+        "lock_token": str(uuid.uuid4()),
+    }
     service = ScraperService(stub)
 
     called = False
@@ -139,3 +190,20 @@ async def test_scrape_thingiverse_skips_when_lock_held(monkeypatch):
     assert called is False
     assert result["status"] == "halted"
     assert result["source"] == "Thingiverse"
+
+
+async def test_scrape_thingiverse_releases_lock_with_its_own_token(monkeypatch):
+    """The lock acquired for this run must be released, not left dangling,
+    once the scrape completes."""
+    stub = _SupabaseStub()
+    service = ScraperService(stub)
+
+    async def _fake_scrape(*args, **kwargs):
+        return {"status": "success", "source": "Thingiverse"}
+
+    monkeypatch.setattr(service, "_scrape_thingiverse_core", _fake_scrape)
+
+    result = await service.scrape_thingiverse(access_token="token")
+
+    assert result["status"] == "success"
+    assert "thingiverse" not in stub.scraper_locks.rows
