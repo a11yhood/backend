@@ -1921,7 +1921,7 @@ async def add_product_editor(
 
     Allowed for product creator, admins, and moderators.
     """
-    product = _get_product_by_identifier(db, product_id)
+    product = _get_product_by_id(db, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     product_id = product["id"]
@@ -1961,7 +1961,7 @@ async def remove_product_editor(
 
     Allowed for product creator, admins, and moderators.
     """
-    product = _get_product_by_identifier(db, product_id)
+    product = _get_product_by_id(db, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     product_id = product["id"]

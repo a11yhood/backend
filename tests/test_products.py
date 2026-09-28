@@ -873,6 +873,15 @@ def test_add_product_owner_success(auth_client, test_product, test_user_2):
     assert test_user_2["id"] in data["editor_ids"]
 
 
+def test_add_product_editor_by_slug_rejected(auth_client, test_product, test_user_2):
+    """POST /api/products/{id}/editors/{user_id} is a write; it requires the
+    product's UUID id, not a slug."""
+    response = auth_client.post(
+        f"/api/products/{test_product['slug']}/editors/{test_user_2['id']}"
+    )
+    assert response.status_code == 404
+
+
 def test_add_product_editor_collection_style_success(auth_client, test_product, test_user_2):
     response = auth_client.post(
         f"/api/products/{test_product['id']}/editors/{test_user_2['id']}"
@@ -963,8 +972,26 @@ def test_remove_product_owner_success(auth_client, test_product, test_user_2):
         f"/api/products/{test_product['id']}/owners/{test_user_2['id']}"
     )
     assert remove_response.status_code == 200
-    data = remove_response.json()
-    assert test_user_2["id"] not in data["editor_ids"]
+
+
+def test_remove_product_editor_by_slug_rejected(auth_client, test_product, test_user_2):
+    """DELETE /api/products/{id}/editors/{user_id} is a write; it requires
+    the product's UUID id."""
+    add_response = auth_client.post(
+        f"/api/products/{test_product['id']}/editors/{test_user_2['id']}"
+    )
+    assert add_response.status_code == 200
+
+    remove_response = auth_client.delete(
+        f"/api/products/{test_product['slug']}/editors/{test_user_2['id']}"
+    )
+    assert remove_response.status_code == 404
+
+    # The rejected-by-slug delete must not have removed the editor.
+    editors_response = auth_client.get(f"/api/products/{test_product['id']}/editors")
+    assert editors_response.status_code == 200
+    editor_ids = [editor["id"] for editor in editors_response.json()]
+    assert test_user_2["id"] in editor_ids
 
 
 def test_delete_product_owner_success(auth_client, test_product):
