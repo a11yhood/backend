@@ -116,6 +116,22 @@ def test_health_check_no_rate_limit(unit_client):
         assert response.status_code == 200
 
 
+def test_health_check_reports_error_when_db_unreachable(unit_client):
+    """Verify /health surfaces a probe failure instead of claiming connectivity."""
+    from unittest.mock import MagicMock
+
+    from main import app
+    from services.database import get_db
+
+    broken_db = MagicMock()
+    broken_db.table.side_effect = Exception("connection refused")
+    app.dependency_overrides[get_db] = lambda: broken_db
+
+    response = unit_client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["database"] == "error"
+
+
 # ============================================================================
 # Request Validation Tests (No DB Needed)
 # ============================================================================

@@ -24,3 +24,10 @@ def test_health_endpoint(client):
     assert data["mode"] in ["development", "production"]
     assert "test_mode" in data
     assert "database" in data
+
+
+def test_health_endpoint_reports_connected_when_db_reachable(client):
+    """Health check should actually probe the database, not just check config."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["database"] == "connected"

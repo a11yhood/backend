@@ -73,6 +73,29 @@ def test_has_production_indicators_true_when_env_var_is_production(monkeypatch):
         asyncio.run(main.validate_security_configuration())
 
 
+def test_is_production_true_from_settings_environment_alone(monkeypatch):
+    """_is_production()'s settings.ENVIRONMENT fallback (for values set only
+    via .env, which pydantic-settings does not mirror into os.environ) is
+    the whole reason this helper was extracted. Every other test in this
+    file sets ENVIRONMENT/ENV in the process env, which short-circuits
+    before that fallback ever runs -- clear both here so only the settings
+    value can produce True.
+    """
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+    settings = _Settings(environment="production")
+
+    assert main._is_production(settings) is True
+
+
+def test_is_production_false_when_settings_environment_is_not_production(monkeypatch):
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("ENV", raising=False)
+    settings = _Settings(environment="development")
+
+    assert main._is_production(settings) is False
+
+
 def test_has_production_indicators_false_with_local_production_url(monkeypatch):
     settings = _Settings(
         environment="development",
