@@ -972,6 +972,8 @@ def test_remove_product_owner_success(auth_client, test_product, test_user_2):
         f"/api/products/{test_product['id']}/owners/{test_user_2['id']}"
     )
     assert remove_response.status_code == 200
+    data = remove_response.json()
+    assert test_user_2["id"] not in data["editor_ids"]
 
 
 def test_remove_product_editor_by_slug_rejected(auth_client, test_product, test_user_2):
