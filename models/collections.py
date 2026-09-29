@@ -25,7 +25,9 @@ class CollectionUpdate(BaseModel):
 
 
 class ProductIdsRequest(BaseModel):
-    product_ids: list[str] = Field(default_factory=list)
+    product_ids: list[str] = Field(
+        default_factory=list, description="Product UUID ids (not slugs) to add"
+    )
 
 
 class CollectionEditorsResponse(BaseModel):

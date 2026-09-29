@@ -1144,6 +1144,35 @@ Response consistency guarantees:
   - owned: `access_role = owner`, `is_owner = true`
   - editor-managed: `access_role = editor`, `is_owner = false`
 
+### Identifier Contract: Reads vs. Writes (Slug-First)
+
+The API is moving toward a slug-first model: clients should primarily use slugs for
+navigation and display, while UUID ids remain the internal identifier used for writes
+and joins.
+
+- **Reads** (`GET` endpoints, for both collections and products) accept either the
+  resource's `slug` or its UUID `id` in the path — that's what slug-friendly URLs
+  are for.
+- **Writes** (`PUT`, `DELETE`, and any `POST` that mutates an existing collection or
+  one of its relationships) require the collection's UUID `id`, not its slug. A
+  collection's `slug` is regenerated whenever its `name` changes (see
+  [Update Collection](#update-collection)), so a slug can be freed and later
+  reassigned to a *different* collection. Accepting a slug on a write would let a
+  stale client silently retarget a renamed collection's old slug at a brand-new,
+  unrelated collection.
+- The same rule applies when a write references a **product** as part of a
+  collection relationship (adding/removing a product, single or bulk): the
+  product's UUID `id` is required, not its slug.
+- A slug passed where a write requires a UUID `id` returns `404 Not Found`.
+
+> **Deprecation notice:** `product_ids` in collection responses is deprecated for
+> building external-client routes/links — prefer `product_slugs` (index-aligned with
+> `product_ids`) for navigation and display. `product_ids` is still the correct value
+> to use when *writing* (adding/removing a product from a collection), per the rule
+> above. Nothing is being removed in this release; issue
+> [#287](https://github.com/a11yhood/backend/issues/287) tracks eventual removal of
+> `product_ids` from collection responses.
+
 ### Get Authenticated User Collections
 
 ```http
@@ -1225,10 +1254,13 @@ plus projected `product_ids` and `product_slugs`.
 ### Update Collection
 
 ```http
-PUT /api/collections/{collection_slug}
+PUT /api/collections/{collection_id}
 ```
 
 **Permissions:** Owner or collection editor.
+
+`collection_id` must be the collection's UUID id (writes reject a slug — see
+[Identifier Contract](#identifier-contract-reads-vs-writes-slug-first)).
 
 **Body:**
 ```json
@@ -1257,27 +1289,30 @@ When `entries` is provided, the collection entry set is replaced atomically.
 ### Delete Collection
 
 ```http
-DELETE /api/collections/{collection_slug}
+DELETE /api/collections/{collection_id}
 ```
 
 **Permissions:** Owner or collection editor.
+
+`collection_id` must be the collection's UUID id (writes reject a slug).
 
 Returns `204 No Content`.
 
 ### Add Single Product to Collection
 
 ```http
-POST /api/collections/{collection_slug}/products/{product_slug}
+POST /api/collections/{collection_id}/products/{product_id}
 ```
 
 **Permissions:** Owner or collection editor.
 
-`product_slug` accepts either slug or UUID.
+Both `collection_id` and `product_id` must be UUID ids — writes reject a slug for
+either. See [Identifier Contract](#identifier-contract-reads-vs-writes-slug-first).
 
 ### Add Multiple Products to Collection
 
 ```http
-POST /api/collections/{collection_slug}/products
+POST /api/collections/{collection_id}/products
 ```
 
 **Permissions:** Owner or collection editor.
@@ -1286,29 +1321,33 @@ POST /api/collections/{collection_slug}/products
 ```json
 {
   "product_ids": [
-    "accessible-keyboard",
-    "2bf24db6-0a4f-4b2f-9005-8f4cf66d31ab"
+    "2bf24db6-0a4f-4b2f-9005-8f4cf66d31ab",
+    "90ea5cc1-e58c-4c3a-a938-8d9ad7d1bb47"
   ]
 }
 ```
 
-Each entry can be either a product slug or UUID.
+Each entry must be the product's UUID id — a slug is rejected.
 
 ### Remove Single Product from Collection
 
 ```http
-DELETE /api/collections/{collection_slug}/products/{product_slug}
+DELETE /api/collections/{collection_id}/products/{product_id}
 ```
 
 **Permissions:** Owner or collection editor.
+
+Both `collection_id` and `product_id` must be UUID ids — writes reject a slug for either.
 
 ### Remove All Products from Collection
 
 ```http
-DELETE /api/collections/{collection_slug}/products
+DELETE /api/collections/{collection_id}/products
 ```
 
 **Permissions:** Owner or collection editor.
+
+`collection_id` must be the collection's UUID id.
 
 ### Get Collection Editors
 
@@ -1332,20 +1371,24 @@ For private collections, requires owner or editor access.
 ### Add Collection Editor
 
 ```http
-POST /api/collections/{collection_slug}/editors/{editor_user_id}
+POST /api/collections/{collection_id}/editors/{editor_user_id}
 ```
 
 **Permissions:** Collection owner, admin, or moderator.
+
+`collection_id` must be the collection's UUID id (writes reject a slug).
 
 Returns updated collection object.
 
 ### Remove Collection Editor
 
 ```http
-DELETE /api/collections/{collection_slug}/editors/{editor_user_id}
+DELETE /api/collections/{collection_id}/editors/{editor_user_id}
 ```
 
 **Permissions:** Collection owner, admin, or moderator.
+
+`collection_id` must be the collection's UUID id (writes reject a slug).
 
 Returns updated collection object.
 
