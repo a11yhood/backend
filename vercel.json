@@ -13,11 +13,5 @@
       "path": "/api/scrapers/cron/ravelry",
       "schedule": "0 3 * * *"
     }
-  ],
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api"
-    }
   ]
 }
