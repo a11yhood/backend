@@ -1031,7 +1031,7 @@ async def remove_all_products_from_collection(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # Get collection by slug or id
+    # Get collection by UUID
     collection = _get_collection_by_id(db, collection_slug)
     collection_id = collection.get("id")
 
