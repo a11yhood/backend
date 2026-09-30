@@ -846,21 +846,112 @@ class TestGetCollectionDetails:
             json={"name": "Slug Test Collection"}
         )
         assert create_response.status_code == 201
+        collection_id = create_response.json()["id"]
         collection_slug = create_response.json()["slug"]
 
-        # Add the test product
+        # Add the test product (write endpoint requires UUID ids, not slugs)
         add_response = client.post(
-            f"/api/collections/{collection_slug}/products/{test_product['slug']}",
+            f"/api/collections/{collection_id}/products/{test_product['id']}",
             headers=auth_headers(test_user)
         )
         assert add_response.status_code == 200
 
-        # Fetch by slug directly (simulates direct URL load)
+        # Fetch by slug directly (simulates direct URL load) — GET still accepts a slug
         response = client.get(f"/api/collections/{collection_slug}")
         assert response.status_code == 200
         data = response.json()
         assert test_product["id"] in data["product_ids"]
         assert test_product["slug"] in data["product_slugs"]
+
+
+class TestCollectionWriteEndpointsRequireUuid:
+    """Writes on a collection (or its relationships) require the UUID id, not
+    a slug: a collection's slug is regenerated whenever its name changes
+    (see update_collection), so a slug can be freed and later reassigned to
+    a different collection. Accepting a slug on a write would let a stale
+    client silently retarget a renamed collection's old slug at a brand-new,
+    unrelated collection. Reads (GET) still accept a slug — see
+    test_get_collection_details_includes_product_slugs above.
+    """
+
+    def test_update_by_slug_rejected(self, client, test_user, auth_headers):
+        create_response = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "Slug Write Test"}
+        )
+        collection_slug = create_response.json()["slug"]
+
+        response = client.put(
+            f"/api/collections/{collection_slug}",
+            headers=auth_headers(test_user),
+            json={"name": "New Name"},
+        )
+        assert response.status_code == 404
+
+    def test_delete_by_slug_rejected(self, client, test_user, auth_headers):
+        create_response = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "Slug Delete Test"}
+        )
+        collection_slug = create_response.json()["slug"]
+
+        response = client.delete(
+            f"/api/collections/{collection_slug}", headers=auth_headers(test_user)
+        )
+        assert response.status_code == 404
+
+    def test_add_editor_by_collection_slug_rejected(
+        self, client, test_user, test_user_2, auth_headers
+    ):
+        create_response = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "Slug Editor Test"}
+        )
+        collection_slug = create_response.json()["slug"]
+
+        response = client.post(
+            f"/api/collections/{collection_slug}/editors/{test_user_2['id']}",
+            headers=auth_headers(test_user),
+        )
+        assert response.status_code == 404
+
+    def test_add_product_by_collection_slug_rejected(
+        self, client, test_user, test_product, auth_headers
+    ):
+        create_response = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "Slug Product Test"}
+        )
+        collection_slug = create_response.json()["slug"]
+
+        response = client.post(
+            f"/api/collections/{collection_slug}/products/{test_product['id']}",
+            headers=auth_headers(test_user),
+        )
+        assert response.status_code == 404
+
+    def test_add_product_by_product_slug_rejected(
+        self, client, test_user, test_product, auth_headers
+    ):
+        create_response = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "Slug Product Test 2"}
+        )
+        collection_id = create_response.json()["id"]
+
+        response = client.post(
+            f"/api/collections/{collection_id}/products/{test_product['slug']}",
+            headers=auth_headers(test_user),
+        )
+        assert response.status_code == 404
+
+    def test_bulk_add_products_by_slug_rejected(self, client, test_user, test_product, auth_headers):
+        create_response = client.post(
+            "/api/collections", headers=auth_headers(test_user), json={"name": "Bulk Slug Test"}
+        )
+        collection_id = create_response.json()["id"]
+
+        response = client.post(
+            f"/api/collections/{collection_id}/products",
+            headers=auth_headers(test_user),
+            json={"product_ids": [test_product["slug"]]},
+        )
+        assert response.status_code == 404
 
 
 class TestUpdateCollection:

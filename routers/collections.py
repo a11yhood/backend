@@ -572,7 +572,11 @@ def _populate_collection_relationships_bulk(db, collections: list[dict]) -> list
 
 
 def _get_collection_by_slug_or_id(db, slug_or_id: str) -> dict:
-    """Fetch collection by slug; fall back to id."""
+    """Fetch collection by slug; fall back to id.
+
+    For read endpoints only. Mutating endpoints should use
+    _get_collection_by_id() instead — see its docstring for why.
+    """
     resp = db.table("collections").select("*").eq("slug", slug_or_id).limit(1).execute()
     if resp.data:
         return resp.data[0]
@@ -580,6 +584,39 @@ def _get_collection_by_slug_or_id(db, slug_or_id: str) -> dict:
     if resp.data:
         return resp.data[0]
     raise HTTPException(status_code=404, detail="Collection not found")
+
+
+def _get_collection_by_id(db, collection_id: str) -> dict:
+    """Fetch a collection by its immutable UUID id only — no slug fallback.
+
+    Used by every endpoint that mutates a collection or its relationships.
+    Unlike a product's slug (permanently immutable once set), a collection's
+    slug is regenerated whenever its name changes (see update_collection),
+    so a slug can be freed and later reassigned to a different collection.
+    Accepting a slug on a write would let a stale client silently retarget a
+    renamed collection's old slug at a brand-new, unrelated collection.
+    Reads (GET) use _get_collection_by_slug_or_id() instead, since
+    slug-friendly URLs are exactly what slugs are for.
+    """
+    if not _looks_like_uuid(collection_id):
+        raise HTTPException(status_code=404, detail="Collection not found")
+    resp = db.table("collections").select("*").eq("id", collection_id).limit(1).execute()
+    if resp.data:
+        return resp.data[0]
+    raise HTTPException(status_code=404, detail="Collection not found")
+
+
+def _get_product_id_by_id(db, product_id: str) -> str | None:
+    """Resolve a product's UUID id, requiring it be a UUID — no slug fallback.
+
+    Used when adding/removing a product from a collection (a write on that
+    relationship), for the same reason collection mutations require the
+    collection's UUID id — see _get_collection_by_id().
+    """
+    if not _looks_like_uuid(product_id):
+        return None
+    resp = db.table("products").select("id").eq("id", product_id).limit(1).execute()
+    return resp.data[0]["id"] if resp.data else None
 
 
 @router.get("", response_model=list[CollectionResponse])
@@ -738,7 +775,7 @@ async def update_collection(
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     # Get collection
-    collection = _get_collection_by_slug_or_id(db, collection_slug)
+    collection = _get_collection_by_id(db, collection_slug)
 
     if not _can_edit_collection(db, collection, current_user):
         raise HTTPException(status_code=403, detail="Only owners and editors can update this collection")
@@ -828,7 +865,7 @@ async def add_collection_editor(
     if not _looks_like_uuid(editor_user_id):
         raise HTTPException(status_code=400, detail="Invalid editor user id")
 
-    collection = _get_collection_by_slug_or_id(db, collection_slug)
+    collection = _get_collection_by_id(db, collection_slug)
     if not _can_manage_collection_editors(collection, current_user):
         raise HTTPException(status_code=403, detail="Only owners, moderators, and admins can manage editors")
     if editor_user_id == collection.get("user_id"):
@@ -862,7 +899,7 @@ async def remove_collection_editor(
     if not _looks_like_uuid(editor_user_id):
         raise HTTPException(status_code=400, detail="Invalid editor user id")
 
-    collection = _get_collection_by_slug_or_id(db, collection_slug)
+    collection = _get_collection_by_id(db, collection_slug)
     if not _can_manage_collection_editors(collection, current_user):
         raise HTTPException(status_code=403, detail="Only owners, admins, or moderators can manage editors")
 
@@ -886,7 +923,7 @@ async def delete_collection(
     """Delete collection by slug - owner or editor can delete."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    collection = _get_collection_by_slug_or_id(db, collection_slug)
+    collection = _get_collection_by_id(db, collection_slug)
 
     if not _can_edit_collection(db, collection, current_user):
         raise HTTPException(
@@ -906,12 +943,12 @@ async def add_product_to_collection(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Add a product to a collection by slug."""
+    """Add a product to a collection. Requires the product's UUID id."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # Get collection by slug or id
-    collection = _get_collection_by_slug_or_id(db, collection_slug)
+    # Get collection by its UUID id.
+    collection = _get_collection_by_id(db, collection_slug)
     collection_id = collection.get("id")
 
     if not _can_edit_collection(db, collection, current_user):
@@ -919,16 +956,9 @@ async def add_product_to_collection(
             status_code=403, detail="Only owners and editors can modify this collection"
         )
 
-    # Get product by slug or UUID
-    if _looks_like_uuid(product_slug):
-        products = db.table("products").select("id").eq("id", product_slug).execute()
-    else:
-        products = db.table("products").select("id").eq("slug", product_slug).execute()
-
-    if not products.data:
+    product_id = _get_product_id_by_id(db, product_slug)
+    if not product_id:
         raise HTTPException(status_code=404, detail="Product not found")
-
-    product_id = products.data[0].get("id")
 
     if product_id in _existing_product_ids_in_collection(db, collection_id):
         raise HTTPException(status_code=409, detail="Product is already in this collection")
@@ -963,24 +993,17 @@ async def remove_product_from_collection(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Remove a product from a collection by slug."""
+    """Remove a product from a collection. Requires the product's UUID id."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # Get collection by slug or id
-    collection = _get_collection_by_slug_or_id(db, collection_slug)
+    # Get collection by its UUID id.
+    collection = _get_collection_by_id(db, collection_slug)
     collection_id = collection.get("id")
 
-    # Get product by slug or UUID
-    if _looks_like_uuid(product_slug):
-        product_response = db.table("products").select("id").eq("id", product_slug).execute()
-    else:
-        product_response = db.table("products").select("id").eq("slug", product_slug).execute()
-
-    if not product_response.data:
+    product_id = _get_product_id_by_id(db, product_slug)
+    if not product_id:
         raise HTTPException(status_code=404, detail="Product not found")
-
-    product_id = product_response.data[0].get("id")
 
     if not _can_edit_collection(db, collection, current_user):
         raise HTTPException(
@@ -1008,8 +1031,8 @@ async def remove_all_products_from_collection(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # Get collection by slug or id
-    collection = _get_collection_by_slug_or_id(db, collection_slug)
+    # Get collection by UUID
+    collection = _get_collection_by_id(db, collection_slug)
     collection_id = collection.get("id")
 
     if not _can_edit_collection(db, collection, current_user):
@@ -1035,14 +1058,14 @@ async def add_multiple_products_to_collection(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    """Add multiple products to a collection at once (product_ids can be UUIDs or slugs)"""
+    """Add multiple products to a collection at once. Requires each product's UUID id."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     product_ids = request.product_ids
 
-    # Get collection by slug or id
-    collection = _get_collection_by_slug_or_id(db, collection_slug)
+    # Get collection by its UUID id.
+    collection = _get_collection_by_id(db, collection_slug)
     collection_id = collection.get("id")
 
     if not _can_edit_collection(db, collection, current_user):
@@ -1054,19 +1077,13 @@ async def add_multiple_products_to_collection(
     if not product_ids:
         return _get_collection_with_products(db, collection_id)
 
-    # Resolve product slugs/UUIDs to IDs
+    # Resolve/validate product UUIDs
     resolved_product_ids = []
     for prod_identifier in product_ids:
-        # Try as UUID first, then as slug
-        if _looks_like_uuid(prod_identifier):
-            products = db.table("products").select("id").eq("id", prod_identifier).execute()
-        else:
-            products = db.table("products").select("id").eq("slug", prod_identifier).execute()
-
-        if products.data:
-            resolved_product_ids.append(products.data[0].get("id"))
-        else:
+        resolved = _get_product_id_by_id(db, prod_identifier)
+        if not resolved:
             raise HTTPException(status_code=404, detail=f"Product {prod_identifier} not found")
+        resolved_product_ids.append(resolved)
 
     # Deduplicate the resolved product IDs (in case request had duplicates)
     # Preserve order while removing duplicates
