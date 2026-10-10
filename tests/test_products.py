@@ -95,37 +95,6 @@ def test_count_products_with_filters(client, clean_database, test_product):
     assert data["count"] == 2  # p1 and p2 only
 
 
-def test_count_products_with_type_filter(client, clean_database):
-    """Test /count filters by type"""
-    p1_id = str(uuid.uuid4())
-    p2_id = str(uuid.uuid4())
-
-    _insert_products(
-        clean_database,
-        [
-            {
-                "id": p1_id,
-                "name": "3D Model",
-                "source": "Thingiverse",
-                "type": "Fabrication",
-                "source_url": "https://www.thingiverse.com/thing:1",
-            },
-            {
-                "id": p2_id,
-                "name": "Software Tool",
-                "source": "Github",
-                "type": "Software",
-                "source_url": "https://github.com/example/tool",
-            },
-        ],
-    )
-
-    response = client.get("/api/products/count?type=Fabrication")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["count"] == 1  # Only p1
-
-
 def test_count_products_with_tag_filter(client, clean_database):
     """Test /count filters by tags"""
     tag_id = str(uuid.uuid4())
@@ -283,7 +252,7 @@ def test_get_products_with_filters(client, clean_database, test_product):
         ],
     )
 
-    response = client.get("/api/products?sources=Thingiverse,Github&types=Fabrication")
+    response = client.get("/api/products?sources=Thingiverse")
     assert response.status_code == 200
     data = response.json()
     ids = {item["id"] for item in data}
@@ -1035,10 +1004,29 @@ def test_bulk_delete_rejects_sources_alias(admin_client):
     assert "'sources' is not supported" in resp.json()["detail"]
 
 
-def test_bulk_delete_rejects_types_alias(admin_client):
-    resp = admin_client.post("/api/products/bulk-delete?types=Hardware")
+def test_bulk_delete_rejects_removed_type_filter(admin_client):
+    """Types were retired (#270); a stale type filter must not silently widen a delete."""
+    for query in ("type=Hardware", "types=Hardware"):
+        resp = admin_client.post(f"/api/products/bulk-delete?source=SearchSource&{query}")
+        assert resp.status_code == 400
+        assert "type filtering has been removed" in resp.json()["detail"]
+
+    resp = admin_client.post(
+        "/api/products/bulk-delete", json={"source": ["SearchSource"], "type": ["Hardware"]}
+    )
     assert resp.status_code == 400
-    assert "'types' is not supported" in resp.json()["detail"]
+
+
+def test_product_types_endpoint_removed(client):
+    resp = client.get("/api/products/types")
+    # "types" now falls through to the product-id route and is not a valid product.
+    assert resp.status_code in (404, 422)
+
+
+def test_product_response_omits_type(client, test_product):
+    resp = client.get(f"/api/products/{test_product['id']}")
+    assert resp.status_code == 200
+    assert "type" not in resp.json()
 
 
 def test_bulk_delete_by_source_query_param(admin_client, clean_database):
@@ -1173,7 +1161,7 @@ def test_bulk_delete_uses_search_filters(admin_client, clean_database):
     )
 
     resp = admin_client.post(
-        "/api/products/bulk-delete?source=SearchSource&search=Alpha&type=Software"
+        "/api/products/bulk-delete?source=SearchSource&search=Alpha"
     )
 
     assert resp.status_code == 200

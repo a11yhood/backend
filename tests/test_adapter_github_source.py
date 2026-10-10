@@ -46,7 +46,6 @@ def test_github_source_adapter_maps_repo_to_source_product():
     assert source_product.external_id == "123"
     assert source_product.source_url == "https://github.com/example/awesome-a11y"
     assert source_product.name == "awesome-a11y"
-    assert source_product.type == "Software"
     assert source_product.tags == ["assistive-tech", "screen-reader", "Python"]
     assert source_product.source_rating_count == 1800
     assert source_product.source_rating is not None

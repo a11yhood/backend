@@ -39,7 +39,6 @@ class ProductBase(BaseModel):
     description: str | None = None
     source: str | None = None  # Source platform (user-submitted, scraped-ravelry, etc.)
     source_url: HttpUrl | None = None  # URL to the source product
-    type: str | None = None  # Product type/category (e.g., Knitting, 3D Printed, Software)
     image: ProductImageInput | None = None
     image_id: str | None = None
     external_id: str | None = None  # ID from external source
@@ -58,7 +57,6 @@ class ProductUpdate(BaseModel):
     description: str | None = None
     source: str | None = None
     source_url: HttpUrl | None = None
-    type: str | None = None
     image: ProductImageInput | None = None
     image_id: str | None = None
     external_id: str | None = None
@@ -72,7 +70,6 @@ class ProductResponse(BaseModel):
     description: str | None = None
     source: str | None = None
     source_url: HttpUrl | None = None
-    type: str | None = None
     image_id: str | None = None
     image_alt: str | None = None
     external_id: str | None = None

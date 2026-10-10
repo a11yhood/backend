@@ -50,7 +50,6 @@ class SourceScrapedProduct:
     source_url: str
     name: str
     description: str | None
-    type: str | None
     source_last_updated: str | None
     matched_search_terms: list[str]
     tags: list[str]

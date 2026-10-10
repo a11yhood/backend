@@ -283,7 +283,6 @@ class GitHubScraper(BaseScraper):
             "source_url": repo["html_url"],
             "image": repo["owner"].get("avatar_url"),
             "source": "github",
-            "type": "Software",
             "tags": tags,
             "scraped_at": datetime.now().isoformat(),
             "external_id": str(repo["id"]),

@@ -104,20 +104,13 @@ def prepare_product_filters(
 
     if allow_aliases:
         source_values = set(normalize_query_list(query_definition.source) + normalize_query_list(query_definition.sources))
-        type_values = set(normalize_query_list(query_definition.type) + normalize_query_list(query_definition.types))
     else:
         if normalize_query_list(query_definition.sources):
             raise HTTPException(
                 status_code=400,
                 detail="Use repeated 'source' parameters; 'sources' is not supported",
             )
-        if normalize_query_list(query_definition.types):
-            raise HTTPException(
-                status_code=400,
-                detail="Use repeated 'type' parameters; 'types' is not supported",
-            )
         source_values = set(normalize_query_list(query_definition.source))
-        type_values = set(normalize_query_list(query_definition.type))
 
     source_values = set(canonicalize_sources(db, list(source_values)))
     tag_values = normalize_query_list(query_definition.tags)
@@ -130,7 +123,6 @@ def prepare_product_filters(
 
     return {
         "source_values": source_values,
-        "type_values": type_values,
         "tag_values": tag_values,
         "tag_mode": tag_mode,
         "min_rating": query_definition.min_rating,
@@ -151,14 +143,10 @@ def apply_product_filters(
     search_tag_lookup=get_product_ids_for_tag_search,
 ):
     source_values = filters.get("source_values", set())
-    type_values = filters.get("type_values", set())
     tag_values = filters.get("tag_values", [])
 
     if source_values:
         query = query.in_("source", list(source_values))
-
-    if type_values:
-        query = query.in_("type", list(type_values))
 
     if tag_values:
         product_ids_with_tags = tag_lookup(db, tag_values, filters.get("tag_mode", "or"))

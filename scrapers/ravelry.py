@@ -319,8 +319,8 @@ class RavelryScraper(BaseScraper):
                 elif isinstance(first_photo, str):
                     image = first_photo
 
-        # Determine type from craft type
-        product_type = "Knitting"  # Default to knitting
+        # Determine craft from craft type; stored as a tag (product types were retired)
+        craft_tag = "knitting"  # Default to knitting
         if pattern.get("craft"):
             craft_name = (
                 pattern["craft"].get("name", "").lower()
@@ -328,12 +328,12 @@ class RavelryScraper(BaseScraper):
                 else str(pattern["craft"]).lower()
             )
             if "crochet" in craft_name:
-                product_type = "Crochet"
+                craft_tag = "crochet"
             elif "knit" in craft_name:
-                product_type = "Knitting"
+                craft_tag = "knitting"
 
         # Extract pattern type tags
-        tags = []
+        tags = [craft_tag]
         if pattern.get("pattern_type"):
             type_name = (
                 pattern["pattern_type"].get("name")
@@ -428,7 +428,6 @@ class RavelryScraper(BaseScraper):
             "source_url": pattern_url,
             "image": image,
             "source": "Ravelry",
-            "type": product_type,
             "tags": unique_tags,
             "scraped_at": datetime.now().isoformat(),
             "external_id": str(pattern["id"]),

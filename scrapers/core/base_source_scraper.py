@@ -121,7 +121,6 @@ class BaseSourceScraper(ABC):
             source_url=self.normalize_url(payload["source_url"]) or payload["source_url"],
             name=payload["name"],
             description=payload.get("description"),
-            type=payload.get("type"),
             source_last_updated=payload.get("source_last_updated"),
             matched_search_terms=payload.get("matched_search_terms")
             or context.matched_search_terms,

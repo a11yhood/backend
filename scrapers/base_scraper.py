@@ -705,7 +705,7 @@ class BaseScraper(ABC):
             try:
                 existing_response = (
                     self.supabase.table("products")
-                    .select("id,name,description,type,last_edited_at,last_edited_by")
+                    .select("id,name,description,last_edited_at,last_edited_by")
                     .eq("id", product_id)
                     .limit(1)
                     .execute()
@@ -718,7 +718,7 @@ class BaseScraper(ABC):
                 try:
                     fallback_response = (
                         self.supabase.table("products")
-                        .select("id,name,description,type,last_edited_at")
+                        .select("id,name,description,last_edited_at")
                         .eq("id", product_id)
                         .limit(1)
                         .execute()
@@ -744,7 +744,7 @@ class BaseScraper(ABC):
                 # human-managed via ownership/editor assignment.
                 human_edited = self._product_has_editors(product_id)
             if human_edited:
-                for editable_field in ("name", "description", "type"):
+                for editable_field in ("name", "description"):
                     if self._has_content(existing_product.get(editable_field)):
                         product_data.pop(editable_field, None)
 

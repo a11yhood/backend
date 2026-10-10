@@ -200,7 +200,6 @@ class GitHubSourceAdapter(BaseSourceScraper):
             "source_url": source_url,
             "name": raw.get("name") or raw.get("full_name") or "github-repo",
             "description": raw.get("description") or "",
-            "type": "Software",
             "source_last_updated": source_last_updated,
             "matched_search_terms": matched_search_terms,
             "tags": self.generate_tags(raw, {}),

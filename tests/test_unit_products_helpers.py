@@ -70,18 +70,6 @@ def test_prepare_filters_rejects_sources_alias_when_disabled():
     assert exc.value.status_code == 400
 
 
-def test_prepare_filters_rejects_types_alias_when_disabled():
-    with pytest.raises(HTTPException, match="'types' is not supported") as exc:
-        products_router._prepare_product_filters(
-            db=None,
-            current_user=None,
-            type=None,
-            types=["Hardware"],
-            allow_aliases=False,
-        )
-    assert exc.value.status_code == 400
-
-
 def test_prepare_filters_rejects_include_banned_for_regular_user():
     with pytest.raises(HTTPException, match="Moderator or admin role required") as exc:
         products_router._prepare_product_filters(
@@ -107,7 +95,6 @@ def test_apply_product_filters_returns_none_when_tag_filter_has_no_matches(monke
 
     filters = {
         "source_values": set(),
-        "type_values": set(),
         "tag_values": ["missing"],
         "tag_mode": "or",
         "search": None,
@@ -124,7 +111,6 @@ def test_apply_product_filters_adds_expected_clauses():
     query = _FakeQuery()
     filters = {
         "source_values": {"Github"},
-        "type_values": {"Software"},
         "tag_values": [],
         "tag_mode": "or",
         "search": "screen",
@@ -137,7 +123,6 @@ def test_apply_product_filters_adds_expected_clauses():
     result = products_router._apply_product_filters(query, db=None, filters=filters)
     assert result is query
     assert ("in", "source", ["Github"]) in query.calls
-    assert ("in", "type", ["Software"]) in query.calls
     assert (
         "or",
         "name.ilike.%screen%,description.ilike.%screen%",

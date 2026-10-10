@@ -384,8 +384,8 @@ class ThingiverseScraper(BaseScraper):
                 if image:
                     break
 
-        # Extract tags
-        tags = []
+        # Extract tags (every Thingiverse item is fabrication; product types were retired)
+        tags = ["fabrication"]
         if thing.get("tags"):
             raw_tags = [
                 tag.get("name") or tag.get("tag")
@@ -423,12 +423,6 @@ class ThingiverseScraper(BaseScraper):
             rating = None
         rating_count = makes if makes > 0 else None
 
-        # Determine type based on thing properties (default to 3D Printed)
-        product_type = "Fabrication"
-        categories = [cat.get("name", "").lower() for cat in thing.get("categories", [])]
-        if any("laser" in cat or "cut" in cat for cat in categories):
-            product_type = "Fabrication"
-
         # Extract last updated timestamp from Thingiverse
         # Thingiverse provides 'modified' or 'updated' field
         source_last_updated = None
@@ -454,7 +448,6 @@ class ThingiverseScraper(BaseScraper):
             "source_url": url,
             "image": image,
             "source": "Thingiverse",
-            "type": product_type,
             "tags": tags,
             "scraped_at": datetime.now(),
             "external_id": str(thing["id"]),

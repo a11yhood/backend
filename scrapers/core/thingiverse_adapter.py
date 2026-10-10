@@ -135,7 +135,6 @@ class ThingiverseSourceAdapter(BaseSourceScraper):
             "source_url": source_url,
             "name": name,
             "description": raw.get("description") or "",
-            "type": "Fabrication",
             "source_last_updated": self._parse_source_timestamp(raw),
             "matched_search_terms": matched_search_terms,
             "tags": self.generate_tags(raw, {}),
@@ -164,6 +163,9 @@ class ThingiverseSourceAdapter(BaseSourceScraper):
             if text and text not in seen:
                 seen.add(text)
                 tags.append(text)
+
+        # Product types were retired in favor of tags; everything here is fabrication.
+        add_tag("fabrication")
 
         for tag in raw.get("tags") or []:
             if isinstance(tag, dict):
