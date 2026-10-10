@@ -165,6 +165,25 @@ class ScraperService:
             "error_message": f"Scrape already in progress for {source}",
         }
 
+    @staticmethod
+    def _status_for_found(source: str, products_found: int) -> dict[str, Any]:
+        """Status fields for a run that completed without raising.
+
+        A run that finds nothing at all is not a healthy "success": the adapters
+        used to return empty pages on auth failures, which made an expired token
+        look like a clean no-op run. Record it as an error so it shows up in
+        scraping_logs and the admin UI.
+        """
+        if products_found == 0:
+            return {
+                "status": "error",
+                "error_message": (
+                    f"{source} scrape completed but found 0 products. "
+                    "Check the OAuth token/credentials and the search terms."
+                ),
+            }
+        return {"status": "success"}
+
     def _load_platform_terms(self, platform: str) -> list[str] | None:
         """Load persisted search terms for a platform from either schema variant."""
         try:
@@ -288,7 +307,7 @@ class ScraperService:
                 "products_added": products_added,
                 "products_updated": products_updated,
                 "duration_seconds": duration,
-                "status": "success",
+                **self._status_for_found("Thingiverse", products_found),
                 "harness": "core",
             }
         except Exception as e:
@@ -387,7 +406,7 @@ class ScraperService:
                 "products_added": products_added,
                 "products_updated": products_updated,
                 "duration_seconds": duration,
-                "status": "success",
+                **self._status_for_found("GitHub", products_found),
                 "harness": "core",
             }
         except Exception as e:
@@ -480,7 +499,7 @@ class ScraperService:
                 "products_added": products_added,
                 "products_updated": products_updated,
                 "duration_seconds": duration,
-                "status": "success",
+                **self._status_for_found("Ravelry", products_found),
                 "harness": "core",
             }
         except Exception as e:

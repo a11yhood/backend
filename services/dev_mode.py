@@ -194,15 +194,52 @@ def get_seed_manifest() -> dict:
     }
 
 
+def _snapshot_connected_oauth_configs(db) -> list[dict]:
+    """Rows of oauth_configs that hold a real token (a connected platform).
+
+    Reset clears every table, which silently disconnected platforms (e.g. Ravelry)
+    that someone had authorized in the shared test project. Keeping connected rows
+    across a reset means CI runs don't wipe a developer's OAuth connection.
+    """
+    try:
+        resp = db.table("oauth_configs").select("*").execute()
+    except Exception:
+        logger.warning("Could not snapshot oauth_configs before reset", exc_info=True)
+        return []
+    return [row for row in (resp.data or []) if row.get("access_token")]
+
+
+def _restore_oauth_configs(db, rows: list[dict]) -> None:
+    for row in rows:
+        try:
+            db.table("oauth_configs").upsert(row, on_conflict="platform").execute()
+        except Exception:
+            logger.warning(
+                "Could not restore oauth_configs row for %s after reset",
+                row.get("platform"),
+                exc_info=True,
+            )
+
+
 async def reset_and_reseed_database() -> dict:
-    """Reset then reseed test data before returning success."""
-    reset_result = await reset_database()
+    """Reset then reseed test data before returning success.
 
-    from seed_scripts.seed_all import main as run_seed_all
+    Connected OAuth configs (rows with an access token) are preserved.
+    """
+    preserved_oauth = _snapshot_connected_oauth_configs(get_db())
 
-    seed_exit_code = run_seed_all()
-    if seed_exit_code != 0:
-        raise RuntimeError(f"Seed process failed with exit code {seed_exit_code}")
+    try:
+        reset_result = await reset_database()
+
+        from seed_scripts.seed_all import main as run_seed_all
+
+        seed_exit_code = run_seed_all()
+        if seed_exit_code != 0:
+            raise RuntimeError(f"Seed process failed with exit code {seed_exit_code}")
+    finally:
+        # Restore even when the reset or seed fails: the tables are already
+        # truncated at that point, so skipping this would lose the tokens for good.
+        _restore_oauth_configs(get_db(), preserved_oauth)
 
     manifest = get_seed_manifest()
     return {
