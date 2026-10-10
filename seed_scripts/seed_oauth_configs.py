@@ -101,8 +101,39 @@ OAUTH_CONFIGS = [
 ]
 
 
+def _is_placeholder(value: str | None) -> bool:
+    """True for values that mean "not configured" rather than a real credential."""
+    return value is None or value == "" or str(value).startswith("PLACEHOLDER_")
+
+
+def build_oauth_update(existing: dict | None, config: dict) -> dict:
+    """Decide what to write for one platform without destroying real credentials.
+
+    New rows get the full config (including placeholders). For existing rows only
+    values that are actually configured are written, so re-seeding (which CI does
+    via /api/dev/reset) never replaces a connected token or real client
+    credentials with null/placeholder values.
+    """
+    if not existing:
+        return dict(config)
+
+    update: dict = {"platform": config["platform"]}
+    for key, value in config.items():
+        if key == "platform" or _is_placeholder(value):
+            continue
+        # Don't clobber a configured redirect URI with the localhost default.
+        if (
+            key == "redirect_uri"
+            and existing.get("redirect_uri")
+            and str(value).startswith("http://localhost:8000")
+        ):
+            continue
+        update[key] = value
+    return update
+
+
 def seed_oauth_configs():
-    """Upsert OAuth configs into the database."""
+    """Upsert OAuth configs into the database (non-destructive for existing rows)."""
     settings = get_settings(env_file)
     db = DatabaseAdapter(settings)
 
@@ -111,7 +142,15 @@ def seed_oauth_configs():
     upserted = 0
     for config in OAUTH_CONFIGS:
         try:
-            result = db.table("oauth_configs").upsert(config, on_conflict="platform").execute()
+            existing = (
+                db.table("oauth_configs")
+                .select("*")
+                .eq("platform", config["platform"])
+                .limit(1)
+                .execute()
+            )
+            row = build_oauth_update((existing.data or [None])[0], config)
+            result = db.table("oauth_configs").upsert(row, on_conflict="platform").execute()
             if result.data:
                 upserted += 1
                 print(f"  ✓ {config['platform']}")

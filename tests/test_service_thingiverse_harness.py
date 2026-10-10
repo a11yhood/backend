@@ -115,3 +115,33 @@ async def test_scrape_thingiverse_uses_legacy_when_harness_disabled(monkeypatch)
 
     # Avoid leaking env toggles into other tests.
     os.environ.pop("THINGIVERSE_USE_CORE_HARNESS", None)
+
+
+async def test_core_harness_run_that_finds_nothing_is_an_error(monkeypatch):
+    service = ScraperService(_SupabaseStub())
+
+    class EmptyAdapter:
+        def __init__(self, supabase_client, access_token=None):
+            pass
+
+        async def enumerate_candidates(self, context):
+            return []
+
+        async def close(self):
+            return None
+
+    class FakeLegacyThingiverseScraper:
+        def __init__(self, supabase_client, access_token=None):
+            self.SEARCH_TERMS = []
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr("services.scrapers.ThingiverseSourceAdapter", EmptyAdapter)
+    monkeypatch.setattr("services.scrapers.ThingiverseScraper", FakeLegacyThingiverseScraper)
+
+    result = await service.scrape_thingiverse(access_token="token", test_mode=False)
+
+    assert result["status"] == "error"
+    assert "found 0 products" in result["error_message"]
+    assert result["harness"] == "core"
