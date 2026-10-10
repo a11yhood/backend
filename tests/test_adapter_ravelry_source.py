@@ -202,8 +202,6 @@ async def test_ravelry_adapter_raises_when_token_cannot_be_refreshed(monkeypatch
 async def test_ravelry_adapter_refresh_stores_new_tokens(monkeypatch):
     import httpx
 
-    import scrapers.core.ravelry_adapter as module
-
     class _Table:
         def __init__(self, store):
             self.store = store
@@ -255,8 +253,9 @@ async def test_ravelry_adapter_refresh_stores_new_tokens(monkeypatch):
         )
 
     real_client = httpx.AsyncClient
+    # The adapter calls httpx.AsyncClient() for the refresh request; patch that class.
     monkeypatch.setattr(
-        module.httpx,
+        httpx,
         "AsyncClient",
         lambda *a, **k: real_client(transport=httpx.MockTransport(handler)),
     )
