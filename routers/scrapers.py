@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Query
@@ -584,11 +584,19 @@ async def oauth_callback(
                 detail=f"OAuth token exchange returned no access token for {platform}",
             )
 
+        # Providers return a relative `expires_in`; store an absolute timestamp so the
+        # debug endpoint can report whether the token has expired.
+        expires_at_from_expires_in = None
+        if token_data.get("expires_in"):
+            expires_at_from_expires_in = (
+                datetime.now(UTC) + timedelta(seconds=int(token_data["expires_in"]))
+            ).isoformat()
+
         # Store tokens securely (TODO: encrypt tokens)
         update_data = {
             "access_token": token_data.get("access_token"),
             "refresh_token": token_data.get("refresh_token"),
-            "token_expires_at": token_data.get("expires_at"),
+            "token_expires_at": token_data.get("expires_at") or expires_at_from_expires_in,
         }
 
         db.table("oauth_configs").update(update_data).eq("id", config["id"]).execute()

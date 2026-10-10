@@ -1,10 +1,14 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 
 from .base_source_scraper import BaseSourceScraper
 from .contracts import RateLimitPolicy, ScrapeRunContext
+
+
+class RavelryAuthError(RuntimeError):
+    """Ravelry rejected our credentials and a token refresh did not fix it."""
 
 
 class RavelrySourceAdapter(BaseSourceScraper):
@@ -42,6 +46,84 @@ class RavelrySourceAdapter(BaseSourceScraper):
 
     async def close(self) -> None:
         await self.client.aclose()
+
+    async def _refresh_access_token(self) -> bool:
+        """Exchange the stored refresh_token for a new access token.
+
+        Ravelry access tokens are short lived, so without this every scheduled
+        run after the first expiry gets 401s. Returns True if the client now
+        carries a fresh token.
+        """
+        try:
+            resp = (
+                self.supabase.table("oauth_configs")
+                .select("client_id, client_secret, refresh_token, redirect_uri")
+                .eq("platform", "ravelry")
+                .limit(1)
+                .execute()
+            )
+            cfg = (resp.data or [{}])[0]
+            client_id = cfg.get("client_id")
+            client_secret = cfg.get("client_secret")
+            refresh_token = cfg.get("refresh_token")
+            if not (client_id and client_secret and refresh_token):
+                return False
+
+            async with httpx.AsyncClient() as http_client:
+                token_resp = await http_client.post(
+                    "https://www.ravelry.com/oauth2/token",
+                    auth=(client_id, client_secret),
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                        # Ravelry expects redirect_uri on refresh requests
+                        "redirect_uri": cfg.get("redirect_uri"),
+                    },
+                    timeout=20.0,
+                )
+            if token_resp.status_code != 200:
+                return False
+
+            token_data = token_resp.json()
+            new_access = token_data.get("access_token")
+            if not new_access:
+                return False
+
+            update_payload: dict[str, Any] = {
+                "access_token": new_access,
+                "refresh_token": token_data.get("refresh_token", refresh_token),
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+            if token_data.get("expires_in"):
+                expires_at = datetime.now(UTC) + timedelta(seconds=int(token_data["expires_in"]))
+                update_payload["token_expires_at"] = expires_at.isoformat()
+            self.supabase.table("oauth_configs").update(update_payload).eq(
+                "platform", "ravelry"
+            ).execute()
+
+            self.access_token = new_access
+            self.client.headers["Authorization"] = f"Bearer {new_access}"
+            return True
+        except Exception:
+            return False
+
+    async def _get(self, url: str, **kwargs: Any) -> httpx.Response:
+        """GET with one token refresh on 401/403; raises RavelryAuthError if still denied.
+
+        Failing loudly matters: swallowing auth errors made an expired token look
+        like a successful run that simply found nothing.
+        """
+        response = await self.client.get(url, timeout=20.0, **kwargs)
+        if response.status_code in (401, 403):
+            if await self._refresh_access_token():
+                response = await self.client.get(url, timeout=20.0, **kwargs)
+            if response.status_code in (401, 403):
+                raise RavelryAuthError(
+                    f"Ravelry API returned {response.status_code}; the OAuth token is "
+                    "expired or revoked and could not be refreshed. Re-authorize Ravelry "
+                    "in admin settings."
+                )
+        return response
 
     def get_source_name(self) -> str:
         return "ravelry"
@@ -187,9 +269,7 @@ class RavelrySourceAdapter(BaseSourceScraper):
             "page": page,
             "sort": "best",
         }
-        response = await self.client.get(
-            f"{self.API_BASE_URL}/patterns/search.json", params=params, timeout=20.0
-        )
+        response = await self._get(f"{self.API_BASE_URL}/patterns/search.json", params=params)
         if response.status_code != 200:
             return [], False
 
@@ -199,9 +279,7 @@ class RavelrySourceAdapter(BaseSourceScraper):
         return patterns, has_more
 
     async def _fetch_pattern_details(self, pattern_id: int | str) -> dict[str, Any] | None:
-        response = await self.client.get(
-            f"{self.API_BASE_URL}/patterns/{pattern_id}.json", timeout=20.0
-        )
+        response = await self._get(f"{self.API_BASE_URL}/patterns/{pattern_id}.json")
         if response.status_code != 200:
             return None
 
