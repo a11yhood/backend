@@ -146,3 +146,127 @@ async def test_ravelry_source_adapter_fetch_one_carries_matched_category(monkeyp
 
     assert raw is not None
     assert raw["_matched_pa_category"] == "adaptive"
+
+
+def _client_with_responses(statuses_and_bodies, seen_auth):
+    """httpx client whose Nth call returns the Nth (status, body); records Authorization."""
+    import httpx
+
+    calls = iter(statuses_and_bodies)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_auth.append(request.headers.get("Authorization"))
+        status, body = next(calls)
+        return httpx.Response(status, json=body)
+
+    return httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), headers={"Authorization": "Bearer old"}
+    )
+
+
+async def test_ravelry_adapter_refreshes_token_on_401_and_retries(monkeypatch):
+    seen_auth: list = []
+    client = _client_with_responses(
+        [(401, {}), (200, {"patterns": [{"id": 1}]})], seen_auth
+    )
+    adapter = RavelrySourceAdapter(supabase_client=None, access_token="old", client=client)
+
+    async def fake_refresh():
+        adapter.client.headers["Authorization"] = "Bearer new"
+        return True
+
+    monkeypatch.setattr(adapter, "_refresh_access_token", fake_refresh)
+
+    patterns, _ = await adapter._search_patterns("adaptive", 1)
+
+    assert patterns == [{"id": 1}]
+    assert seen_auth == ["Bearer old", "Bearer new"]
+
+
+async def test_ravelry_adapter_raises_when_token_cannot_be_refreshed(monkeypatch):
+    from scrapers.core.ravelry_adapter import RavelryAuthError
+
+    seen_auth: list = []
+    client = _client_with_responses([(401, {})], seen_auth)
+    adapter = RavelrySourceAdapter(supabase_client=None, access_token="old", client=client)
+
+    async def no_refresh():
+        return False
+
+    monkeypatch.setattr(adapter, "_refresh_access_token", no_refresh)
+
+    with pytest.raises(RavelryAuthError):
+        await adapter._search_patterns("adaptive", 1)
+
+
+async def test_ravelry_adapter_refresh_stores_new_tokens(monkeypatch):
+    import httpx
+
+    import scrapers.core.ravelry_adapter as module
+
+    class _Table:
+        def __init__(self, store):
+            self.store = store
+            self._update = None
+
+        def select(self, *_a):
+            return self
+
+        def eq(self, *_a):
+            return self
+
+        def limit(self, *_a):
+            return self
+
+        def update(self, payload):
+            self._update = payload
+            return self
+
+        def execute(self):
+            if self._update is not None:
+                self.store["updated"] = self._update
+                return type("R", (), {"data": []})()
+            return type(
+                "R",
+                (),
+                {
+                    "data": [
+                        {
+                            "client_id": "id",
+                            "client_secret": "secret",
+                            "refresh_token": "old-refresh",
+                            "redirect_uri": "http://localhost/cb",
+                        }
+                    ]
+                },
+            )()
+
+    store: dict = {}
+
+    class _Supabase:
+        def table(self, _name):
+            return _Table(store)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert b"refresh_token=old-refresh" in request.content
+        return httpx.Response(
+            200,
+            json={"access_token": "fresh", "refresh_token": "next-refresh", "expires_in": 3600},
+        )
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        module.httpx,
+        "AsyncClient",
+        lambda *a, **k: real_client(transport=httpx.MockTransport(handler)),
+    )
+
+    adapter = RavelrySourceAdapter(
+        supabase_client=_Supabase(), access_token="old", client=real_client()
+    )
+
+    assert await adapter._refresh_access_token() is True
+    assert store["updated"]["access_token"] == "fresh"
+    assert store["updated"]["refresh_token"] == "next-refresh"
+    assert "token_expires_at" in store["updated"]
+    assert adapter.client.headers["Authorization"] == "Bearer fresh"
