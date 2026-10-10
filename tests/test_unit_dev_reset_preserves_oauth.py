@@ -72,3 +72,28 @@ async def test_reset_and_reseed_restores_connected_oauth_rows(monkeypatch):
 
     assert result["seeded"] is True
     assert store["restored"] == [{"platform": "ravelry", "access_token": "tok", "refresh_token": "r"}]
+
+
+@pytest.mark.asyncio
+async def test_connected_oauth_rows_are_restored_even_when_seeding_fails(monkeypatch):
+    store = {
+        "oauth_rows": [{"platform": "ravelry", "access_token": "tok", "refresh_token": "r"}],
+        "restored": [],
+    }
+    db = _Db(store)
+    monkeypatch.setattr(dev_mode, "get_db", lambda: db)
+
+    async def fake_reset():
+        store["oauth_rows"] = []  # tables truncated
+        return {"cleared_tables": {}}
+
+    monkeypatch.setattr(dev_mode, "reset_database", fake_reset)
+
+    import seed_scripts.seed_all as seed_all
+
+    monkeypatch.setattr(seed_all, "main", lambda: 1)  # seeding fails
+
+    with pytest.raises(RuntimeError, match="Seed process failed"):
+        await dev_mode.reset_and_reseed_database()
+
+    assert store["restored"] == [{"platform": "ravelry", "access_token": "tok", "refresh_token": "r"}]

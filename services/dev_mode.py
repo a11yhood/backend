@@ -228,15 +228,18 @@ async def reset_and_reseed_database() -> dict:
     """
     preserved_oauth = _snapshot_connected_oauth_configs(get_db())
 
-    reset_result = await reset_database()
+    try:
+        reset_result = await reset_database()
 
-    from seed_scripts.seed_all import main as run_seed_all
+        from seed_scripts.seed_all import main as run_seed_all
 
-    seed_exit_code = run_seed_all()
-    if seed_exit_code != 0:
-        raise RuntimeError(f"Seed process failed with exit code {seed_exit_code}")
-
-    _restore_oauth_configs(get_db(), preserved_oauth)
+        seed_exit_code = run_seed_all()
+        if seed_exit_code != 0:
+            raise RuntimeError(f"Seed process failed with exit code {seed_exit_code}")
+    finally:
+        # Restore even when the reset or seed fails: the tables are already
+        # truncated at that point, so skipping this would lose the tokens for good.
+        _restore_oauth_configs(get_db(), preserved_oauth)
 
     manifest = get_seed_manifest()
     return {
