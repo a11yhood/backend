@@ -149,7 +149,7 @@ def test_collection_owner_can_approve_collection_ownership_request(
     assert approve.json()["status"] == "approved"
 
     edit = client.put(
-        f"/api/collections/{collection['slug']}",
+        f"/api/collections/{collection['id']}",
         headers=auth_headers(test_user),
         json={"description": "Edited after approval"},
     )

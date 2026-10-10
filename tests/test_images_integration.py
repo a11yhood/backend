@@ -173,6 +173,34 @@ def test_get_image_by_id_redirects_external_image(client, test_user, auth_header
     assert image_response.headers.get("location") == external_image_url
 
 
+@pytest.mark.parametrize("method", ["patch", "put"])
+def test_product_null_image_clears_image_fields(client, test_user, auth_headers, method):
+    """An explicit `image: null` (the UI's Remove button) must clear the stored image."""
+    create_response = client.post(
+        "/api/products",
+        headers=auth_headers(test_user),
+        json={
+            "name": "Null Image Clear",
+            "description": "integration test product",
+            "source_url": f"https://github.com/a11yhood/null-image-clear-{uuid.uuid4()}",
+            "type": "Software",
+            "image": {"url": "https://example.com/to-be-removed.png", "alt": "to be removed"},
+        },
+    )
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["image_id"]
+
+    response = getattr(client, method)(
+        f"/api/products/{created['id']}",
+        headers=auth_headers(test_user),
+        json={"image": None},
+    )
+    assert response.status_code == 200
+    assert response.json()["image_id"] is None
+    assert response.json()["image_alt"] is None
+
+
 def test_delete_blog_post_image_clears_image_fields(client, clean_database, test_admin, auth_headers):
     slug = f"image-delete-blog-{uuid.uuid4()}"
     create_response = client.post(
