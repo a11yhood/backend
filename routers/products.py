@@ -1099,6 +1099,31 @@ def _normalize_product(product: dict, db) -> dict:
     return product
 
 
+def _resolve_source_for_url(db, source_url: str, *, allow_unsupported_domain: bool) -> str:
+    """Return the canonical source name for a product URL.
+
+    Supported domains map to their `supported_sources` name. Unsupported domains are
+    rejected with 400 unless `allow_unsupported_domain` is set (admins and moderators),
+    in which case the bare domain is used as the source so it is never left pointing at a
+    different platform than the URL.
+    """
+    sources_response = db.table("supported_sources").select("domain, name").execute()
+    supported_sources = sources_response.data or []
+
+    domain = extract_domain(source_url)
+    determined_source = find_source_for_domain(domain, supported_sources) if domain else None
+    if determined_source:
+        return determined_source
+
+    if allow_unsupported_domain and domain:
+        return domain
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"URL domain is not supported. Supported domains are: {', '.join([s['domain'] for s in supported_sources])}",
+    )
+
+
 @router.post("", response_model=ProductResponse, status_code=201)
 async def create_product(
     product: ProductCreate,
@@ -1113,27 +1138,17 @@ async def create_product(
     `product_editors` and exposed as `editor_ids`.
     Security: Requires valid auth token; all users can create products.
     """
-    # Get list of supported sources
-    sources_response = db.table("supported_sources").select("domain, name").execute()
-    supported_sources = sources_response.data or []
-
-    # Extract domain from URL and validate against supported sources
     source_url = str(product.source_url) if product.source_url else None
-    determined_source = None
-
     if not source_url:
         raise HTTPException(status_code=400, detail="Product URL is required")
 
-    domain = extract_domain(source_url)
-    if domain:
-        determined_source = find_source_for_domain(domain, supported_sources)
-
-    # If URL provided but domain not in supported list, reject the submission
-    if not determined_source:
-        raise HTTPException(
-            status_code=400,
-            detail=f"URL domain is not supported. Supported domains are: {', '.join([s['domain'] for s in supported_sources])}",
-        )
+    # Validate the URL domain against supported sources and auto-assign the source.
+    # Admins and moderators may submit URLs from unsupported domains.
+    determined_source = _resolve_source_for_url(
+        db,
+        source_url,
+        allow_unsupported_domain=current_user.get("role") in ("admin", "moderator"),
+    )
 
     # Map Pydantic model fields to database columns (use attributes to avoid alias issues)
     product_data = product.model_dump(exclude_unset=True)
@@ -1407,14 +1422,25 @@ async def update_product(
     if "description" in product_data:
         db_data["description"] = product_data["description"]
     if "source_url" in product_data and product.source_url is not None:
-        db_data["source_url"] = str(product.source_url)
+        new_source_url = str(product.source_url)
+        db_data["source_url"] = new_source_url
+        # Only re-validate when the URL actually changes, so editing other fields of a
+        # product whose stored URL predates the current supported list still works.
+        if new_source_url != product_row.get("source_url"):
+            db_data["source"] = _resolve_source_for_url(
+                db, new_source_url, allow_unsupported_domain=is_admin_or_moderator
+            )
     image_id = _resolve_requested_image_id(db, product_data, created_by=current_user.get("id"))
     if image_id is not None:
         db_data["image_id"] = image_id
+    elif "image" in product_data and product_data["image"] is None:
+        # An explicit null clears the image (the frontend's "Remove" button).
+        db_data["image_id"] = None
+        db_data["image_alt"] = None
     image_payload = product_data.get("image") if isinstance(product_data.get("image"), dict) else None
     if image_payload and image_payload.get("alt") is not None:
         db_data["image_alt"] = image_payload.get("alt")
-    if "source" in product_data:
+    if "source" in product_data and "source" not in db_data:
         db_data["source"] = (
             _canonicalize_source_value_db(db, product_data["source"]) or product_data["source"]
         )
@@ -1518,14 +1544,25 @@ async def patch_product(
     if "description" in product_data:
         db_data["description"] = product_data["description"]
     if "source_url" in product_data and product.source_url is not None:
-        db_data["source_url"] = str(product.source_url)
+        new_source_url = str(product.source_url)
+        db_data["source_url"] = new_source_url
+        # Only re-validate when the URL actually changes, so editing other fields of a
+        # product whose stored URL predates the current supported list still works.
+        if new_source_url != product_row.get("source_url"):
+            db_data["source"] = _resolve_source_for_url(
+                db, new_source_url, allow_unsupported_domain=is_admin_or_moderator
+            )
     image_id = _resolve_requested_image_id(db, product_data, created_by=current_user.get("id"))
     if image_id is not None:
         db_data["image_id"] = image_id
+    elif "image" in product_data and product_data["image"] is None:
+        # An explicit null clears the image (the frontend's "Remove" button).
+        db_data["image_id"] = None
+        db_data["image_alt"] = None
     image_payload = product_data.get("image") if isinstance(product_data.get("image"), dict) else None
     if image_payload and image_payload.get("alt") is not None:
         db_data["image_alt"] = image_payload.get("alt")
-    if "source" in product_data:
+    if "source" in product_data and "source" not in db_data:
         db_data["source"] = (
             _canonicalize_source_value_db(db, product_data["source"]) or product_data["source"]
         )
