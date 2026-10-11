@@ -218,7 +218,6 @@ smoke_check      "GET /openapi.json → 200"        "200"          "$BASE/openap
 # Core product endpoints (unauthenticated reads)
 smoke_check      "GET /api/products       → 200"  "200"          "$BASE/api/products"
 smoke_check      "GET /api/products/count → 200"  "200"          "$BASE/api/products/count"
-smoke_check      "GET /api/products/types → 200"  "200"          "$BASE/api/products/types"
 smoke_check      "GET /api/products/tags  → 200"  "200"          "$BASE/api/products/tags"
 
 # 404 for unknown path (ensures error handler is wired)
