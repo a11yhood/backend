@@ -71,7 +71,6 @@ def test_delete_product_image_clears_image_fields(client, clean_database, test_u
             "name": "Image Delete Integration Product",
             "description": "integration test product",
             "source_url": source_url,
-            "type": "Software",
             "image": {
                 "url": "https://example.com/product-image.png",
                 "alt": "product alt",
@@ -107,7 +106,6 @@ def test_product_response_includes_image_identifiers(client, test_user, auth_hea
             "name": "Image Identifier Product",
             "description": "integration test product",
             "source_url": source_url,
-            "type": "Software",
             "image": {
                 "url": "https://example.com/product-image-id.png",
                 "alt": "image id alt",
@@ -138,7 +136,6 @@ def test_get_image_by_id_serves_uploaded_image_bytes(client, test_user, auth_hea
             "name": "Image by ID Uploaded",
             "description": "integration test product",
             "source_url": source_url,
-            "type": "Software",
             "image": {"url": data_url},
         },
     )
@@ -161,7 +158,6 @@ def test_get_image_by_id_redirects_external_image(client, test_user, auth_header
             "name": "Image by ID External",
             "description": "integration test product",
             "source_url": source_url,
-            "type": "Software",
             "image": {"url": external_image_url},
         },
     )
@@ -183,7 +179,6 @@ def test_product_null_image_clears_image_fields(client, test_user, auth_headers,
             "name": "Null Image Clear",
             "description": "integration test product",
             "source_url": f"https://github.com/a11yhood/null-image-clear-{uuid.uuid4()}",
-            "type": "Software",
             "image": {"url": "https://example.com/to-be-removed.png", "alt": "to be removed"},
         },
     )

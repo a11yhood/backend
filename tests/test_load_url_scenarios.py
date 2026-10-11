@@ -92,7 +92,6 @@ def test_load_url_returns_existing_product_without_refresh_if_complete(
                 "description": "Already complete",
                 "source_url": source_url,
                 "source": "Github",
-                "type": "Software",
                 "slug": f"existing-complete-{uuid4().hex[:8]}",
                 "image_id": image_id,
             }
@@ -140,7 +139,6 @@ def test_load_url_refreshes_missing_image_info_for_existing_product(
                 "description": "Missing image metadata",
                 "source_url": source_url,
                 "source": "Github",
-                "type": "Software",
                 "slug": f"existing-missing-{uuid4().hex[:8]}",
                 "image_id": None,
                 "image_alt": None,

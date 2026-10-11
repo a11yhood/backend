@@ -572,7 +572,6 @@ def test_product(clean_database, test_user):
         "name": "Test Product",
         "description": "A test product for testing",
         "source": "github",
-        "type": "Software",
         "source_url": f"https://github.com/test/test-product-{uuid4()}",
         "slug": f"test-product-{uuid4()}",
         "created_by": test_user["id"],

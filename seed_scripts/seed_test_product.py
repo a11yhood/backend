@@ -75,7 +75,6 @@ def seed_product():
         "name": product_name,
         "source_url": product_url,
         "slug": product_slug,
-        "type": "Software",
         "source": "github",
         "description": "A test product for accessibility",
     }

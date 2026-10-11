@@ -37,7 +37,6 @@ def _sample_product_payload():
         "description": "Security negative-path test product",
         "source_url": "https://github.com/user/secure-product",
         "source": "github",
-        "type": "Other",
         "tags": [],
     }
 
@@ -302,7 +301,6 @@ def test_sql_injection_prevention_in_product_name(auth_client):
                 "description": "Testing SQL injection prevention",
                 "source_url": "https://github.com/user/test-sql",
                 "source": "github",
-                "type": "Other",
             },
         )
         # Should succeed (input is escaped/parameterized) or fail validation
@@ -352,7 +350,6 @@ def test_large_text_fields_accepted(auth_client):
             "description": large_text,
             "source_url": "https://github.com/user/test-large",
             "source": "github",
-            "type": "Other",
         },
     )
 
@@ -374,7 +371,6 @@ def test_special_characters_in_strings_handled_safely(auth_client):
             "description": special_chars_desc,
             "source_url": "https://github.com/user/test-special",
             "source": "github",
-            "type": "Other",
         },
     )
 
@@ -395,7 +391,6 @@ def test_null_byte_injection_prevented(auth_client):
             "description": "Test product",
             "source_url": "https://example.com/test",
             "source": "github",
-            "type": "Other",
         },
     )
 
@@ -449,7 +444,6 @@ def test_type_confusion_prevented(auth_client):
             "description": 12345,  # Should be string
             "source_url": "https://example.com/test",
             "source": "github",
-            "type": "Other",
         },
     )
 

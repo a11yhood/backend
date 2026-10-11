@@ -723,7 +723,6 @@ def test_multiple_product_editor_requests_allowed(
                 "name": "Second Product",
                 "description": "Another product",
                 "source": "github",
-                "type": "Other",
                 "source_url": "https://github.com/example/product-2",
                 "slug": f"second-product-{datetime.now().timestamp():.0f}",
             }

@@ -76,7 +76,6 @@ def test_product(clean_database, test_user):
             {
                 "id": product_id,
                 "name": "Test Product",
-                "type": "Software",
                 "source": "github",
                 "slug": f"test-product-{uuid.uuid4().hex[:8]}",
                 "source_url": f"https://github.com/test/product-{uuid.uuid4().hex[:8]}",
@@ -158,7 +157,6 @@ def test_get_product_urls_empty(client_with_db, auth_header):
         "/api/products",
         json={
             "name": "Empty Product",
-            "type": "Software",
             "description": "No URLs",
             "source_url": "https://github.com/example/empty-product",
         },
