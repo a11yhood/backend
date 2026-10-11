@@ -32,7 +32,6 @@ def _create_product(client, headers, source_url: str, name: str = "Source URL va
             "name": name,
             "description": "integration test product",
             "source_url": source_url,
-            "type": "Software",
         },
     )
 
@@ -120,7 +119,6 @@ def test_unchanged_unsupported_url_does_not_block_other_edits(
             "description": "legacy",
             "source": UNSUPPORTED_DOMAIN,
             "source_url": UNSUPPORTED_URL,
-            "type": "Software",
             "created_by": test_user["id"],
         }
     ).execute()

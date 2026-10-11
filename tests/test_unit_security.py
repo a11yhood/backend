@@ -161,7 +161,6 @@ def test_type_confusion_prevented():
                 "description": 12345,
                 "source_url": "https://example.com/test",
                 "source": "github",
-                "type": "Other",
             }
         )
 

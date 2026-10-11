@@ -55,28 +55,24 @@ TEST_PRODUCTS = [
         "name": "Test Product from GitHub",
         "description": "A test product from GitHub",
         "source": "github",
-        "type": "Software",
         "source_url": "https://github.com/test/test-product",
     },
     {
         "name": "Test Product from Ravelry - Knitting",
         "description": "A test knitting pattern from Ravelry",
         "source": "ravelry",
-        "type": "Knitting",
         "source_url": "https://www.ravelry.com/patterns/library/test-knit",
     },
     {
         "name": "Test Product from Ravelry - Crochet",
         "description": "A test crochet pattern from Ravelry",
         "source": "ravelry",
-        "type": "Crochet",
         "source_url": "https://www.ravelry.com/patterns/library/test-crochet",
     },
     {
         "name": "Test Product from Thingiverse",
         "description": "A test 3D printable model from Thingiverse",
         "source": "thingiverse",
-        "type": "3D Print",
         "source_url": "https://www.thingiverse.com/thing:test",
     },
 ]

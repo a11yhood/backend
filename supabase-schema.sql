@@ -209,7 +209,6 @@
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     slug TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
-    type TEXT,
     source TEXT NOT NULL,
     source_url TEXT,
     external_id TEXT,
