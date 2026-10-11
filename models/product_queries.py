@@ -1,11 +1,9 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ProductQueryDefinition(BaseModel):
     source: list[str] | None = Field(None, description="Source filter for search")
     sources: list[str] | None = Field(None, description="Source filter for search")
-    type: list[str] | None = Field(None, description="Type filter for search")
-    types: list[str] | None = Field(None, description="Type filter for search")
     tags: list[str] | None = Field(None, description="Tag filter for search")
     tags_mode: str = Field(
         default="or", pattern=r"(?i)^(or|and)$", description="Tag filter mode: or or and"
@@ -22,7 +20,7 @@ class ProductQueryDefinition(BaseModel):
         default=False, description="Include banned products (admin/mod only)"
     )
 
-    @field_validator("source", "sources", "type", "types", "tags", mode="before")
+    @field_validator("source", "sources", "tags", mode="before")
     @classmethod
     def _coerce_scalar_to_list(cls, value):
         if value is None:
@@ -33,4 +31,8 @@ class ProductQueryDefinition(BaseModel):
 
 
 class BulkDeleteRequest(ProductQueryDefinition):
+    # Keep unknown keys so the handler can refuse a retired "type" filter (#270)
+    # instead of silently ignoring it and widening what the delete matches.
+    model_config = ConfigDict(extra="allow")
+
     product_ids: str | list[str] | None = None

@@ -21,7 +21,6 @@ class DummyScraper(BaseScraper):
         return {
             "name": "Scraped Name",
             "description": "Scraped Description",
-            "type": "Software",
             "tags": ["a11y", "oss"],
             "source": "github",
             "source_url": "https://github.com/example/repo",
@@ -86,7 +85,6 @@ async def test_update_product_preserves_populated_human_edited_fields_and_tags()
         "id": "p1",
         "name": "User Curated Name",
         "description": "User Curated Description",
-        "type": "Learning",
         "last_edited_at": "2026-01-01T00:00:00",
         "last_edited_by": "user-1",
     }
@@ -100,7 +98,6 @@ async def test_update_product_preserves_populated_human_edited_fields_and_tags()
 
     assert "name" not in update_payload
     assert "description" not in update_payload
-    assert "type" not in update_payload
     assert "source" not in update_payload
     assert "source_url" not in update_payload
     assert "external_id" not in update_payload
@@ -116,7 +113,6 @@ async def test_update_product_backfills_missing_fields_and_tags(monkeypatch):
         "id": "p2",
         "name": "",
         "description": None,
-        "type": None,
     }
     supabase, products_table = _build_supabase(existing_product=existing, has_tags=False)
     scraper = DummyScraper(supabase)
@@ -136,7 +132,6 @@ async def test_update_product_backfills_missing_fields_and_tags(monkeypatch):
 
     assert update_payload["name"] == "Scraped Name"
     assert update_payload["description"] == "Scraped Description"
-    assert update_payload["type"] == "Software"
     assert captured["called"] is True
     assert captured["tags"] == ["a11y", "oss"]
 
@@ -147,7 +142,6 @@ async def test_update_product_refreshes_populated_fields_when_not_human_edited(m
         "id": "p3",
         "name": "Old Name",
         "description": "Old Description",
-        "type": "Hardware",
         "last_edited_at": None,
         "last_edited_by": None,
     }
@@ -169,7 +163,6 @@ async def test_update_product_refreshes_populated_fields_when_not_human_edited(m
 
     assert update_payload["name"] == "Scraped Name"
     assert update_payload["description"] == "Scraped Description"
-    assert update_payload["type"] == "Software"
     assert captured["called"] is True
     assert captured["tags"] == ["a11y", "oss"]
 
@@ -180,7 +173,6 @@ async def test_update_product_preserves_intentionally_cleared_tags_for_human_edi
         "id": "p4",
         "name": "Curated Name",
         "description": "Curated Description",
-        "type": "Software",
         "last_edited_at": "2026-01-15T00:00:00",
         "last_edited_by": "user-2",
     }
@@ -202,7 +194,6 @@ async def test_update_product_preserves_intentionally_cleared_tags_for_human_edi
 
     assert "name" not in update_payload
     assert "description" not in update_payload
-    assert "type" not in update_payload
     assert captured["called"] is False
     assert captured["tags"] is None
 
@@ -213,7 +204,6 @@ async def test_update_product_preserves_fields_for_editor_managed_legacy_rows(mo
         "id": "p5",
         "name": "Legacy Curated Name",
         "description": "Legacy Curated Description",
-        "type": "Hardware",
         "last_edited_at": None,
         "last_edited_by": None,
     }
@@ -238,6 +228,5 @@ async def test_update_product_preserves_fields_for_editor_managed_legacy_rows(mo
     update_payload = products_table.update.call_args.args[0]
     assert "name" not in update_payload
     assert "description" not in update_payload
-    assert "type" not in update_payload
     assert captured["called"] is False
     assert captured["tags"] is None

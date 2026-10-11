@@ -209,7 +209,6 @@ class RavelrySourceAdapter(BaseSourceScraper):
             "source_url": source_url,
             "name": raw.get("name") or permalink or "ravelry-pattern",
             "description": self._build_description(raw),
-            "type": self._map_pattern_type(raw),
             "source_last_updated": self._parse_source_timestamp(raw),
             "matched_search_terms": matched_search_terms,
             "tags": self.generate_tags(raw, {}),
@@ -237,6 +236,8 @@ class RavelrySourceAdapter(BaseSourceScraper):
                 seen.add(text)
                 tags.append(text)
 
+        # Product types were retired in favor of tags; the craft is now a tag.
+        add_tag(self._map_craft_tag(raw))
         add_tag(self._extract_name(raw.get("pattern_type")))
 
         for category in raw.get("pattern_categories") or []:
@@ -337,13 +338,11 @@ class RavelrySourceAdapter(BaseSourceScraper):
         return ""
 
     @staticmethod
-    def _map_pattern_type(raw: dict[str, Any]) -> str:
+    def _map_craft_tag(raw: dict[str, Any]) -> str:
         craft_name = (RavelrySourceAdapter._extract_name(raw.get("craft")) or "").lower()
         if "crochet" in craft_name:
-            return "Crochet"
-        if "knit" in craft_name:
-            return "Knitting"
-        return "Knitting"
+            return "crochet"
+        return "knitting"
 
     @staticmethod
     def _parse_source_timestamp(raw: dict[str, Any]) -> str | None:

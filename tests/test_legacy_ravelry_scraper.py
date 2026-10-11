@@ -124,6 +124,6 @@ def test_create_product_dict_no_pattern_attributes():
     result = scraper._create_product_dict(pattern_data)
 
     assert result["name"] == "Simple Pattern"
-    assert result["tags"] == []
+    assert result["tags"] == ["knitting"]  # craft becomes a tag (product types retired)
     assert result["external_data"]["pattern_attributes"] == []
     assert result["external_data"]["pattern_categories"] == []

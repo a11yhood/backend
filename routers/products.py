@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from config import settings
@@ -303,8 +303,6 @@ def _prepare_product_filters(
     *,
     source: Iterable[str] | str | None = None,
     sources: Iterable[str] | str | None = None,
-    type: Iterable[str] | str | None = None,
-    types: Iterable[str] | str | None = None,
     tags: Iterable[str] | str | None = None,
     tags_mode: str = "or",
     min_rating: float | None = None,
@@ -319,8 +317,6 @@ def _prepare_product_filters(
     query_definition = ProductQueryDefinition(
         source=_normalize_list(source),
         sources=_normalize_list(sources),
-        type=_normalize_list(type),
-        types=_normalize_list(types),
         tags=_normalize_list(tags),
         tags_mode=tags_mode,
         min_rating=min_rating,
@@ -369,10 +365,6 @@ def _build_product_query_definition(
     sources: list[str] | None = Query(
         None, description="Comma-separated or repeated source values"
     ),
-    type: list[str] | None = Query(
-        None, alias="type", description="Comma-separated or repeated type values"
-    ),
-    types: list[str] | None = Query(None, description="Comma-separated or repeated type values"),
     tags: list[str] | None = Query(
         None, alias="tags", description="Filter products that have any of these tag names"
     ),
@@ -392,8 +384,6 @@ def _build_product_query_definition(
     return ProductQueryDefinition(
         source=source,
         sources=sources,
-        type=type,
-        types=types,
         tags=tags,
         tags_mode=tags_mode,
         min_rating=min_rating,
@@ -589,77 +579,6 @@ def attach_rating_fields(db, product: dict, ratings_map: dict[str, dict] | None 
     return product
 
 
-@router.get("/types")
-async def get_product_types(
-    response: Response,
-    db=Depends(get_db),
-):
-    """Get all unique type values from products table.
-
-    Returns a sorted list of distinct types for filter UI.
-    Uses valid_categories as the canonical list so options stay stable
-    regardless of current search filters.
-    """
-    try:
-        # Canonical list from valid_categories
-        categories_resp = db.table("valid_categories").select("category").execute()
-        canonical_types = {
-            row["category"].strip()
-            for row in (categories_resp.data or [])
-            if row.get("category") and row.get("category").strip()
-        }
-
-        # Distinct types present in products
-        product_types: set[str] = set()
-        try:
-            # Try RPC function for better performance
-            rpc_resp = db.rpc("get_product_types").execute()
-            product_types = {
-                str(row.get("type")).strip()
-                for row in (rpc_resp.data or [])
-                if row.get("type") and str(row.get("type")).strip()
-            }
-        except Exception:
-            # Fallback to distinct query
-            try:
-                resp = db.table("products").select("type", distinct=True).execute()
-                product_types = {
-                    str(row.get("type")).strip()
-                    for row in (resp.data or [])
-                    if row.get("type") and str(row.get("type")).strip()
-                }
-            except TypeError:
-                # Final fallback: paginate (slow but works)
-                page_size = 1000
-                offset = 0
-                while True:
-                    resp = (
-                        db.table("products")
-                        .select("type")
-                        .range(offset, offset + page_size - 1)
-                        .execute()
-                    )
-                    rows = resp.data or []
-                    if not rows:
-                        break
-                    for row in rows:
-                        t = row.get("type")
-                        if t and str(t).strip():
-                            product_types.add(str(t).strip())
-                    if len(rows) < page_size:
-                        break
-                    offset += page_size
-
-        # Combine canonical list and discovered product types
-        combined = canonical_types.union(product_types)
-        payload = sorted(combined)
-        return {"types": payload}
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.error(f"Exception: {e}")
-        return {"types": []}
-
-
 @router.get("/tags")
 async def get_tags(
     response: Response,
@@ -667,8 +586,6 @@ async def get_tags(
         None, alias="source", description="Filter tags by product source"
     ),
     sources: list[str] | None = Query(None, description="Filter tags by product source"),
-    type: list[str] | None = Query(None, alias="type", description="Filter tags by product type"),
-    types: list[str] | None = Query(None, description="Filter tags by product type"),
     search: str | None = Query(
         None, description="Case-insensitive substring filter on product name"
     ),
@@ -686,7 +603,7 @@ async def get_tags(
 ):
     """Get tag names for products matching the provided filters.
 
-    - Uses the same filters as /products (source/type/search/created_by).
+    - Uses the same filters as /products (source/search/created_by).
     - Returns tag names alphabetically.
     - Optional tag_search filters tag names.
     - Optional limit (up to 1000); omit limit to return all.
@@ -696,12 +613,10 @@ async def get_tags(
         # Try optimized RPC function first
         source_values = set(_normalize_list(source) + _normalize_list(sources))
         source_values = set(_canonicalize_sources(db, list(source_values)))
-        type_values = set(_normalize_list(type) + _normalize_list(types))
 
         try:
             params = {
                 "p_sources": list(source_values) if source_values else None,
-                "p_types": list(type_values) if type_values else None,
                 "p_name_search": search,
                 "p_tag_search": tag_search,
                 "p_limit": limit,
@@ -723,9 +638,6 @@ async def get_tags(
 
         if source_values:
             product_query = product_query.in_("source", list(source_values))
-
-        if type_values:
-            product_query = product_query.in_("type", list(type_values))
 
         if search:
             product_query = product_query.ilike("name", f"%{search}%")
@@ -817,7 +729,7 @@ async def get_products(
 
     Loads ownership and tag data via relationship tables to avoid JSON array storage.
     Returns denormalized response with editor_ids and tags attached to each product.
-    Query supports filtering by source platform, type, text search, and creator.
+    Query supports filtering by source platform, text search, and creator.
     """
     filters = _shared_prepare_product_filters(db, current_user, query_definition, allow_aliases=True)
 
@@ -1158,7 +1070,6 @@ async def create_product(
         "description": product.description,
         "source_url": source_url,
         "source": determined_source,  # Auto-assigned, not from user input
-        "type": product.type or "Other",
         "external_id": product.external_id,
         "created_by": current_user["id"],
     }
@@ -1225,7 +1136,6 @@ async def create_product(
                 "image_id",
                 "image_alt",
                 "source",
-                "type",
                 "external_id",
                 "source_last_updated",
                 "last_edited_at",
@@ -1444,8 +1354,6 @@ async def update_product(
         db_data["source"] = (
             _canonicalize_source_value_db(db, product_data["source"]) or product_data["source"]
         )
-    if "type" in product_data and product.type is not None:
-        db_data["type"] = product.type
     if "external_id" in product_data:
         db_data["external_id"] = product_data["external_id"]
     if db_data or "tags" in product_data:
@@ -1566,8 +1474,6 @@ async def patch_product(
         db_data["source"] = (
             _canonicalize_source_value_db(db, product_data["source"]) or product_data["source"]
         )
-    if "type" in product_data and product.type is not None:
-        db_data["type"] = product.type
     if "external_id" in product_data:
         db_data["external_id"] = product_data["external_id"]
     if "source_last_updated" in product_data and product.source_last_updated is not None:
@@ -1694,6 +1600,7 @@ async def delete_product(
 
 @router.post("/bulk-delete", status_code=200)
 async def bulk_delete_products(
+    request: Request,
     query_definition: ProductQueryDefinition = Depends(_build_product_query_definition),
     product_ids: list[str] | None = Query(None, description="Specific product IDs to delete"),
     payload: BulkDeleteRequest | None = Body(
@@ -1721,6 +1628,15 @@ async def bulk_delete_products(
             detail=f"Admin access required. Your current role: {current_user.get('role', 'user')}",
         )
 
+    # Product types were retired (#270). Ignoring a stale type filter would widen
+    # what gets deleted, so refuse it instead.
+    body_extras = (payload.model_extra or {}) if payload else {}
+    if any(k in source for source in (request.query_params, body_extras) for k in ("type", "types")):
+        raise HTTPException(
+            status_code=400,
+            detail="Product type filtering has been removed; use tags instead",
+        )
+
     # Accept values from query params or JSON body for flexibility with callers
     normalized_product_ids = _normalize_list(product_ids) + _normalize_list(
         payload.product_ids if payload else None
@@ -1736,7 +1652,6 @@ async def bulk_delete_products(
     has_search_filters = any(
         [
             filters["source_values"],
-            filters["type_values"],
             filters["tag_values"],
             filters["search"],
             filters["created_by"],

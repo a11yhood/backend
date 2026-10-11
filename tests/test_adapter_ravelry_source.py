@@ -37,6 +37,7 @@ def test_ravelry_source_adapter_generate_tags_uses_pattern_fields_only():
     )
 
     assert tags == [
+        "knitting",  # craft defaults to knitting when Ravelry gives none
         "Toys",
         "Stuffed Animals",
         "Amigurumi",
@@ -75,7 +76,8 @@ def test_ravelry_source_adapter_maps_pattern_to_source_product():
     assert source_product.external_id == "12345"
     assert source_product.source_url == "https://www.ravelry.com/patterns/library/stuffed-bunny"
     assert source_product.name == "Stuffed Bunny"
-    assert source_product.type == "Crochet"
+    assert "crochet" in source_product.tags
+    assert "knitting" not in source_product.tags
     assert source_product.image_url == "https://images.example/bunny.png"
     assert source_product.image_alt == "Stuffed Bunny image (ALT text missing on source)"
     assert source_product.source_rating == 4.6

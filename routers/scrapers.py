@@ -471,7 +471,6 @@ async def load_url(
         ),
         "image_alt": mapped.image_alt,
         "source": determined_source or mapped.source,
-        "type": mapped.type or "Other",
         "external_id": mapped.external_id,
         "source_rating": mapped.source_rating,
         "source_rating_count": mapped.source_rating_count,
