@@ -7,6 +7,7 @@ returning URL strings, while also maintaining normalized references in
 
 import hashlib
 import logging
+from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 _capability_cache: dict[tuple[str, str], bool] = {}
@@ -200,6 +201,35 @@ def resolve_image_metadata(db, image_id: str | None) -> dict[str, str | None]:
         return {"image_url": f"/api/images/{image_id}", "image_alt": row.get("default_alt")}
     except Exception:
         return {"image_url": None, "image_alt": None}
+
+
+def resolve_image_metadata_batch(
+    db, image_ids: Iterable[str | None], chunk_size: int = 100
+) -> dict[str, dict[str, str | None]]:
+    """Resolve image metadata for many image ids with one query per chunk.
+
+    Returns a mapping of image_id -> {"image_url", "image_alt"}. Ids with no matching
+    row (or when the lookup fails) map to the same empty shape resolve_image_metadata
+    returns, so callers can index the result directly.
+    """
+    unique_ids = list(dict.fromkeys(str(i) for i in image_ids if i))
+    resolved: dict[str, dict[str, str | None]] = {
+        i: {"image_url": None, "image_alt": None} for i in unique_ids
+    }
+    for start in range(0, len(unique_ids), chunk_size):
+        chunk = unique_ids[start : start + chunk_size]
+        try:
+            response = db.table("images").select("id, default_alt").in_("id", chunk).execute()
+        except Exception:
+            logger.debug("Batch image metadata lookup failed", exc_info=True)
+            continue
+        for row in response.data or []:
+            image_id = str(row.get("id"))
+            resolved[image_id] = {
+                "image_url": f"/api/images/{image_id}",
+                "image_alt": row.get("default_alt"),
+            }
+    return resolved
 
 
 def resolve_image_value(db, image_id: str | None) -> str | None:
