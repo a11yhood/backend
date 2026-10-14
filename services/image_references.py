@@ -7,6 +7,7 @@ returning URL strings, while also maintaining normalized references in
 
 import hashlib
 import logging
+from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 _capability_cache: dict[tuple[str, str], bool] = {}
@@ -202,16 +203,48 @@ def resolve_image_metadata(db, image_id: str | None) -> dict[str, str | None]:
         return {"image_url": None, "image_alt": None}
 
 
+def resolve_image_metadata_batch(
+    db, image_ids: Iterable[str | None], chunk_size: int = 100
+) -> dict[str, dict[str, str | None]]:
+    """Resolve image metadata for many image ids with one query per chunk.
+
+    Returns a mapping of image_id -> {"image_url", "image_alt"}. Ids with no matching
+    row (or when the lookup fails) map to the same empty shape resolve_image_metadata
+    returns, so callers can index the result directly. A failed lookup degrades to
+    "no image" rather than failing the whole list, but is logged as a warning because
+    it affects every row in the batch.
+    """
+    unique_ids = list(dict.fromkeys(str(i) for i in image_ids if i))
+    resolved: dict[str, dict[str, str | None]] = {
+        i: {"image_url": None, "image_alt": None} for i in unique_ids
+    }
+    for start in range(0, len(unique_ids), chunk_size):
+        chunk = unique_ids[start : start + chunk_size]
+        try:
+            response = db.table("images").select("id, default_alt").in_("id", chunk).execute()
+        except Exception:
+            logger.warning(
+                "Batch image metadata lookup failed for %d image id(s)", len(chunk), exc_info=True
+            )
+            continue
+        for row in response.data or []:
+            image_id = str(row.get("id"))
+            resolved[image_id] = {
+                "image_url": f"/api/images/{image_id}",
+                "image_alt": row.get("default_alt"),
+            }
+    return resolved
+
+
 def resolve_image_alts(db, image_ids) -> dict[str, str | None]:
-    """Fetch default alt text for many images in one query, keyed by image id."""
-    ids = list({image_id for image_id in image_ids if image_id})
-    if not ids:
-        return {}
-    try:
-        rows = db.table("images").select("id, default_alt").in_("id", ids).execute().data or []
-    except Exception:
-        return {}
-    return {row["id"]: row.get("default_alt") for row in rows}
+    """Fetch default alt text for many images, keyed by image id.
+
+    Thin wrapper over resolve_image_metadata_batch for callers that only need the alt text.
+    """
+    return {
+        image_id: metadata["image_alt"]
+        for image_id, metadata in resolve_image_metadata_batch(db, image_ids).items()
+    }
 
 
 def resolve_image_value(db, image_id: str | None) -> str | None:
