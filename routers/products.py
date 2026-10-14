@@ -26,6 +26,7 @@ from services.id_generator import generate_id_with_uniqueness_check
 from services.image_references import (
     get_or_create_image_id,
     resolve_image_metadata,
+    resolve_image_metadata_batch,
     sync_image_alt_if_missing,
 )
 from services.product_queries import (
@@ -55,13 +56,23 @@ from services.sources import extract_domain, find_source_for_domain
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
-def _attach_product_image_url(product: dict, db) -> None:
-    """Populate image_id and image_alt from images table via FK."""
+def _attach_product_image_url(
+    product: dict, db, image_metadata_by_id: dict[str, dict] | None = None
+) -> None:
+    """Populate image_id and image_alt from images table via FK.
+
+    List endpoints pass image_metadata_by_id (from resolve_image_metadata_batch) so
+    each page costs one query instead of one per product.
+    """
     image_id = product.get("image_id")
     product["image_id"] = image_id
     if not product.get("image_alt") and image_id:
-        image_metadata = resolve_image_metadata(db, image_id)
-        product["image_alt"] = image_metadata["image_alt"]
+        if image_metadata_by_id is not None:
+            image_metadata = image_metadata_by_id.get(str(image_id)) or {}
+            product["image_alt"] = image_metadata.get("image_alt")
+        else:
+            image_metadata = resolve_image_metadata(db, image_id)
+            product["image_alt"] = image_metadata["image_alt"]
 
 
 def _resolve_requested_image_id(db, product_data: dict, created_by: str | None = None) -> str | None:
@@ -800,6 +811,11 @@ async def get_products(
     # Fetch supported_sources map once (not once per product!)
     source_name_map = _get_supported_source_name_map(db)
 
+    # Resolve missing image alt text for the whole page in one query
+    image_metadata_by_id = resolve_image_metadata_batch(
+        db, [p.get("image_id") for p in products if p.get("image_id") and not p.get("image_alt")]
+    )
+
     # Normalize fields and attach tags
     normalized = []
     for item in products:
@@ -822,7 +838,7 @@ async def get_products(
             item["rating_count"] = 0
 
         # Normalize fields for API clients
-        _attach_product_image_url(item, db)
+        _attach_product_image_url(item, db, image_metadata_by_id)
         # Ensure canonical source display names using supported_sources (use pre-fetched map)
         if "source" in item and item.get("source"):
             source_key = str(item.get("source")).strip().lower()
