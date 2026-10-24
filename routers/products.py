@@ -26,8 +26,8 @@ from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
 from services.image_references import (
     get_or_create_image_id,
-    resolve_image_alts,
     resolve_image_metadata,
+    resolve_image_metadata_batch,
     sync_image_alt_if_missing,
 )
 from services.product_queries import (
@@ -58,16 +58,19 @@ from services.supported_sources_cache import get_supported_source_names
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
-def _attach_product_image_url(product: dict, db, alt_by_image_id: dict[str, str | None] | None = None) -> None:
+def _attach_product_image_url(
+    product: dict, db, image_metadata_by_id: dict[str, dict[str, str | None]] | None = None
+) -> None:
     """Populate image_id and image_alt from images table via FK.
 
-    List endpoints pass alt_by_image_id (from resolve_image_alts) to avoid one query per product.
+    List endpoints pass image_metadata_by_id (from resolve_image_metadata_batch) so each
+    page costs one query instead of one per product.
     """
     image_id = product.get("image_id")
     product["image_id"] = image_id
     if not product.get("image_alt") and image_id:
-        if alt_by_image_id is not None:
-            product["image_alt"] = alt_by_image_id.get(image_id)
+        if image_metadata_by_id is not None:
+            product["image_alt"] = (image_metadata_by_id.get(str(image_id)) or {}).get("image_alt")
         else:
             product["image_alt"] = resolve_image_metadata(db, image_id)["image_alt"]
 
@@ -805,11 +808,13 @@ async def get_products(
 
     # These lookups depend only on the page's rows, not on each other, so run them
     # concurrently instead of paying one database round trip after another.
-    owners_by_product, tags_by_product, alt_by_image_id = await asyncio.gather(
+    owners_by_product, tags_by_product, image_metadata_by_id = await asyncio.gather(
         asyncio.to_thread(_load_owners_by_product, db, product_ids),
         asyncio.to_thread(_load_tags_by_product, db, product_ids),
         asyncio.to_thread(
-            resolve_image_alts, db, [p.get("image_id") for p in products if not p.get("image_alt")]
+            resolve_image_metadata_batch,
+            db,
+            [p.get("image_id") for p in products if p.get("image_id") and not p.get("image_alt")],
         ),
     )
 
@@ -838,7 +843,7 @@ async def get_products(
             item["rating_count"] = 0
 
         # Normalize fields for API clients
-        _attach_product_image_url(item, db, alt_by_image_id)
+        _attach_product_image_url(item, db, image_metadata_by_id)
         # Ensure canonical source display names using supported_sources (use pre-fetched map)
         if "source" in item and item.get("source"):
             source_key = str(item.get("source")).strip().lower()

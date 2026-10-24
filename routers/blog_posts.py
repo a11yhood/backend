@@ -17,6 +17,7 @@ from services.database import get_db
 from services.image_references import (
     get_or_create_image_id,
     resolve_image_metadata,
+    resolve_image_metadata_batch,
 )
 from services.sanitizer import sanitize_html
 from services.timestamps import normalize_timestamp_value
@@ -189,7 +190,9 @@ def _normalize_content_images(content: str | None) -> str | None:
     return html_normalized
 
 
-def _normalize_post(record: dict, db=None) -> dict:
+def _normalize_post(
+    record: dict, db=None, image_metadata_by_id: dict[str, dict] | None = None
+) -> dict:
     if not record:
         return record
 
@@ -207,7 +210,14 @@ def _normalize_post(record: dict, db=None) -> dict:
 
     # Ensure header_image is always a valid src for clients.
     if db is not None:
-        image_metadata = resolve_image_metadata(db, post.get("header_image_id"))
+        header_image_id = post.get("header_image_id")
+        if image_metadata_by_id is not None and header_image_id:
+            image_metadata = image_metadata_by_id.get(str(header_image_id)) or {
+                "image_url": None,
+                "image_alt": None,
+            }
+        else:
+            image_metadata = resolve_image_metadata(db, header_image_id)
         resolved_header = image_metadata["image_url"]
         if not post.get("header_image_alt"):
             post["header_image_alt"] = image_metadata["image_alt"]
@@ -266,7 +276,11 @@ async def list_blog_posts(
     query = query.range(offset, offset + limit - 1)
 
     db_resp = query.execute()
-    posts = [_normalize_post(p, db) for p in (db_resp.data or [])]
+    rows = db_resp.data or []
+    image_metadata_by_id = resolve_image_metadata_batch(
+        db, [row.get("header_image_id") for row in rows]
+    )
+    posts = [_normalize_post(p, db, image_metadata_by_id) for p in rows]
     # Cache for 5 minutes for public listing
     if response is not None and not include_unpublished:
         response.headers["Cache-Control"] = "public, max-age=300"
