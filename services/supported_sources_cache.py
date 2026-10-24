@@ -11,7 +11,10 @@ import time
 _TTL_SECONDS = 60
 
 _lock = threading.Lock()
-_cached: tuple[float, list[str]] | None = None
+# Holds at most one entry, (stored_at, names), under _CACHE_KEY. A dict (rather than a rebound
+# module global) keeps the mutation explicit and needs no `global` statements.
+_CACHE_KEY = "names"
+_cache: dict[str, tuple[float, list[str]]] = {}
 
 
 def get_supported_source_names(db) -> list[str]:
@@ -20,21 +23,20 @@ def get_supported_source_names(db) -> list[str]:
     Read errors propagate to the caller and are never cached, so one failed read cannot
     leave an empty list in place for a whole TTL.
     """
-    global _cached
     with _lock:
-        if _cached is not None and time.monotonic() - _cached[0] < _TTL_SECONDS:
-            return list(_cached[1])
+        entry = _cache.get(_CACHE_KEY)
+        if entry is not None and time.monotonic() - entry[0] < _TTL_SECONDS:
+            return list(entry[1])
 
     rows = db.table("supported_sources").select("name").execute().data or []
     names = [str(row["name"]).strip() for row in rows if row.get("name") and str(row["name"]).strip()]
 
     with _lock:
-        _cached = (time.monotonic(), names)
+        _cache[_CACHE_KEY] = (time.monotonic(), names)
     return list(names)
 
 
 def invalidate_supported_sources_cache() -> None:
     """Drop the cached names so the next read hits the database."""
-    global _cached
     with _lock:
-        _cached = None
+        _cache.clear()
