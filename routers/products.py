@@ -5,6 +5,7 @@ Supports URL-based upsert for scrapers and tag management via relationship table
 Security: Mutations require authentication; updates/deletes enforce ownership or admin role.
 """
 
+import asyncio
 import logging
 import os
 import uuid
@@ -25,6 +26,7 @@ from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
 from services.image_references import (
     get_or_create_image_id,
+    resolve_image_alts,
     resolve_image_metadata,
     sync_image_alt_if_missing,
 )
@@ -51,17 +53,23 @@ from services.product_queries import (
 )
 from services.ratings import compute_display_rating
 from services.sources import extract_domain, find_source_for_domain
+from services.supported_sources_cache import get_supported_source_names
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
-def _attach_product_image_url(product: dict, db) -> None:
-    """Populate image_id and image_alt from images table via FK."""
+def _attach_product_image_url(product: dict, db, alt_by_image_id: dict[str, str | None] | None = None) -> None:
+    """Populate image_id and image_alt from images table via FK.
+
+    List endpoints pass alt_by_image_id (from resolve_image_alts) to avoid one query per product.
+    """
     image_id = product.get("image_id")
     product["image_id"] = image_id
     if not product.get("image_alt") and image_id:
-        image_metadata = resolve_image_metadata(db, image_id)
-        product["image_alt"] = image_metadata["image_alt"]
+        if alt_by_image_id is not None:
+            product["image_alt"] = alt_by_image_id.get(image_id)
+        else:
+            product["image_alt"] = resolve_image_metadata(db, image_id)["image_alt"]
 
 
 def _resolve_requested_image_id(db, product_data: dict, created_by: str | None = None) -> str | None:
@@ -119,6 +127,41 @@ def _looks_like_uuid(value: str) -> bool:
         return False
 
 
+def _load_owners_by_product(db, product_ids: list[str]) -> dict[str, list[str]]:
+    """Map product id -> editor user ids (including the owner) for the given products."""
+    owners_by_product: dict[str, list[str]] = {}
+    if not product_ids:
+        return owners_by_product
+    owners_rows = (
+        db.table("product_editors")
+        .select("product_id, user_id")
+        .in_("product_id", product_ids)
+        .execute()
+    )
+    for row in owners_rows.data or []:
+        pid = row.get("product_id")
+        uid = row.get("user_id")
+        if pid and uid:
+            owners_by_product.setdefault(pid, []).append(uid)
+    return owners_by_product
+
+
+def _load_tags_by_product(db, product_ids: list[str]) -> dict[str, list[str]]:
+    """Map product id -> tag names via the product_tags and tags relationship tables."""
+    tags_by_product: dict[str, list[str]] = {}
+    if not product_ids:
+        return tags_by_product
+    pt_rows = get_product_tag_rows(db, product_ids)
+    tag_ids = list({row["tag_id"] for row in pt_rows}) if pt_rows else []
+    tags_map = get_tags_map(db, tag_ids) if tag_ids else {}
+    for row in pt_rows:
+        pid = row["product_id"]
+        tname = tags_map.get(row["tag_id"]) if row["tag_id"] in tags_map else None
+        if tname:
+            tags_by_product.setdefault(pid, []).append(tname)
+    return tags_by_product
+
+
 def _canonicalize_sources(db, values: list[str]) -> list[str]:
     return _shared_canonicalize_sources(db, values)
 
@@ -126,12 +169,7 @@ def _canonicalize_sources(db, values: list[str]) -> list[str]:
 def _get_supported_source_name_map(db) -> dict[str, str]:
     """Return mapping of lowercase source name -> canonical name from supported_sources."""
     try:
-        rows = db.table("supported_sources").select("name").execute()
-        return {
-            str(r.get("name")).strip().lower(): str(r.get("name")).strip()
-            for r in (rows.data or [])
-            if r.get("name")
-        }
+        return {name.lower(): name for name in get_supported_source_names(db)}
     except Exception as e:
         logger = logging.getLogger(__name__)
         logger.error(f"Supported Source Exception: {type(e).__name__}: {str(e)}")
@@ -423,12 +461,7 @@ async def get_product_sources(
     """
     try:
         # Canonical list and mapping from supported_sources
-        sources_resp = db.table("supported_sources").select("name").execute()
-        canonical_list = [
-            row["name"].strip()
-            for row in (sources_resp.data or [])
-            if row.get("name") and row.get("name").strip()
-        ]
+        canonical_list = get_supported_source_names(db)
         canonical_set = set(canonical_list)
         name_map = {n.lower(): n for n in canonical_list}
 
@@ -770,34 +803,17 @@ async def get_products(
 
     product_ids = [p["id"] for p in products]
 
-    # Load owners for each product
-    owners_by_product: dict[str, list[str]] = {}
-    if product_ids:
-        owners_rows = (
-            db.table("product_editors")
-            .select("product_id, user_id")
-            .in_("product_id", product_ids)
-            .execute()
-        )
-        for row in owners_rows.data or []:
-            pid = row.get("product_id")
-            uid = row.get("user_id")
-            if pid and uid:
-                owners_by_product.setdefault(pid, []).append(uid)
+    # These lookups depend only on the page's rows, not on each other, so run them
+    # concurrently instead of paying one database round trip after another.
+    owners_by_product, tags_by_product, alt_by_image_id = await asyncio.gather(
+        asyncio.to_thread(_load_owners_by_product, db, product_ids),
+        asyncio.to_thread(_load_tags_by_product, db, product_ids),
+        asyncio.to_thread(
+            resolve_image_alts, db, [p.get("image_id") for p in products if not p.get("image_alt")]
+        ),
+    )
 
-    # Load tags via relationship tables
-    tags_by_product: dict[str, list[str]] = {}
-    if product_ids:
-        pt_rows = get_product_tag_rows(db, product_ids)
-        tag_ids = list({row["tag_id"] for row in pt_rows}) if pt_rows else []
-        tags_map = get_tags_map(db, tag_ids) if tag_ids else {}
-        for row in pt_rows:
-            pid = row["product_id"]
-            tname = tags_map.get(row["tag_id"]) if row["tag_id"] in tags_map else None
-            if tname:
-                tags_by_product.setdefault(pid, []).append(tname)
-
-    # Fetch supported_sources map once (not once per product!)
+    # Fetch supported_sources map once (not once per product!); served from a short-lived cache
     source_name_map = _get_supported_source_name_map(db)
 
     # Normalize fields and attach tags
@@ -822,7 +838,7 @@ async def get_products(
             item["rating_count"] = 0
 
         # Normalize fields for API clients
-        _attach_product_image_url(item, db)
+        _attach_product_image_url(item, db, alt_by_image_id)
         # Ensure canonical source display names using supported_sources (use pre-fetched map)
         if "source" in item and item.get("source"):
             source_key = str(item.get("source")).strip().lower()

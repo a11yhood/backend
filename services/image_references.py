@@ -202,6 +202,18 @@ def resolve_image_metadata(db, image_id: str | None) -> dict[str, str | None]:
         return {"image_url": None, "image_alt": None}
 
 
+def resolve_image_alts(db, image_ids) -> dict[str, str | None]:
+    """Fetch default alt text for many images in one query, keyed by image id."""
+    ids = list({image_id for image_id in image_ids if image_id})
+    if not ids:
+        return {}
+    try:
+        rows = db.table("images").select("id, default_alt").in_("id", ids).execute().data or []
+    except Exception:
+        return {}
+    return {row["id"]: row.get("default_alt") for row in rows}
+
+
 def resolve_image_value(db, image_id: str | None) -> str | None:
     """Resolve displayable image src from an image row in the images table.
 

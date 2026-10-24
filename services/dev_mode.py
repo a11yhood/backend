@@ -12,6 +12,7 @@ from fastapi import Header, HTTPException, status
 
 from config import load_settings_from_env
 from services.database import get_db
+from services.supported_sources_cache import invalidate_supported_sources_cache
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +241,7 @@ async def reset_and_reseed_database() -> dict:
         # Restore even when the reset or seed fails: the tables are already
         # truncated at that point, so skipping this would lose the tokens for good.
         _restore_oauth_configs(get_db(), preserved_oauth)
+        invalidate_supported_sources_cache()
 
     manifest = get_seed_manifest()
     return {

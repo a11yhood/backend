@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from models.sources import SupportedSourceCreate, SupportedSourceResponse, SupportedSourceUpdate
 from services.auth import get_current_user
 from services.database import get_db
+from services.supported_sources_cache import invalidate_supported_sources_cache
 
 router = APIRouter(prefix="/api/supported-sources", tags=["supported-sources"])
 
@@ -64,6 +65,7 @@ async def create_supported_source(
         db_data["description"] = source.description
 
     response = db.table("supported_sources").insert(db_data).execute()
+    invalidate_supported_sources_cache()
     if not response.data:
         raise HTTPException(status_code=500, detail="Failed to create supported source")
 
@@ -116,6 +118,7 @@ async def update_supported_source(
         return existing.data[0]
 
     response = db.table("supported_sources").update(update_data).eq("id", source_id).execute()
+    invalidate_supported_sources_cache()
     if not response.data:
         raise HTTPException(status_code=500, detail="Failed to update supported source")
 
@@ -142,4 +145,5 @@ async def delete_supported_source(
 
     # Delete the source
     db.table("supported_sources").delete().eq("id", source_id).execute()
+    invalidate_supported_sources_cache()
     return None

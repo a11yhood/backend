@@ -220,6 +220,16 @@ def _assert_git_setup() -> None:
         ) from exc
 
 
+@pytest.fixture(autouse=True)
+def reset_supported_sources_cache():
+    """Tests seed and mutate supported_sources directly; never let one test see another's names."""
+    from services.supported_sources_cache import invalidate_supported_sources_cache
+
+    invalidate_supported_sources_cache()
+    yield
+    invalidate_supported_sources_cache()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def require_git_setup():
     """Require a healthy git setup before any tests execute."""
