@@ -47,3 +47,32 @@ def test_batch_tolerates_lookup_failure():
     result = resolve_image_metadata_batch(db, ["a"])
 
     assert result == {"a": {"image_url": None, "image_alt": None}}
+
+
+def test_batch_logs_a_warning_when_lookup_fails(caplog):
+    db = MagicMock()
+    db.table.return_value.select.return_value.in_.return_value.execute.side_effect = RuntimeError("boom")
+
+    with caplog.at_level("WARNING", logger="services.image_references"):
+        resolve_image_metadata_batch(db, ["a", "b"])
+
+    assert any("Batch image metadata lookup failed for 2 image id(s)" in r.message for r in caplog.records)
+
+
+
+def test_product_alt_comes_from_batch_map_without_extra_queries():
+    from routers.products import _attach_product_image_url
+
+    db = MagicMock()
+    with_alt = {"id": "p1", "image_id": "img-1"}
+    unknown = {"id": "p2", "image_id": "img-missing"}
+    keeps_own = {"id": "p3", "image_id": "img-1", "image_alt": "Own alt"}
+    batch = {"img-1": {"image_url": "/api/images/img-1", "image_alt": "A tactile map"}}
+
+    for product in (with_alt, unknown, keeps_own):
+        _attach_product_image_url(product, db, batch)
+
+    assert with_alt["image_alt"] == "A tactile map"
+    assert unknown["image_alt"] is None
+    assert keeps_own["image_alt"] == "Own alt"
+    db.table.assert_not_called()

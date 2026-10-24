@@ -236,17 +236,6 @@ def resolve_image_metadata_batch(
     return resolved
 
 
-def resolve_image_alts(db, image_ids) -> dict[str, str | None]:
-    """Fetch default alt text for many images, keyed by image id.
-
-    Thin wrapper over resolve_image_metadata_batch for callers that only need the alt text.
-    """
-    return {
-        image_id: metadata["image_alt"]
-        for image_id, metadata in resolve_image_metadata_batch(db, image_ids).items()
-    }
-
-
 def resolve_image_value(db, image_id: str | None) -> str | None:
     """Resolve displayable image src from an image row in the images table.
 
