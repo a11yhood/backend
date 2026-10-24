@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from models.product_queries import ProductQueryDefinition
+from services.supported_sources_cache import get_supported_source_names
 
 
 def normalize_query_list(values: Iterable[str] | str | None) -> list[str]:
@@ -33,12 +34,7 @@ def canonicalize_sources(db, values: list[str]) -> list[str]:
     if not values or db is None:
         return values
 
-    rows = db.table("supported_sources").select("name").execute()
-    name_map = {
-        str(row.get("name")).strip().lower(): str(row.get("name")).strip()
-        for row in (rows.data or [])
-        if row.get("name")
-    }
+    name_map = {name.lower(): name for name in get_supported_source_names(db)}
     return [name_map.get(value.strip().lower(), value) for value in values]
 
 

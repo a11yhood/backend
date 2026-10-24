@@ -19,6 +19,7 @@ from config import get_settings
 from services.auth import get_current_user
 from services.database import get_db, wait_for_row_visibility
 from services.sources import extract_domain
+from services.supported_sources_cache import invalidate_supported_sources_cache
 from services.timestamps import ApiTimestamp, OptionalApiTimestamp
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
@@ -516,6 +517,7 @@ def _grant_permission(db, request_data: dict, reviewer_id: str | None = None):
                 "updated_at": now,
             }
             db.table("supported_sources").insert(data).execute()
+            invalidate_supported_sources_cache()
         except Exception:
             # Do not fail the approval action if auto-add fails
             pass
