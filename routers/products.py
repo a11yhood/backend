@@ -25,6 +25,7 @@ from services.database import get_db, wait_for_row_visibility
 from services.id_generator import generate_id_with_uniqueness_check
 from services.image_references import (
     get_or_create_image_id,
+    resolve_image_alts,
     resolve_image_metadata,
     sync_image_alt_if_missing,
 )
@@ -55,13 +56,18 @@ from services.sources import extract_domain, find_source_for_domain
 router = APIRouter(prefix="/api/products", tags=["products"])
 
 
-def _attach_product_image_url(product: dict, db) -> None:
-    """Populate image_id and image_alt from images table via FK."""
+def _attach_product_image_url(product: dict, db, alt_by_image_id: dict[str, str | None] | None = None) -> None:
+    """Populate image_id and image_alt from images table via FK.
+
+    List endpoints pass alt_by_image_id (from resolve_image_alts) to avoid one query per product.
+    """
     image_id = product.get("image_id")
     product["image_id"] = image_id
     if not product.get("image_alt") and image_id:
-        image_metadata = resolve_image_metadata(db, image_id)
-        product["image_alt"] = image_metadata["image_alt"]
+        if alt_by_image_id is not None:
+            product["image_alt"] = alt_by_image_id.get(image_id)
+        else:
+            product["image_alt"] = resolve_image_metadata(db, image_id)["image_alt"]
 
 
 def _resolve_requested_image_id(db, product_data: dict, created_by: str | None = None) -> str | None:
@@ -799,6 +805,9 @@ async def get_products(
 
     # Fetch supported_sources map once (not once per product!)
     source_name_map = _get_supported_source_name_map(db)
+    alt_by_image_id = resolve_image_alts(
+        db, [p.get("image_id") for p in products if not p.get("image_alt")]
+    )
 
     # Normalize fields and attach tags
     normalized = []
@@ -822,7 +831,7 @@ async def get_products(
             item["rating_count"] = 0
 
         # Normalize fields for API clients
-        _attach_product_image_url(item, db)
+        _attach_product_image_url(item, db, alt_by_image_id)
         # Ensure canonical source display names using supported_sources (use pre-fetched map)
         if "source" in item and item.get("source"):
             source_key = str(item.get("source")).strip().lower()
