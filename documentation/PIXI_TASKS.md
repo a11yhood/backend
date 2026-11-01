@@ -7,17 +7,7 @@ All a11yhood development workflows use [pixi](https://pixi.sh/) tasks. This repl
 ### Development Environment
 
 ```bash
-pixi run dev              # Start dev backend on port 8002 (test Supabase)
-pixi run dev-seed        # Start dev + seed test data
-pixi run dev-reset       # Start dev + reset & seed test data  
-pixi run dev-stop        # Stop dev backend container
-```
-
-### Production Environment (Local Validation)
-
-```bash
-pixi run prod            # Start prod backend on port 8001 (production Supabase)
-pixi run prod-stop       # Stop prod backend container
+pixi run dev              # Run the backend locally on https://localhost:8443 (test Supabase, auto-reload)
 ```
 
 ### Database Management
@@ -26,7 +16,7 @@ pixi run prod-stop       # Stop prod backend container
 pixi run reset                 # Restore test DB from checked-in snapshot
 pixi run apply-migrations      # Apply SQL migrations to test DB (.env.test)
 pixi run apply-migrations-prod # Apply migrations to production DB (.env)
-pixi run seed                  # Run seed scripts (auto-detects Docker or local)
+pixi run seed                  # Run seed scripts
 pixi run seed-list             # List available seed scripts
 ```
 
@@ -40,7 +30,7 @@ pixi run test-integration # Run integration tests (non-unit, non-functional)
 pixi run test-fresh      # Reset test DB snapshot, then run the full suite
 ```
 
-### Direct Server (No Docker)
+### Direct Server (4 workers)
 
 ```bash
 pixi run serve           # Start uvicorn directly on port 8000 (requires pixi env)
@@ -51,52 +41,13 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
 ### Development Environment
 
 #### `pixi run dev`
-- **Purpose**: Start the development backend in Docker
+- **Purpose**: Run the backend locally with uvicorn
 - **Environment**: `.env.test` (Supabase test project)
-- **Port**: 8002
-- **Use when**: You want to develop with a fresh Supabase test database
-- **What it does**: Builds Docker image, starts `backend-dev` container, runs health checks
-
-#### `pixi run dev-seed`
-- **Purpose**: Start development backend and seed test data
-- **Environment**: `.env.test`
-- **Port**: 8002
-- **Use when**: You want test data (users, products, sources) pre-populated
-- **What it does**: Runs `dev` + automatically runs all seed scripts inside the container
-
-#### `pixi run dev-reset`
-- **Purpose**: Start development backend with fresh database
-- **Environment**: `.env.test`
-- **Port**: 8002
-- **Use when**: You want to completely reset the test database and start fresh
-- **What it does**: 
-  1. Resets Supabase test project schema
-  2. Re-applies all migrations
-  3. Seeds test data
-
-#### `pixi run dev-stop`
-- **Purpose**: Stop the development backend container
-- **Cleanup**: Removes the `backend-dev` container
-- **Use when**: Done developing for the day or switching to production
-
-### Production Environment
-
-#### `pixi run prod`
-- **Purpose**: Start the production backend in Docker
-- **Environment**: `.env` (production Supabase)
-- **Port**: 8001
-- **Use when**: Testing your app against real Supabase credentials before cloud deployment
-- **What it does**: 
-  1. Builds Docker image with production mode flag
-  2. Starts `backend-prod` container
-  3. Runs comprehensive health checks
-  4. Seeds supported sources (one-time)
-- **⚠️ Warning**: Uses production database—be careful with changes!
-
-#### `pixi run prod-stop`
-- **Purpose**: Stop the production backend container
-- **Cleanup**: Removes the `backend-prod` container
-- **Use when**: Done testing against production or temporarily stopping the server
+- **Address**: `https://localhost:8443` (the frontend dev server expects this)
+- **Requirements**: `certs/localhost.pem` and `certs/localhost-key.pem` (mkcert-style local certificates)
+- **Use when**: Developing against the Supabase test project
+- **What it does**: Runs `uvicorn main:app --reload` over HTTPS; code changes reload automatically
+- **Tip**: Run `pixi run reset` and/or `pixi run seed` first if you want a clean, seeded test database
 
 ### Database Management
 #### `pixi run reset`
@@ -130,10 +81,7 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
 
 #### `pixi run seed`
 - **Purpose**: Run development seed scripts
-- **Behavior**: 
-  - Auto-detects running Docker container (`backend-dev`)
-  - Runs inside Docker if container exists
-  - Runs locally using Python venv if container not running
+- **Behavior**: Runs `seed_scripts/run_seeds.py` with the local Python venv (`.venv`)
 - **Use when**:
   - Populating test data after fresh schema
   - Re-seeding specific data types
@@ -201,26 +149,25 @@ pixi run serve           # Start uvicorn directly on port 8000 (requires pixi en
 ### Direct Server
 
 #### `pixi run serve`
-- **Purpose**: Run FastAPI uvicorn server directly (no Docker)
+- **Purpose**: Run the FastAPI uvicorn server directly with 4 workers
 - **Environment**: `.env.test`
 - **Host**: `127.0.0.1`
 - **Port**: 8000
 - **Workers**: 4
 - **Use when**:
-  - Developing without Docker containerization
   - Debugging with local IDE breakpoints
   - Rapid iteration on code changes
 - **Requirements**:
   - Pixi environment activated: `pixi shell`
   - Supabase test project running/accessible
 - **Notes**: 
-  - Not for production deployment (use Docker for that)
-  - Reload on code changes enabled automatically with uvicorn
+  - Not for production deployment (production runs on Vercel)
+  - No auto-reload with multiple workers; use `pixi run dev` for that
 
 ## Environment Variables
 
 ### `.env.test` (Development/Testing)
-Used by: `dev`, `dev-seed`, `dev-reset`, `test`, `serve`, `seed`, `apply-migrations`
+Used by: `dev`, `test`, `serve`, `seed`, `apply-migrations`
 
 Contains:
 - Supabase test project credentials
@@ -228,7 +175,7 @@ Contains:
 - Test mode flags
 
 ### `.env` (Production)
-Used by: `prod`, `apply-migrations-prod`
+Used by: `apply-migrations-prod`
 
 Contains:
 - Production Supabase credentials  
@@ -245,46 +192,17 @@ Create from template: `cp .env.test.example .env` (then update values)
 pixi task list
 ```
 
-### Docker container already running
-```bash
-# Kill orphaned containers
-docker ps -a | grep a11yhood
-docker rm -f <container-id>
-
-# Then try again
-pixi run dev
-```
-
 ### Port already in use
 ```bash
-# Find and kill process on port
-sudo lsof -i :8002
+# Find and kill the process on the port
+sudo lsof -i :8443
 kill -9 <PID>
-
-# Or use different port (if script supports it)
-./scripts/start-dev.sh --port 8003
 ```
 
-### Need to switch between dev/prod quickly
+To use a different port, run uvicorn directly:
 ```bash
-# Stop dev, start prod
-pixi run dev-stop && pixi run prod
-
-# Stop prod, start dev
-pixi run prod-stop && pixi run dev
-```
-
-### Viewing Docker logs
-```bash
-# Dev backend
-docker logs -f backend-dev
-
-# Prod backend  
-docker logs -f backend-prod
-
-# Both (in separate terminals)
-docker logs -f backend-dev &
-docker logs -f backend-prod &
+ENV_FILE=.env.test python -m uvicorn main:app --port 8444 --reload \
+  --ssl-keyfile=certs/localhost-key.pem --ssl-certfile=certs/localhost.pem
 ```
 
 ## Configuration Details
@@ -292,17 +210,15 @@ docker logs -f backend-prod &
 ### Shell Scripts Used By Pixi
 
 Pixi tasks wrap these helper shell scripts (still in `scripts/`):
-- `start-dev.sh` — Complex Docker setup for dev with reset/seed options
-- `start-prod.sh` — Production mode validation and startup  
 - `apply-migrations.sh` — PostgreSQL migration runner with tracking
-- `seed.sh` — Seed coordinator (Docker or local Python)
+- `reset-test-db.sh` — Restores the test database from the checked-in snapshot
+- `seed.sh` — Seed coordinator (runs `seed_scripts/run_seeds.py`)
 
 These are implementation details; use `pixi run <task>` instead of calling `./scripts/<script>` directly.
 
 **Removed scripts** (replaced by pixi tasks):
-- ~~`stop-dev.sh`~~ → Use `pixi run dev-stop`
-- ~~`stop-prod.sh`~~ → Use `pixi run prod-stop`
 - ~~`run-tests.sh`~~ → Use `pixi run test`
+- ~~`start-dev.sh`, `start-prod.sh`, `stop-dev.sh`, `stop-prod.sh`, `test-prod-image.sh`~~ → Docker was removed; use `pixi run dev` (production runs on Vercel)
 
 ## Adding New Tasks
 

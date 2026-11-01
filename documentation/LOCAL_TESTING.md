@@ -4,7 +4,6 @@ This guide is pixi-first. Run commands from the repo root.
 
 ## Prerequisites
 
-- Docker running
 - pixi installed
 - .env.test configured with test Supabase credentials
 - SUPABASE_DB_URL in .env.test for reset tooling
@@ -34,28 +33,19 @@ pixi --version
 ## Quick Start
 
 ```bash
-# Start backend in dev mode (Docker, test Supabase)
+# Start backend in dev mode (uvicorn with auto-reload, test Supabase)
 pixi run dev
 
-# Optional script version
-./start-dev.sh
-
-
-# Stop backend
-pixi run dev-stop
-
-# Optional Script Version
-./stop-dev.sh
-
+# Stop backend: press Ctrl+C in the terminal running it
 ```
 
 ## Core URLs
 
 | Component | URL |
 |---|---|
-| Backend API | http://localhost:8002 |
-| API Docs | http://localhost:8002/docs |
-| Health | http://localhost:8002/health |
+| Backend API | https://localhost:8443 |
+| API Docs | https://localhost:8443/docs |
+| Health | https://localhost:8443/health |
 
 ## Test Users
 
@@ -145,7 +135,7 @@ Prefer explicit checks over shell parsing tricks:
 rg -n '^(TEST_MODE|SUPABASE_URL|SUPABASE_DB_URL)=' .env.test
 
 # Confirm backend is running in test mode
-curl -s http://localhost:8002/health
+curl -sk https://localhost:8443/health
 ```
 
 ## Troubleshooting

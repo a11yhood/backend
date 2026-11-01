@@ -70,7 +70,7 @@ backend/
 
 ### Prerequisites
 
-- Docker & Docker Compose (recommended) OR
+- [pixi](https://pixi.sh/) (recommended) OR
 - Python 3.14+ with pip/venv
 - Supabase/PostgreSQL access for development and production workflows
 
@@ -90,30 +90,23 @@ backend/
 
 ### Starting the Server
 
-#### Option 1: Using Scripts (Recommended)
+#### Option 1: Using Pixi (Recommended)
 
 ```bash
-# Start development server
-# The API will be available at `https://localhost:8000/api`
+# Run the development server with auto-reload against the Supabase test project (.env.test)
+# The API will be available at `https://localhost:8443/api`
+pixi run dev
 
-./scripts/start-dev.sh
+# Restore the test database to the checked-in snapshot, and (optionally) seed it
+pixi run reset
+pixi run seed
 
-# Start with database reset
-./scripts/start-dev.sh --reset-db
-
-# Start production server
-# The API will be available at `https://localhost:8001/api`
-
-./scripts/start-prod.sh
-
-# Start production server using the compiled docker image on github
-# The API will be available for external use
-
-./scripts/start-prod.sh --no-build
-
-# Stop the server
-./scripts/stop-dev.sh
+# Run with 4 workers on `http://127.0.0.1:8000` instead (no auto-reload)
+pixi run serve
 ```
+
+Production runs on Vercel; there is no local production server. See
+[documentation/PIXI_TASKS.md](documentation/PIXI_TASKS.md) for every task.
 
 #### Option 2: Manual Python Setup
 
@@ -213,7 +206,7 @@ This repository publishes release artifacts from tags, not from every merge to `
 ### What runs automatically
 
 - Pull request to `main`: validation/build checks run.
-- Push tag `v*`: Docker image publish workflow runs.
+- Push tag `v*`: the Vercel production deploy workflow (`.github/workflows/vercel-deploy.yml`) runs.
 - There is currently no repository workflow triggered by `db-v*` tags.
 
 ### Day-to-day developer steps
@@ -322,7 +315,7 @@ git config core.hooksPath .git/hooks
 The development server automatically reloads on code changes:
 
 ```bash
-./scripts/start-dev.sh
+pixi run dev
 ```
 
 ### Database Management
@@ -368,7 +361,7 @@ pixi run reset
 
 ## Troubleshooting
 
-- **Port 8001 already in use**: Kill the process or use different port: `PORT=8002 python main.py`
+- **Port 8443 already in use**: Kill the process, or run uvicorn on another port: `ENV_FILE=.env.test python -m uvicorn main:app --port 8444 --reload --ssl-keyfile=certs/localhost-key.pem --ssl-certfile=certs/localhost.pem`
 - **Database connection error**: Check your Supabase credentials in `.env` or `.env.test`, and set `SUPABASE_DB_URL` when a direct Postgres connection is required
 - **CORS errors**: Verify `ALLOWED_ORIGINS` in `.env` includes your frontend URL
 - **Scraper failures**: Check scraper logs and network connectivity

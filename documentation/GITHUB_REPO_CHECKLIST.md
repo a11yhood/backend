@@ -23,7 +23,7 @@ No. Put only merge-gating controls in the `main` branch ruleset. Keep tag contro
 - Require approvals
 - Dismiss stale approvals
 - Require conversation resolution
-- Require status checks (`Build and Push Docker Image / build`, `CI / lint`, `CI / test`)
+- Require status checks (`CI / lint`, `CI / test`)
 - Require branch up to date before merge
 - Disable force pushes
 - Disable branch deletion
@@ -46,12 +46,11 @@ No. Put only merge-gating controls in the `main` branch ruleset. Keep tag contro
 
 ## A) Confirm Current Workflow Behavior
 
-- [x] Open GitHub Actions and inspect latest **Build and Push Docker Image** run.
+- [x] Open GitHub Actions and inspect latest **CI** run.
 - [ ] Confirm event/ref is expected (`pull_request`, `push` tag, or `workflow_dispatch`).
 - [ ] Open latest **Export and Release Databases** run.
 - [ ] Confirm event/ref is expected (`push` on `db-v*` tag or `workflow_dispatch`).
 - [ ] Verify workflow files in repo:
-  - [ ] `.github/workflows/docker-build.yml`
   - [ ] `.github/workflows/db-release.yml`
 
 ## B) One-Time Repository Protections (Admin)
@@ -81,7 +80,6 @@ Recommended optional toggles (decide as a team):
 These are selected inside the `Require status checks to pass` part of the `main` branch ruleset.
 
 - [x] Run at least one PR so check names appear.
-- [x] Add required check: `Build and Push Docker Image / build`.
 - [x] Add required check: `CI / lint`.
 - [x] Add required check: `CI / test`.
 
@@ -111,16 +109,13 @@ Apply these in **Settings -> Actions -> General**.
 
 Apply these in **Settings -> Environments**.
 
-- [x] Create environment `production-image`.
 - [ ] Create environment `production-db-export`.
 - [x] Add required reviewers for these environments.
 - [ ] Wire publish jobs to these environments.
 
 Current workflow mapping:
 
-- [x] `.github/workflows/docker-build.yml` -> `jobs.publish.environment: production-image`
 - [x] `.github/workflows/db-release.yml` -> `jobs.export.environment.name: production-db-export`
-- [x] Keep `.github/workflows/docker-build.yml` `jobs.build` (PR validation) without an environment.
 
 ## C) Ongoing Developer Release Workflow
 
@@ -131,25 +126,21 @@ Current workflow mapping:
 - [ ] Get required review(s).
 - [ ] Merge PR.
 
-### Publish Docker Image (when needed)
+### Publish a Production Release (when needed)
 
 - [ ] Sync local `main` (`git checkout main && git pull`).
 - [ ] Create app release tag (`X.Y.Z`).
 - [ ] Push tag to GitHub (`git push origin vX.Y.Z`).
-- [ ] Push tag to GitLab (`git push gitlab vX.Y.Z`).
-- [ ] Confirm Docker publish workflow succeeded in Actions.
-- [ ] Confirm GitLab tag pipeline sees `vX.Y.Z`.
+- [ ] Confirm the **Deploy to Vercel Production** workflow succeeded in Actions.
 
 ### Publish Database Export Release (when needed)
 
 - [ ] Sync local `main` (`git checkout main && git pull`).
 - [ ] Create DB release tag (`git tag db-vX.Y.Z`).
 - [ ] Push tag to GitHub (`git push origin db-vX.Y.Z`).
-- [ ] Push tag to GitLab (`git push gitlab db-vX.Y.Z`).
 - [ ] Confirm DB export workflow succeeded in Actions.
 
 ## D) Quick Sanity Checks After Any Release
 
-- [ ] Confirm expected image tags exist in GHCR.
 - [ ] Confirm expected GitHub release assets were created (for DB exports).
 - [ ] Document release/tag in team notes or changelog.
