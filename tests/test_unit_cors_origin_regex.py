@@ -20,9 +20,15 @@ def test_regex_unset_returns_none(monkeypatch):
     assert main.get_cors_origin_regex() is None
 
 
-def test_invalid_regex_is_ignored(monkeypatch):
+def test_invalid_regex_is_ignored(monkeypatch, caplog):
+    main._validated_cors_origin_regex.cache_clear()
     monkeypatch.setattr(main.settings, "CORS_ORIGIN_REGEX", "([unclosed")
     assert main.get_cors_origin_regex() is None
+    assert main.get_cors_origin_regex() is None
+    assert sum(
+        "Ignoring invalid CORS_ORIGIN_REGEX" in record.message
+        for record in caplog.records
+    ) == 1
 
 
 def test_preview_origin_allowed_when_regex_matches(monkeypatch):

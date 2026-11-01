@@ -49,6 +49,7 @@ app = FastAPI(
 import logging
 import os
 import re
+from functools import lru_cache
 
 # Configure structured logging for the entire application
 logging.basicConfig(
@@ -231,21 +232,27 @@ def _normalize_origin(value: str) -> str:
     return value.strip().rstrip("/")
 
 
+@lru_cache(maxsize=128)
+def _validated_cors_origin_regex(pattern: str) -> str | None:
+    """Validate a CORS origin regex once per unique pattern value."""
+    normalized_pattern = (pattern or "").strip()
+    if not normalized_pattern:
+        return None
+    try:
+        re.compile(normalized_pattern)
+    except re.error:
+        logger.error("Ignoring invalid CORS_ORIGIN_REGEX: %r", normalized_pattern)
+        return None
+    return normalized_pattern
+
+
 def get_cors_origin_regex() -> str | None:
     """Return the optional CORS_ORIGIN_REGEX, or None when unset or invalid.
 
     Starlette matches it with ``re.fullmatch``. An invalid pattern is ignored
     (and logged) so a typo cannot widen access or stop the app from starting.
     """
-    pattern = (settings.CORS_ORIGIN_REGEX or "").strip()
-    if not pattern:
-        return None
-    try:
-        re.compile(pattern)
-    except re.error:
-        logger.error("Ignoring invalid CORS_ORIGIN_REGEX: %r", pattern)
-        return None
-    return pattern
+    return _validated_cors_origin_regex((settings.CORS_ORIGIN_REGEX or "").strip())
 
 
 def _request_origin_if_allowed(request: Request) -> str | None:
