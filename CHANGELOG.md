@@ -11,6 +11,8 @@ This file starts from the change below; prior history is not backfilled.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-01
+
 ### Added
 
 - **`CORS_ORIGIN_REGEX` setting.** Optional regex (matched against the whole origin) that is allowed in addition to the exact `CORS_ORIGINS` list, so every Vercel preview deployment of the frontend (whose hostname changes per deploy) can call the test backend. Unset by default; leave it unset in production. An invalid pattern is logged and ignored.
