@@ -11,6 +11,7 @@
 --
 -- Changes:
 --   * compute_display_rating(): pure blend function (no queries), shared by every caller.
+--     Argument order (user_avg, source_rating, user_count) matches services/ratings.py.
 --   * compute_product_rating(): kept for backfills/manual use; now delegates to the above.
 --   * update_own_computed_rating(): uses NEW.source_rating directly; skips the ratings lookup
 --     on INSERT (a brand-new product cannot have ratings).
@@ -24,8 +25,8 @@
 
 CREATE OR REPLACE FUNCTION public.compute_display_rating(
   user_avg NUMERIC,
-  user_count INTEGER,
-  source_rating_val NUMERIC
+  source_rating_val NUMERIC,
+  user_count INTEGER
 )
   RETURNS NUMERIC(3,2)
   LANGUAGE plpgsql
@@ -77,7 +78,7 @@ BEGIN
   FROM products
   WHERE id = product_id_param;
 
-  RETURN compute_display_rating(user_avg, user_count, source_rating_val);
+  RETURN compute_display_rating(user_avg, source_rating_val, user_count);
 END;
 $$;
 
@@ -98,7 +99,7 @@ BEGIN
     WHERE product_id = NEW.id;
   END IF;
 
-  NEW.computed_rating := compute_display_rating(user_avg, user_count, NEW.source_rating::NUMERIC);
+  NEW.computed_rating := compute_display_rating(user_avg, NEW.source_rating::NUMERIC, user_count);
   RETURN NEW;
 END;
 $$;
@@ -133,7 +134,7 @@ BEGIN
   ),
   calc AS (
     SELECT id,
-           compute_display_rating(user_avg, user_count, source_rating::NUMERIC) AS new_rating
+           compute_display_rating(user_avg, source_rating::NUMERIC, user_count) AS new_rating
     FROM agg
   )
   UPDATE products p

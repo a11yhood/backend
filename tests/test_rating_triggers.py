@@ -5,6 +5,7 @@ migrations/20261013_batch_computed_rating_triggers.sql to be applied there.
 """
 from uuid import uuid4
 
+
 def _make_product(db, user, **extra):
     row = {
         "name": f"Rating Trigger {uuid4().hex[:8]}",
