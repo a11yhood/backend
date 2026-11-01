@@ -22,3 +22,11 @@ This file starts from the change below; prior history is not backfilled.
 - Tests for the supported-sources cache (cache hit, invalidation, TTL expiry, failed reads never cached, callers can't mutate the cached list) and for the batched image-alt lookup.
 - Regression tests confirming `product_slugs` stays index-aligned with `product_ids`, including when a slug can't be resolved (`None` in place, not dropped or reordered).
 - Regression tests confirming every collection write endpoint rejects a slug identifier.
+
+### Removed
+
+- **All Docker and GitLab CI tooling.** Production is deployed to Vercel only, and Vercel builds PRs through its own GitHub integration, so these are gone: the `Build and Push Docker Image` workflow (`.github/workflows/docker-build.yml`, which also published to `ghcr.io/a11yhood/backend` on `v*` tags), the `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.gitlab-ci.yml`, the `start-dev.sh`, `start-prod.sh` and `test-prod-image.sh` scripts (and their shared `scripts/lib/backend-common.sh`), and the `dev-seed`, `dev-reset`, `dev-stop`, `prod`, `prod-stop` and `test-prod-image` pixi tasks. The Docker setup docs (`DOCKER_SETUP.md`, `README.Docker.md`, `GITHUB_TO_GITLAB_CI_DEPLOY.md`) are removed and the README, `PIXI_TASKS.md`, `LOCAL_TESTING.md`, `seed_scripts/README.md` and release checklist are updated.
+
+### Changed (local development)
+
+- `pixi run dev` now runs the backend locally with uvicorn (auto-reload, HTTPS on `https://localhost:8443`, `.env.test`) instead of starting a Docker container on port 8002. `scripts/seed.sh` no longer has a Docker mode (`--in-docker` is gone); `pixi run seed` runs the seeds with the local Python venv. `scripts/db-export/verify_restore_local.sh` still uses a throwaway Postgres container to verify database exports.

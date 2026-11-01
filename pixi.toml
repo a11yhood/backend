@@ -56,32 +56,11 @@ cmd = "./scripts/reset-test-db.sh --env-file .env.test && pixi run -e test test-
 ENV_FILE = ".env.test"
 
 [tasks.dev]
-description = "Start dev backend in Docker using Supabase test env on port 8002"
-cmd = "./scripts/start-dev.sh --port 8002"
+description = "Run the backend locally (uvicorn, HTTPS on port 8443, auto-reload) against the Supabase test project (.env.test)"
+cmd = "python -m uvicorn main:app --port 8443 --reload --ssl-keyfile=certs/localhost-key.pem --ssl-certfile=certs/localhost.pem"
 
-[tasks.dev-seed]
-description = "Start dev backend in Docker and seed Supabase test data"
-cmd = "./scripts/start-dev.sh --seed --port 8002"
-
-[tasks.dev-reset]
-description = "Start dev backend in Docker and reset Supabase test data"
-cmd = "./scripts/start-dev.sh --reset-db --seed --port 8002"
-
-[tasks.dev-stop]
-description = "Stop dev backend Docker container"
-cmd = "docker stop backend-dev && docker rm backend-dev || true"
-
-[tasks.prod]
-description = "Start prod backend in Docker using .env on port 8001"
-cmd = "./scripts/start-prod.sh"
-
-[tasks.prod-stop]
-description = "Stop prod backend Docker container"
-cmd = "docker stop backend-prod && docker rm backend-prod || true"
-
-[tasks.test-prod-image]
-description = "Build prod image and run HTTP smoke tests (uses .env.test, port 8099)"
-cmd = "./scripts/test-prod-image.sh"
+[tasks.dev.env]
+ENV_FILE = ".env.test"
 
 [tasks.apply-migrations]
 description = "Apply SQL migrations to Supabase/Postgres (uses .env.test by default)"
@@ -92,7 +71,7 @@ description = "Apply SQL migrations to production Supabase (uses .env)"
 cmd = "./scripts/apply-migrations.sh --env-file .env"
 
 [tasks.seed]
-description = "Run seed scripts (auto-detects Docker container or runs locally)"
+description = "Run seed scripts"
 cmd = "./scripts/seed.sh"
 
 [tasks.seed-list]

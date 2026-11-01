@@ -120,12 +120,6 @@ Three environment modes are now supported:
    - Secure SECRET_KEY required
    - All security headers enabled
 
-### Container Hardening
-
-- Docker images now run as a non-root user (`appuser`, uid 1000) in both development and production stages.
-- `/app` ownership is set to `appuser` to avoid permission issues while dropping privileges.
-- Change lives in the single Dockerfile and applies to both compose targets.
-
 ## Testing
 
 New security tests verify the validation logic:
@@ -181,7 +175,7 @@ pytest tests/test_startup_security.py -v
 
 3. Start backend:
    ```bash
-   ./start-prod.sh
+   ENV_FILE=.env python -m uvicorn main:app --host 127.0.0.1 --port 8001
    ```
 
 4. The backend will validate configuration and refuse to start if insecure.
@@ -201,7 +195,6 @@ From the full security audit ([SECURITY_AUDIT.md](SECURITY_AUDIT.md)):
 ### Medium Priority
 - [ ] Validate CORS extra origins
 - [ ] Add account lockout mechanism
-- [x] Fix Docker USER directive (Dockerfile now runs as non-root appuser)
 - [ ] Set up dependency vulnerability scanning
 - [ ] Create security.txt
 
@@ -252,7 +245,7 @@ To verify security configuration:
 
 ```bash
 # Start backend
-./start-prod.sh
+ENV_FILE=.env python -m uvicorn main:app --host 127.0.0.1 --port 8001
 
 # Check logs for validation output
 # Should see:

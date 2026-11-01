@@ -4,35 +4,19 @@ Seed scripts populate the database with initial data for development and testing
 
 ## Quick Start
 
-### Development (Supabase Test Project with Docker)
+### Development (Supabase Test Project)
 
-If the dev server is running in Docker (started with `./start-dev.sh`), the easiest way to seed is:
-
-```bash
-cd /path/to/backend
-./scripts/seed.sh
-```
-
-This automatically detects the running container and seeds the database inside it.
-
-Alternatively, seed with a flag:
-```bash
-./scripts/seed.sh --in-docker
-```
-
-### Start Dev Server with Seeding
-
-You can also seed automatically when starting the dev server:
+The easiest way to seed the test project is with pixi (or the helper script it wraps):
 
 ```bash
-./start-dev.sh --seed
+pixi run seed          # or: ./scripts/seed.sh
 ```
 
-This will start the server and then seed all data in one command.
+Seeding is independent of the dev server, so you can run it before or after `pixi run dev`.
 
-### Development (Direct Python - No Docker)
+### Development (Direct Python)
 
-If you're running Python directly (not in Docker):
+To call the seed entry point directly:
 
 ```bash
 ENV_FILE=.env.test .venv/bin/python seed_scripts/seed_all.py
@@ -180,11 +164,9 @@ SUPABASE_URL=https://your-test-project.supabase.co
 TEST_MODE=true
 ```
 
-### Docker vs Host Filesystem
+### Use the repo's env loading
 
-**Important:** When running the dev server in Docker, the backend still talks to the Supabase test project from `.env.test`.
-
-**Solution:** Always seed using `./scripts/seed.sh` or `./start-dev.sh --seed`, which load `.env.test` consistently.
+**Important:** Always seed with `pixi run seed` or `./scripts/seed.sh`, which load `.env.test` consistently so you target the Supabase test project.
 
 **Don't do this:**
 ```bash
@@ -283,6 +265,5 @@ if __name__ == "__main__":
 
 ## See Also
 
-- [DATABASE_SETUP.md](../documentation/DOCKER_SETUP.md) - Database initialization
 - [ENVIRONMENT_MODES.md](../documentation/ENVIRONMENT_MODES.md) - Development vs production
 - [LOCAL_TESTING.md](../documentation/LOCAL_TESTING.md) - Running tests locally
