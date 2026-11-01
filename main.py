@@ -48,6 +48,7 @@ app = FastAPI(
 
 import logging
 import os
+import re
 
 # Configure structured logging for the entire application
 logging.basicConfig(
@@ -230,8 +231,25 @@ def _normalize_origin(value: str) -> str:
     return value.strip().rstrip("/")
 
 
+def get_cors_origin_regex() -> str | None:
+    """Return the optional CORS_ORIGIN_REGEX, or None when unset or invalid.
+
+    Starlette matches it with ``re.fullmatch``. An invalid pattern is ignored
+    (and logged) so a typo cannot widen access or stop the app from starting.
+    """
+    pattern = (settings.CORS_ORIGIN_REGEX or "").strip()
+    if not pattern:
+        return None
+    try:
+        re.compile(pattern)
+    except re.error:
+        logger.error("Ignoring invalid CORS_ORIGIN_REGEX: %r", pattern)
+        return None
+    return pattern
+
+
 def _request_origin_if_allowed(request: Request) -> str | None:
-    """Return request Origin when it is explicitly allowlisted."""
+    """Return request Origin when it is allowlisted or matches CORS_ORIGIN_REGEX."""
     raw_origin = request.headers.get("origin")
     if not raw_origin:
         return None
@@ -239,6 +257,9 @@ def _request_origin_if_allowed(request: Request) -> str | None:
     normalized_origin = _normalize_origin(raw_origin)
     allowed_origins = set(get_cors_origins())
     if normalized_origin in allowed_origins:
+        return normalized_origin
+    origin_regex = get_cors_origin_regex()
+    if origin_regex and re.fullmatch(origin_regex, normalized_origin):
         return normalized_origin
     return None
 
@@ -256,6 +277,7 @@ if not any(isinstance(m, type) and issubclass(m, type) and
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
+        allow_origin_regex=get_cors_origin_regex(),
         allow_credentials=True,
         allow_methods=["POST", "OPTIONS", "GET", "PUT", "DELETE", "PATCH"],
         allow_headers=[
