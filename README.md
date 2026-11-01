@@ -101,7 +101,7 @@ pixi run dev
 pixi run reset
 pixi run seed
 
-# Run with 4 workers on `https://127.0.0.1:8000` instead (no auto-reload)
+# Run with 4 workers on `http://127.0.0.1:8000` instead (no auto-reload)
 pixi run serve
 ```
 
