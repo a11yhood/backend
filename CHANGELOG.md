@@ -11,6 +11,10 @@ This file starts from the change below; prior history is not backfilled.
 
 ## [Unreleased]
 
+### Added
+
+- **`CORS_ORIGIN_REGEX` setting.** Optional regex (matched against the whole origin) that is allowed in addition to the exact `CORS_ORIGINS` list, so every Vercel preview deployment of the frontend (whose hostname changes per deploy) can call the test backend. Unset by default; leave it unset in production. An invalid pattern is logged and ignored.
+
 ### Changed
 
 - **Faster blog post list.** `GET /api/blog-posts` now resolves header-image metadata for a page of posts in one batched query instead of one per post. It shares `resolve_image_metadata_batch` with the product list, which replaces the earlier alt-text-only helper. A failed batch lookup still degrades to "no image" but is now logged as a warning.

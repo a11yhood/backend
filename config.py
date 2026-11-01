@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # CORS - strict allowlist for security
     # Set CORS_ORIGINS to a comma-separated list of allowed
     CORS_ORIGINS: str = ""
+    # Optional regex (full match) for origins whose hostname changes per deploy,
+    # e.g. Vercel preview URLs. Leave unset in production.
+    CORS_ORIGIN_REGEX: str = ""
     ALLOWED_HOSTS: str = ""  # Comma-separated host allowlist for TrustedHostMiddleware
 
     # Environment mode (development, staging, production)
