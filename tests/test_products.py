@@ -737,6 +737,46 @@ def test_sort_by_rating_uses_recency_as_secondary_sort(client, clean_database, t
     assert ids.index(newer_id) < ids.index(older_id)
 
 
+@pytest.mark.parametrize("sort_order", ["desc", "asc"])
+def test_sort_by_updated_puts_missing_dates_last(client, clean_database, test_user, sort_order):
+    """Products with no source update date should sort after dated ones in either direction."""
+    base_time = datetime.now(UTC).replace(tzinfo=None)
+    dated_id = str(uuid.uuid4())
+    undated_id = str(uuid.uuid4())
+
+    _insert_products(
+        clean_database,
+        [
+            {
+                "id": dated_id,
+                "name": "SortUpdatedNulls Dated",
+                "description": "SortUpdatedNulls",
+                "source": "Github",
+                "source_url": "https://github.com/example/sort-updated-dated",
+                "source_last_updated": base_time,
+                "created_by": test_user["id"],
+                "created_at": base_time,
+            },
+            {
+                "id": undated_id,
+                "name": "SortUpdatedNulls Undated",
+                "description": "SortUpdatedNulls",
+                "source": "Github",
+                "source_url": "https://github.com/example/sort-updated-undated",
+                "source_last_updated": None,
+                "created_by": test_user["id"],
+                "created_at": base_time,
+            },
+        ],
+    )
+
+    resp = client.get(f"/api/products?search=SortUpdatedNulls&sort_by=updated_at&sort_order={sort_order}")
+    assert resp.status_code == 200
+    ids = [p["id"] for p in resp.json()]
+
+    assert ids.index(dated_id) < ids.index(undated_id)
+
+
 def test_get_product_not_found(client):
     response = client.get("/api/products/nonexistent")
     assert response.status_code == 404
