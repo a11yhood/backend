@@ -11,6 +11,8 @@ This file starts from the change below; prior history is not backfilled.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-01
+
 ### Added
 
 - **`/health` and `/` report the deployed version, and `/health` the commit.** `vercel-deploy.yml` now passes `APP_VERSION` (the release tag without its `v`, or `dev-<sha>` for a manual run from a branch) and `GIT_SHA` to the production deployment as runtime variables. `/health` returns `version` and, when `GIT_SHA`, `COMMIT_SHA` or `VERCEL_GIT_COMMIT_SHA` is set, `git_sha`, so a deploy can be checked against a release. Without `APP_VERSION` (local, tests) the version is `dev`; it replaces the hardcoded `1.0.0`.
