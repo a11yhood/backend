@@ -11,6 +11,10 @@ This file starts from the change below; prior history is not backfilled.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`GET /api/products/sources` no longer pages through every product in production.** The `get_product_source_counts()` function it calls was recorded as applied (via `20260116_performance_optimizations.sql`) but never existed in production, so each request logged an error and fell back to reading all products 1000 rows at a time. New migration `20261101_add_get_product_source_counts.sql` creates just that function (the rest of the January file is unchanged; `get_product_types` stays dropped). Apply with `pixi run apply-migrations-prod`.
+
 ## [0.6.1] - 2026-11-01
 
 ### Added
