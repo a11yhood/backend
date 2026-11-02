@@ -3,6 +3,7 @@
 Sets up FastAPI app with CORS middleware and routes for the accessible product community.
 All endpoints are organized by domain in routers/ and use database_adapter for dual DB support.
 """
+import os
 import uuid
 
 from fastapi import Depends, FastAPI, Query, Request
@@ -34,9 +35,12 @@ from services.auth import get_current_user
 from services.database import get_db
 from services.scheduled_scrapers import get_scheduled_scraper_service
 
+# Set at deploy time (see .github/workflows/vercel-deploy.yml): the release tag without its "v".
+APP_VERSION = os.getenv("APP_VERSION") or "dev"
+
 app = FastAPI(
     title="a11yhood API",
-    version="1.0.0",
+    version=APP_VERSION,
     description=(
         "API for a11yhood - Accessible Product Community\n\n"
         "Timestamp contract:\n"
@@ -47,7 +51,6 @@ app = FastAPI(
 )
 
 import logging
-import os
 import re
 from functools import lru_cache
 
@@ -473,7 +476,7 @@ async def root(request: Request):
     """API root endpoint."""
     return {
         "message": "a11yhood API",
-        "version": "1.0.0",
+        "version": APP_VERSION,
         "status": "running"
     }
 
@@ -497,12 +500,20 @@ async def health_check(db=Depends(get_db)):
             logger.warning(f"Health check database probe failed: {exc}")
             database_status = "error"
 
-    return {
+    response = {
         "status": "healthy",
+        "version": APP_VERSION,
         "mode": "production" if is_production else "development",
         "test_mode": current_settings.TEST_MODE,
         "database": database_status,
     }
+
+    # Optional build metadata so a deployment can be verified against a commit.
+    git_sha = os.getenv("GIT_SHA") or os.getenv("COMMIT_SHA") or os.getenv("VERCEL_GIT_COMMIT_SHA")
+    if git_sha:
+        response["git_sha"] = git_sha
+
+    return response
 
 
 @app.get("/api/scraping-logs")
