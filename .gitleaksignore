@@ -1,0 +1,12 @@
+# Example dev tokens (dev-token-<uuid>) in documentation/DEV_MODE.md. Unsigned dev tokens are rejected and dev auth is blocked in production.
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:144
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:167
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:193
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:248
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:251
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:260
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:267
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:270
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:39
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:55
+6b3c4a9a81962841325bcf852aa18c432713b4cf:documentation/DEV_MODE.md:curl-auth-header:58
