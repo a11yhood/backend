@@ -5,25 +5,25 @@ description = "Backend API"
 requires-python = ">=3.13"
 dependencies = [
     "aiosqlite>=0.22.1",
-    "annotated-doc>=0.0.5",
+    "annotated-doc>=0.0.7",
     "apscheduler>=3.11.3",
     "beautifulsoup4>=4.15.0",
     "bleach>=6.4.0",
     "cachetools<8",
-    "fastapi>=0.141.1",
+    "fastapi>=0.165.0",
     "httpx>=0.28.1",
     "lxml>=6.1.2",
-    "pydantic>=2.13.5",
-    "pydantic-settings>=2.15.0",
-    "python-dotenv>=1.2.3",
+    "pydantic>=2.14.4",
+    "pydantic-settings>=2.16.3",
+    "python-dotenv>=1.2.4",
     "pillow>=12.3.0",
-    "python-multipart>=0.0.32",
+    "python-multipart>=0.0.34",
     "requests>=2.34.2",
     "requests-oauthlib>=2.0.0",
     "rich<16",
     "slowapi>=0.1.10",
-    "sqlalchemy>=2.0.52",
-    "supabase>=2.31.0",
+    "sqlalchemy>=2.1.9",
+    "supabase>=2.34.1",
     "uvicorn[standard]>=0.52.4",
     "websockets<18",
 ]
@@ -45,9 +45,9 @@ known-first-party = ["models", "routers", "scrapers", "services", "migrations"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
-    "pandas>=3.0.5",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "pandas>=3.1.1",
     "matplotlib>=3.11.1",
-    "ruff>=0.16.4",
+    "ruff>=0.17.6",
 ]
