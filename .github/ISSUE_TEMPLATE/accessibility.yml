@@ -8,7 +8,7 @@ body:
       value: |
         Thank you for telling us. You do not need to know the technical cause, and partial reports are welcome.
 
-        If GitHub is hard for you to use, or you would rather not post publicly, email **create-contact@uw.edu** and we will open an issue for you if you want one. We will not share details about you, your disability, or your assistive technology without your permission.
+        If GitHub is unfamiliar, or you would rather not post publicly, email **create-contact@uw.edu** and we will open an issue for you if you want one. We will not share details about you, your disability, or your assistive technology without your permission.
 
         Please do not include personal information you do not want to be public.
   - type: textarea
