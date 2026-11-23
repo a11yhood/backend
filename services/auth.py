@@ -410,11 +410,16 @@ async def get_current_user(
             response = db_adapter.table("users").select("*").eq("id", user_dict["id"]).execute()
             if response.data and len(response.data) > 0:
                 row = response.data[0]
+                if row.get("banned"):
+                    log_auth_failure(user_dict["id"], "Banned account attempted access")
+                    raise HTTPException(status_code=403, detail="Account suspended")
                 user_dict["role"] = row.get("role", "user")
                 user_dict["username"] = row.get("username") or user_dict["username"]
                 user_dict["github_id"] = row.get("github_id") or user_dict["github_id"]
 
         return user_dict
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=401, detail=f"Authentication normalization failed: {str(e)}"
