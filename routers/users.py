@@ -328,9 +328,14 @@ async def create_or_update_user_account(
     except NameError:
         test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
 
-    # In production mode, require auth for updates (creates allowed for OAuth)
-    if not test_mode and is_update and not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+    # Outside test mode every write needs a signed-in caller, and a new row can only
+    # be the caller's own.
+    if not test_mode:
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        own_id = current_user.get("id")
+        if not is_update and _looks_like_uuid(identifier) and identifier != own_id:
+            raise HTTPException(status_code=403, detail="Not authorized to create this user")
 
     # Prevent one user from updating another unless admin
     if is_update and current_user and current_user.get("role") != "admin":
@@ -354,6 +359,9 @@ async def create_or_update_user_account(
         "email": account_data.email,
         "github_id": github_id,
     }
+    # A new row takes the email the sign-in provider supplied, not one typed by the caller.
+    if not test_mode and not is_update:
+        user_data["email"] = current_user.get("email")
 
     try:
         if is_update:
