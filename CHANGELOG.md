@@ -11,6 +11,10 @@ This file starts from the change below; prior history is not backfilled.
 
 ## [Unreleased]
 
+### Security
+
+- **Tighter database permissions.** Migration `20261126_user_insert_policy_and_default_function_grants.sql` restricts which user rows a client can insert directly and stops new database functions from being executable by default. Apply after `20261116_users_banned_and_rpc_hardening.sql` with `pixi run apply-migrations` (test) / `apply-migrations-prod`.
+
 ## [0.6.2] - 2026-11-01
 
 ### Added

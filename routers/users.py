@@ -8,6 +8,7 @@ Privacy: Public username lookup excludes email and preferences.
 import logging
 import os
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 from config import settings
 from services.auth import ensure_admin, get_current_user, get_current_user_optional
 from services.database import get_db
-from services.security_logger import log_role_change
+from services.security_logger import log_role_change, log_security_event
 from services.timestamps import OptionalApiTimestamp, normalize_timestamp_fields
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -486,6 +487,111 @@ async def update_user_role(
         "display_name": updated_user.get("display_name"),
         "created_at": updated_user.get("created_at"),
     }
+
+
+class BanUpdate(BaseModel):
+    banned: bool = True
+    reason: str | None = None
+
+
+def _set_auth_ban(db, user_id: str, banned: bool) -> bool:
+    """Best-effort: ban/unban the Supabase Auth identity so it cannot sign in again.
+
+    Returns True if the auth-level change succeeded. The users.banned flag is
+    enforced by get_current_user regardless, so failure here is non-fatal.
+    """
+    client = getattr(db, "supabase", None)
+    if client is None:
+        return False
+    try:
+        client.auth.admin.update_user_by_id(
+            user_id, {"ban_duration": "876000h" if banned else "none"}
+        )
+        return True
+    except Exception as e:
+        logging.getLogger(__name__).error(f"auth ban update failed for {user_id}: {e}")
+        return False
+
+
+@router.post("/{username}/ban")
+async def ban_user(
+    username: str,
+    update: BanUpdate,
+    db=Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Suspend (or reinstate) an account. Admin only.
+
+    Sets users.banned (enforced on every authenticated request) and bans the
+    Supabase Auth identity so the account cannot sign in again.
+    """
+    ensure_admin(current_user)
+    target = _get_user_by_identifier(db, username)
+    if target["id"] == current_user["id"]:
+        raise HTTPException(status_code=400, detail="You cannot ban yourself")
+    if update.banned and target.get("role") == "admin":
+        raise HTTPException(status_code=400, detail="Demote an admin before banning")
+
+    db.table("users").update(
+        {
+            "banned": update.banned,
+            "banned_at": datetime.now(UTC).isoformat() if update.banned else None,
+            "banned_reason": update.reason if update.banned else None,
+        }
+    ).eq("id", target["id"]).execute()
+    auth_updated = _set_auth_ban(db, target["id"], update.banned)
+    log_security_event(
+        event_type="USER_BANNED" if update.banned else "USER_UNBANNED",
+        user_id=current_user["id"],
+        details={"target_user_id": target["id"], "reason": update.reason},
+        severity="WARNING",
+    )
+    return {"id": target["id"], "username": target.get("username"), "banned": update.banned,
+            "auth_updated": auth_updated}
+
+
+@router.delete("/{username}")
+async def delete_user(
+    username: str,
+    db=Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Permanently delete an account and its content. Admin only.
+
+    Deleting does NOT stop the person signing up again; to block someone, ban
+    the account instead. Rows referencing the user cascade per the schema.
+    """
+    ensure_admin(current_user)
+    target = _get_user_by_identifier(db, username)
+    if target["id"] == current_user["id"]:
+        raise HTTPException(status_code=400, detail="You cannot delete yourself")
+    if target.get("role") in ("admin", "moderator"):
+        raise HTTPException(status_code=400, detail="Demote this user before deleting")
+
+    # Remove the sign-in identity first: if that fails, keep the row, so the person
+    # cannot sign in and recreate it.
+    client = getattr(db, "supabase", None)
+    auth_deleted = False
+    if client is not None:
+        try:
+            client.auth.admin.delete_user(target["id"])
+            auth_deleted = True
+        except Exception as e:
+            # No identity to delete (seeded account, or retry after a partial delete) is fine.
+            if getattr(e, "status", None) != 404:
+                logging.getLogger(__name__).error(f"auth delete failed for {target['id']}: {e}")
+                raise HTTPException(
+                    status_code=502,
+                    detail="Could not delete the sign-in account; nothing was removed",
+                )
+    db.table("users").delete().eq("id", target["id"]).execute()
+    log_security_event(
+        event_type="USER_DELETED",
+        user_id=current_user["id"],
+        details={"target_user_id": target["id"], "username": target.get("username")},
+        severity="WARNING",
+    )
+    return {"id": target["id"], "deleted": True, "auth_deleted": auth_deleted}
 
 
 class ProfileUpdate(BaseModel):

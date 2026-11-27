@@ -44,4 +44,5 @@ END;
 $$;
 
 -- Allow the service-role key (used by DatabaseAdapter) to call this function.
+REVOKE ALL ON FUNCTION public.truncate_test_tables() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.truncate_test_tables() TO service_role;

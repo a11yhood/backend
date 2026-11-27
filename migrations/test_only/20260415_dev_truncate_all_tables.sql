@@ -48,5 +48,5 @@ END;
 $$;
 
 -- Only the service_role (backend) can call this — never anon or authenticated users.
-REVOKE ALL ON FUNCTION dev_truncate_all_tables() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION dev_truncate_all_tables() TO service_role;
+REVOKE ALL ON FUNCTION public.dev_truncate_all_tables() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.dev_truncate_all_tables() TO service_role;
