@@ -568,7 +568,8 @@ async def delete_user(
     if target.get("role") in ("admin", "moderator"):
         raise HTTPException(status_code=400, detail="Demote this user before deleting")
 
-    db.table("users").delete().eq("id", target["id"]).execute()
+    # Remove the sign-in identity first: if that fails, keep the row, so the person
+    # cannot sign in and recreate it.
     client = getattr(db, "supabase", None)
     auth_deleted = False
     if client is not None:
@@ -576,7 +577,14 @@ async def delete_user(
             client.auth.admin.delete_user(target["id"])
             auth_deleted = True
         except Exception as e:
-            logging.getLogger(__name__).error(f"auth delete failed for {target['id']}: {e}")
+            # No identity to delete (seeded account, or retry after a partial delete) is fine.
+            if getattr(e, "status", None) != 404:
+                logging.getLogger(__name__).error(f"auth delete failed for {target['id']}: {e}")
+                raise HTTPException(
+                    status_code=502,
+                    detail="Could not delete the sign-in account; nothing was removed",
+                )
+    db.table("users").delete().eq("id", target["id"]).execute()
     log_security_event(
         event_type="USER_DELETED",
         user_id=current_user["id"],
