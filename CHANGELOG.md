@@ -11,6 +11,10 @@ This file starts from the change below; prior history is not backfilled.
 
 ## [Unreleased]
 
+### Security
+
+- **Creating an account requires sign-in.** Outside test mode, `PUT`/`POST /api/users/{identifier}` returns `401` without a signed-in caller and `403` when creating a row for another user id. A new account's email comes from the sign-in provider; an email in the request body is ignored on creation.
+
 ## [0.6.3] - 2026-11-26
 
 ### Added
