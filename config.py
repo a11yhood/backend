@@ -7,6 +7,7 @@ Always uses Supabase - point .env at the production project, .env.test at the te
 import os
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +53,15 @@ class Settings(BaseSettings):
     # Dev mode features
     DEV_MODE_MAX_ROWS_PER_TABLE: int = 40  # Max rows per table in dev mode
     DEV_TEST_AUTH_SECRET: str | None = None  # Optional shared secret for /api/dev/test-auth/login
+
+    # Email notifications (disabled unless EMAIL_PROVIDER is set and a key is present)
+    EMAIL_PROVIDER: str = "none"  # 'none' | 'brevo'
+    BREVO_API_KEY: SecretStr | None = None  # secret: never log or print
+    EMAIL_FROM: str = ""  # verified sender address, e.g. notifications@your-domain
+    EMAIL_FROM_NAME: str = "a11yhood"
+    EMAIL_ADMIN_RECIPIENTS: str = ""  # comma-separated; empty = all users with role 'admin'
+    EMAIL_ADMIN_NOTIFY_MAX_PER_HOUR: int = 20  # per-process cap on admin notification emails
+    APP_BASE_URL: str = ""  # frontend base URL used for links in emails (no trailing slash)
 
     # GitHub API token for higher rate limits (optional)
     GITHUB_TOKEN: str | None = None

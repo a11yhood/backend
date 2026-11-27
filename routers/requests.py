@@ -12,12 +12,13 @@ All approvals/rejections logged with reviewer ID and timestamp.
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from config import get_settings
 from services.auth import get_current_user
 from services.database import get_db, wait_for_row_visibility
+from services.email import notify_admins_of_request, notify_requester_of_review
 from services.sources import extract_domain
 from services.supported_sources_cache import invalidate_supported_sources_cache
 from services.timestamps import ApiTimestamp, OptionalApiTimestamp
@@ -143,7 +144,10 @@ def get_my_requests(
 
 @router.post("/", response_model=UserRequestResponse, status_code=201)
 def create_user_request(
-    request: UserRequestCreate, current_user: dict = Depends(get_current_user), db=Depends(get_db)
+    request: UserRequestCreate,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """
     Create a new user request.
@@ -319,6 +323,8 @@ def create_user_request(
         wait_for_row_visibility(db, "user_requests", "id", created_request["id"]) or created_request
     )
 
+    background_tasks.add_task(notify_admins_of_request, db, created_request)
+
     return _to_response_row(created_request)
 
 
@@ -349,6 +355,7 @@ def _can_review_request(current_user: dict, request_data: dict, db) -> bool:
 def update_user_request(
     request_id: str,
     update: UserRequestUpdate,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
@@ -401,6 +408,9 @@ def update_user_request(
     updated_request = (
         wait_for_row_visibility(db, "user_requests", "id", updated_request["id"]) or updated_request
     )
+    if request_data.get("status") != update.status:
+        background_tasks.add_task(notify_requester_of_review, db, request_data, update.status)
+
     return _to_response_row(updated_request)
 
 
